@@ -35,7 +35,8 @@ Run quality checks:
 ```sh
 npm run typecheck
 npm run lint
-npm run test
+npm run format:check
+npm run test:run
 ```
 
 Build production bundles:
@@ -49,6 +50,8 @@ Create a personal macOS package:
 ```sh
 npm run package:mac
 ```
+
+Distributable artifacts are written to `release/`. Electron production build output is written to `out/`.
 
 ## Privacy
 

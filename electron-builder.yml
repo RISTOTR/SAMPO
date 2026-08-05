@@ -2,6 +2,7 @@ appId: es.ristotapani.sampo
 productName: Sampo
 directories:
   buildResources: build
+  output: release
 files:
   - '!**/.vscode/*'
   - '!src/*'
