@@ -1,0 +1,17 @@
+import { createRouter, createWebHashHistory } from 'vue-router'
+import ImportsView from '../views/ImportsView.vue'
+import OverviewView from '../views/OverviewView.vue'
+import SettingsView from '../views/SettingsView.vue'
+import SubscriptionsView from '../views/SubscriptionsView.vue'
+import TransactionsView from '../views/TransactionsView.vue'
+
+export const router = createRouter({
+  history: createWebHashHistory(),
+  routes: [
+    { path: '/', name: 'overview', component: OverviewView },
+    { path: '/imports', name: 'imports', component: ImportsView },
+    { path: '/transactions', name: 'transactions', component: TransactionsView },
+    { path: '/subscriptions', name: 'subscriptions', component: SubscriptionsView },
+    { path: '/settings', name: 'settings', component: SettingsView }
+  ]
+})

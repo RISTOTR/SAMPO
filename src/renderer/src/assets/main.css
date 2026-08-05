@@ -1,0 +1,144 @@
+:root {
+  color: #17211b;
+  background: #f5f7f4;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 900px;
+  min-height: 620px;
+  margin: 0;
+  overflow: hidden;
+  background: #f5f7f4;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 264px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  padding: 34px 24px;
+  border-right: 1px solid #dce3dc;
+  background: #fbfcfa;
+}
+
+.brand h1 {
+  margin: 0;
+  color: #13231a;
+  font-size: 30px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.brand p {
+  margin: 6px 0 0;
+  color: #66746b;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.navigation {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.navigation-link {
+  display: block;
+  min-height: 42px;
+  padding: 11px 12px;
+  border-radius: 8px;
+  color: #3a473f;
+  font-size: 14px;
+  line-height: 20px;
+  text-decoration: none;
+}
+
+.navigation-link:hover {
+  background: #eef2ed;
+}
+
+.navigation-link.router-link-active {
+  background: #dde8df;
+  color: #102318;
+  font-weight: 600;
+}
+
+.app-version {
+  margin-top: auto;
+  color: #7a857e;
+  font-size: 12px;
+}
+
+.content {
+  min-width: 0;
+  padding: 42px 52px;
+  overflow: auto;
+}
+
+.content-header {
+  margin-bottom: 34px;
+}
+
+.content-header p {
+  margin: 0 0 8px;
+  color: #738077;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.content-header h2 {
+  margin: 0;
+  color: #13231a;
+  font-size: 34px;
+  font-weight: 640;
+  letter-spacing: 0;
+}
+
+.placeholder-panel {
+  max-width: 760px;
+  padding: 28px 0;
+  border-top: 1px solid #dce3dc;
+}
+
+.placeholder-panel h3 {
+  margin: 0 0 10px;
+  color: #18251d;
+  font-size: 20px;
+  font-weight: 620;
+}
+
+.placeholder-panel p {
+  max-width: 620px;
+  margin: 0;
+  color: #5c6a61;
+  font-size: 15px;
+  line-height: 1.7;
+}
