@@ -26,6 +26,7 @@
     "package:mac": "npm run build:mac"
   },
   "dependencies": {
+    "@e965/xlsx": "^0.20.3",
     "better-sqlite3": "^12.4.6",
     "pinia": "^3.0.4",
     "vue": "^3.5.25",

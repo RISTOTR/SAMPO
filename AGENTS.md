@@ -22,6 +22,7 @@
 - Tests that exercise persistence must use explicit temporary database paths.
 - Never open or modify the real user database from automated tests.
 - Import adapters must remain separate from the normalised transaction model.
+- Importer tests must use synthetic fixtures and must not copy genuine statement rows.
 - Avoid large components and unrelated refactoring.
 - Do not add dependencies without a clear reason.
 - Preserve user data compatibility once persistence is introduced.

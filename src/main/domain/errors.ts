@@ -56,3 +56,15 @@ export class FileHashError extends SampoError {
     super(message, 'FILE_HASH_FAILED', cause)
   }
 }
+
+export class UnsupportedImportFormatError extends SampoError {
+  constructor(message = 'Unsupported import file format', cause?: unknown) {
+    super(message, 'UNSUPPORTED_IMPORT_FORMAT', cause)
+  }
+}
+
+export class ImportParseError extends SampoError {
+  constructor(message = 'Import file contains blocking parse errors', cause?: unknown) {
+    super(message, 'IMPORT_PARSE_FAILED', cause)
+  }
+}

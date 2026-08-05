@@ -1,6 +1,6 @@
 # Data Model
 
-Current milestone: Phase 1 implemented schema foundation. The database schema may still evolve through forward-only migrations before external-user use.
+Current milestone: Phase 2 Visa importer over the Phase 1 schema foundation. The database schema may still evolve through forward-only migrations before external-user use.
 
 ## Locked Conventions
 
@@ -44,3 +44,17 @@ The following planned entities are not implemented in Phase 1:
 `TransactionLink` is implemented as the foundation for future reconciliation, but reconciliation behaviour itself remains planned.
 
 Fields and relationships remain subject to forward-only migrations once importer evidence is available.
+
+## Visa Import Mapping
+
+The EVO/Bankinter Visa importer maps workbook movements to `NewTransaction` objects:
+
+- Completed movements use `isPending: false`.
+- Pending movements use `isPending: true` and `reviewStatus: needs_review`.
+- The workbook uses Excel serial dates, converted explicitly to ISO `YYYY-MM-DD`.
+- Numeric Visa purchase amounts are already negative in the source and remain negative integer cents.
+- Positive Visa amounts are treated as refunds and mapped to `transactionType: refund`.
+- Currency defaults to `EUR` for the supported export.
+- `sourceRowIndex` is the zero-based physical worksheet row index, which is deterministic and unique within a statement.
+
+The importer does not create categories, merchants, subscriptions, reconciliation results, or permanent duplicate identities.

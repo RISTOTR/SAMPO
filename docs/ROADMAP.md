@@ -1,6 +1,6 @@
 # Roadmap
 
-Current milestone: Phase 1 - Financial Core complete.
+Current milestone: Phase 2 - EVO/Bankinter Visa XLS Importer complete.
 
 ## Phase 0 - Foundation
 
@@ -21,12 +21,12 @@ Current milestone: Phase 1 - Financial Core complete.
 
 ## Phase 2 - Visa Importer
 
-- Inspect `.xls` internals
-- Parse completed movements
-- Parse pending movements
-- Normalise dates and amounts
-- Duplicate handling
-- Anonymised fixtures and tests
+- Inspect `.xls` internals - complete
+- Parse completed movements - complete
+- Parse pending movements - complete
+- Normalise dates and amounts - complete
+- Duplicate handling through Phase 1 prepared-import service - complete
+- Anonymised generated fixtures and tests - complete
 
 ## Phase 3 - Account PDF Importer
 

@@ -1,6 +1,6 @@
 # Architecture
 
-Current milestone: Phase 1 - Financial Core.
+Current milestone: Phase 2 - EVO/Bankinter Visa XLS Importer.
 
 ```text
 Vue renderer
@@ -14,7 +14,7 @@ Application services
 Import adapters / repositories / SQLite
 ```
 
-The Electron shell, typed preload API, renderer layout, validation setup, SQLite initialization, migrations, repositories, and prepared-import service are implemented. XLS/PDF import adapters, dashboards, categorisation, subscriptions, and reconciliation UI remain planned.
+The Electron shell, typed preload API, renderer layout, validation setup, SQLite initialization, migrations, repositories, prepared-import service, and EVO/Bankinter Visa XLS importer are implemented. Account PDF import, dashboards, categorisation, subscriptions, and reconciliation UI remain planned.
 
 ## Responsibilities
 
@@ -46,11 +46,25 @@ Migrations are explicit, ordered, numeric, and forward-only. Applied migrations 
 
 ## Import Adapter Architecture
 
-Import adapters are planned as separate modules from the normalised transaction model. Each adapter will parse one source format, validate extracted data, report confidence and errors, and produce a prepared import for the Phase 1 import service.
+Import adapters are separate modules from the normalised transaction model. Each adapter parses one source format, validates extracted data, reports confidence and errors, and produces a prepared import for the Phase 1 import service.
 
 The prepared-import service validates input, rejects duplicate committed file hashes for the same account, creates a pending batch, inserts all transactions in one SQLite transaction, and commits the batch atomically. Failed imports leave no partial transactions.
 
 Rollback is a deliberate operation for committed batches. It deletes imported transactions and related transaction links in one transaction, preserves the import-batch record, sets status to `rolled_back`, records `rolled_back_at`, and resets `transaction_count` to zero.
+
+## EVO Visa XLS Importer
+
+The detected EVO/Bankinter Visa export is a legacy Microsoft Excel BIFF workbook in a CFB/OLE2 container. The importer uses `@e965/xlsx` because built-in parsing is not sufficient for BIFF binary workbooks and the package can read the required legacy `.xls` format without the unfixed advisories reported for the older `xlsx` npm package.
+
+The importer remains main-process/application-layer code only. It exposes no renderer file picker, drag-and-drop, arbitrary parser options, or database CRUD IPC.
+
+Importer operations:
+
+- `canHandle` recognises the supported workbook structure.
+- `inspect` returns safe counts and structural warnings without writing to the database.
+- `prepare` returns a validated `PreparedImport` and performs no duplicate checks or database writes.
+
+The importer enforces a 5 MB maximum before loading workbook buffers. It stores only the basename as `sourceFileName` and calculates file hashes with the streaming SHA-256 utility.
 
 ## Deterministic Calculations
 
