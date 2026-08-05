@@ -1,12 +1,13 @@
 # Sampo
 
-Sampo is a local-first macOS desktop application for analysing personal finances. It is currently a secure Electron/Vue foundation only; importers, persistence, dashboards, reconciliation, categorisation, and AI features are planned but not implemented.
+Sampo is a local-first macOS desktop application for analysing personal finances. It currently has a secure Electron/Vue shell plus the Phase 1 local persistence and domain foundation. XLS/PDF importers, dashboards, reconciliation UI, categorisation, subscriptions, and AI features are planned but not implemented.
 
 ## Stack
 
 - Electron, electron-vite, Vite
 - Vue 3, Vue Router, Pinia
 - TypeScript, Zod
+- SQLite through `better-sqlite3` in the Electron main process
 - npm, Vitest, ESLint, Prettier
 - electron-builder for personal macOS packaging
 
@@ -57,12 +58,16 @@ Distributable artifacts are written to `release/`. Electron production build out
 
 Sampo is designed for local financial data. Do not place real bank statements, Visa exports, SQLite databases, or other genuine financial files inside this repository.
 
+The application database is local-only at `app.getPath('userData')/sampo.sqlite3`. Tests use explicitly supplied temporary database paths and must never open the real application database.
+
 ## Current Limitations
 
-- No financial import pipeline
-- No SQLite database or migrations
-- No transaction model or duplicate detection
-- No reconciliation, categorisation, subscriptions, dashboards, or AI analysis
+- No XLS or PDF parser
+- No import preview UI
+- No dashboards or transaction analysis
+- No reconciliation UI
+- No categorisation or subscription detection
+- No AI analysis
 - No signing, notarisation, auto-update, telemetry, or cloud synchronisation
 
 ## Documentation

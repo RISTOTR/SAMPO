@@ -1,6 +1,6 @@
 # Data Model
 
-Current milestone: preliminary planning only. No final database schema exists yet.
+Current milestone: Phase 1 implemented schema foundation. The database schema may still evolve through forward-only migrations before external-user use.
 
 ## Locked Conventions
 
@@ -8,31 +8,39 @@ Current milestone: preliminary planning only. No final database schema exists ye
 - Outgoing money is negative.
 - Money is stored as integer cents.
 - Dates use ISO `YYYY-MM-DD`.
+- Timestamps use UTC ISO date-time strings.
+- The default currency is `EUR`.
 - Every imported transaction belongs to an import batch.
+- Every imported transaction belongs to an account.
 - Card settlements remain visible but are excluded from spending after reconciliation.
 - Own-account transfers remain visible but are excluded from income and spending.
 - Pending Visa movements are not included in final monthly totals.
+- Financial totals must never use floating-point values.
+- Phase 1 rejects zero-value transactions. Source-specific importers may later add explicit handling if a real source requires them.
+
+## Implemented Tables
+
+`accounts` stores local account metadata: `id`, `name`, `kind`, optional `institution`, `currency`, and timestamps. It does not store IBANs, full card numbers, or credentials.
+
+`import_batches` records one prepared import attempt, including account, source kind, source filename only, SHA-256 hash, optional statement period, status, transaction count, and lifecycle timestamps.
+
+`transactions` stores normalised imported movements with account, import batch, source row index, dates, optional reference, required original description, optional normalised merchant, integer-cent amount, optional balance, currency, transaction type, pending flag, spending exclusion flag, review status, and timestamps.
+
+`transaction_links` stores directional links between transactions for future reconciliation. Links can represent card settlements, own-account transfers, refunds, or related transactions. Link creation does not change amounts.
+
+`schema_migrations` records applied forward-only database migrations.
 
 ## Planned Entities
 
-`Account` represents a local financial account or card source.
+The following planned entities are not implemented in Phase 1:
 
-`ImportBatch` records one attempted file import, including source type, file hash, validation status, and rollback metadata.
+- `Merchant`
+- `MerchantAlias`
+- `Category`
+- `CategorisationRule`
+- `RecurringSeries`
+- `MonthlyReport`
 
-`Transaction` represents a normalised movement with date, amount in cents, description, account, import batch, and review state.
+`TransactionLink` is implemented as the foundation for future reconciliation, but reconciliation behaviour itself remains planned.
 
-`Merchant` represents a canonical merchant identity.
-
-`MerchantAlias` maps raw descriptions or detected names to a merchant.
-
-`Category` represents user-controlled spending or income categories.
-
-`CategorisationRule` stores deterministic user rules for applying categories.
-
-`RecurringSeries` represents subscriptions or recurring payment candidates.
-
-`TransactionLink` represents relationships such as Visa purchase to settlement, refund to purchase, or own-account transfer pairs.
-
-`MonthlyReport` represents reproducible monthly summary outputs derived from stored transactions and rules.
-
-Fields and relationships are preliminary and will be refined when SQLite and migrations are introduced.
+Fields and relationships remain subject to forward-only migrations once importer evidence is available.

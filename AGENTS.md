@@ -19,6 +19,8 @@
 - Database and filesystem access belong in the Electron main process.
 - The Vue renderer must never access SQLite, Node.js or the filesystem directly.
 - Expose only narrow, typed preload APIs.
+- Tests that exercise persistence must use explicit temporary database paths.
+- Never open or modify the real user database from automated tests.
 - Import adapters must remain separate from the normalised transaction model.
 - Avoid large components and unrelated refactoring.
 - Do not add dependencies without a clear reason.

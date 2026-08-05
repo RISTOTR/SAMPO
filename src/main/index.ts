@@ -1,12 +1,14 @@
 import { app, BrowserWindow, ipcMain, session, WebContents } from 'electron'
 import { join } from 'path'
-import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { IPC_CHANNELS } from '../shared/ipc'
+import { createApplicationDatabase, type SampoDatabase } from './storage/database'
+
+let sampoDatabase: SampoDatabase | undefined
 
 function isTrustedSender(sender: WebContents): boolean {
   const senderUrl = sender.getURL()
 
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+  if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
     return senderUrl.startsWith(process.env['ELECTRON_RENDERER_URL'])
   }
 
@@ -47,7 +49,7 @@ function createWindow(): void {
     mainWindow.show()
   })
 
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+  if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
@@ -56,14 +58,11 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   app.setName('Sampo')
-  electronApp.setAppUserModelId('es.ristotapani.sampo')
+  app.setAppUserModelId('es.ristotapani.sampo')
+  sampoDatabase = createApplicationDatabase()
 
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
     callback(false)
-  })
-
-  app.on('browser-window-created', (_, window) => {
-    optimizer.watchWindowShortcuts(window)
   })
 
   ipcMain.handle(IPC_CHANNELS.getAppInfo, (event) => {
@@ -92,4 +91,9 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+app.on('before-quit', () => {
+  sampoDatabase?.close()
+  sampoDatabase = undefined
 })

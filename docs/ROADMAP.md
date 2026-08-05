@@ -1,6 +1,6 @@
 # Roadmap
 
-Current milestone: Phase 0 - Foundation.
+Current milestone: Phase 1 - Financial Core complete.
 
 ## Phase 0 - Foundation
 
@@ -11,13 +11,13 @@ Current milestone: Phase 0 - Foundation.
 
 ## Phase 1 - Financial Core
 
-- Domain model
-- SQLite
-- Migrations
-- Import batches
-- File hashing
-- Rollback
-- Transaction repository
+- Domain model - complete
+- SQLite - complete
+- Migrations - complete
+- Import batches - complete
+- File hashing - complete
+- Rollback - complete
+- Transaction repository - complete
 
 ## Phase 2 - Visa Importer
 
