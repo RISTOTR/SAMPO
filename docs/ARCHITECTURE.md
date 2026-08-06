@@ -1,6 +1,6 @@
 # Architecture
 
-Current milestone: Phase 5 - End-to-End Import and Reconciliation UI complete.
+Current milestone: Phase 6 - Transaction Categorisation and Merchant Rules complete.
 
 ```text
 Vue renderer
@@ -14,7 +14,7 @@ Application services
 Import adapters / repositories / SQLite
 ```
 
-The Electron shell, typed preload API, renderer layout, validation setup, SQLite initialization, migrations, repositories, prepared-import service, EVO/Bankinter Visa XLS importer, EVO/Bankinter account PDF importer, Visa settlement reconciliation service, account management UI, import preview UI, transaction list UI, import history, and reconciliation review workflow are implemented. Dashboards, categorisation, subscriptions, charts, and AI remain planned.
+The Electron shell, typed preload API, renderer layout, validation setup, SQLite initialization, migrations, repositories, prepared-import service, EVO/Bankinter Visa XLS importer, EVO/Bankinter account PDF importer, Visa settlement reconciliation service, account/import/transaction/reconciliation UI, and deterministic transaction categorisation are implemented. Subscriptions, recurring-series detection, charts, monthly analysis, and AI remain planned.
 
 ## Responsibilities
 
@@ -123,6 +123,18 @@ credit-card account -> EVO Visa XLS
 Imports remain all-or-nothing. Preview and inspection do not write to SQLite. Commit revalidates source compatibility and file hash, then uses the existing atomic prepared-import service. Import history supports rollback for unreconciled committed batches and communicates active reconciliation blocking.
 
 The transaction list uses focused repository filtering and pagination with a default page size of 50. The reconciliation review workflow lists card settlements, displays candidate Visa batches, requires explicit preview and confirmation, and supports explicit reversal.
+
+## Phase 6 Categorisation
+
+Categorisation is main-process/application-layer code. Imported transaction facts remain in `transactions`; user-managed enrichment lives in separate classification tables. Renderer APIs are grouped under `window.sampo.categories`, `window.sampo.merchants`, `window.sampo.merchantAliases`, `window.sampo.classification`, and `window.sampo.rules`.
+
+Categories are a two-level tree with seeded default system categories. Merchants are canonical user records. Merchant aliases use deterministic case-insensitive matching with normalised whitespace and supported match kinds: exact, starts-with, and contains. User-provided regular expressions and AI merchant lookup are not implemented.
+
+Rule evaluation is deterministic and read-only until an explicit apply operation. Alias ranking is exact over starts-with over contains, then higher priority. Rule ranking prefers merchant rules over exact description rules, then starts-with, then contains, with priority applied inside each rank. Equal-rank conflicting outputs become `ambiguous` and require review.
+
+Manual classifications are authoritative. Automatic and historical rule application preserve manual rows by default and never changes imported amounts, dates, descriptions, reconciliation links, or import-batch history. After a successful import commit, active rules are evaluated synchronously for the newly inserted transactions; categorisation failures are swallowed so a valid financial import remains committed.
+
+Reconciliation remains independent. Broad description rules do not automatically assign ordinary categories to card settlements or transfers; exact or merchant-targeted rules are required. Reversing reconciliation does not erase classification.
 
 ## Deterministic Calculations
 

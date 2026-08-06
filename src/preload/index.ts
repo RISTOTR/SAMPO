@@ -44,6 +44,38 @@ const sampo: SampoApi = {
       ),
     reverse: (settlementTransactionId) =>
       ipcRenderer.invoke(IPC_CHANNELS.reconciliationReverse, settlementTransactionId)
+  },
+  categories: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.categoriesList),
+    create: (input) => ipcRenderer.invoke(IPC_CHANNELS.categoriesCreate, input),
+    update: (input) => ipcRenderer.invoke(IPC_CHANNELS.categoriesUpdate, input),
+    deactivate: (id) => ipcRenderer.invoke(IPC_CHANNELS.categoriesDeactivate, id),
+    reactivate: (id) => ipcRenderer.invoke(IPC_CHANNELS.categoriesReactivate, id),
+    deleteUnused: (id) => ipcRenderer.invoke(IPC_CHANNELS.categoriesDeleteUnused, id)
+  },
+  merchants: {
+    list: (query) => ipcRenderer.invoke(IPC_CHANNELS.merchantsList, query),
+    create: (input) => ipcRenderer.invoke(IPC_CHANNELS.merchantsCreate, input),
+    update: (input) => ipcRenderer.invoke(IPC_CHANNELS.merchantsUpdate, input)
+  },
+  merchantAliases: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.merchantAliasesList),
+    create: (input) => ipcRenderer.invoke(IPC_CHANNELS.merchantAliasesCreate, input),
+    update: (input) => ipcRenderer.invoke(IPC_CHANNELS.merchantAliasesUpdate, input),
+    deactivate: (id) => ipcRenderer.invoke(IPC_CHANNELS.merchantAliasesDeactivate, id)
+  },
+  classification: {
+    get: (transactionId) => ipcRenderer.invoke(IPC_CHANNELS.classificationGet, transactionId),
+    saveManual: (input) => ipcRenderer.invoke(IPC_CHANNELS.classificationSaveManual, input),
+    previewRule: (input) => ipcRenderer.invoke(IPC_CHANNELS.classificationPreviewRule, input),
+    createRule: (input) => ipcRenderer.invoke(IPC_CHANNELS.classificationCreateRule, input),
+    applyRule: (input) => ipcRenderer.invoke(IPC_CHANNELS.classificationApplyRule, input),
+    bulkUpdate: (input) => ipcRenderer.invoke(IPC_CHANNELS.classificationBulkUpdate, input)
+  },
+  rules: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.rulesList),
+    activate: (id) => ipcRenderer.invoke(IPC_CHANNELS.rulesActivate, id),
+    deactivate: (id) => ipcRenderer.invoke(IPC_CHANNELS.rulesDeactivate, id)
   }
 }
 

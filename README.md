@@ -1,6 +1,6 @@
 # Sampo
 
-Sampo is a local-first macOS desktop application for analysing personal finances. It currently has a secure Electron/Vue shell, the local persistence/domain foundation, tested EVO/Bankinter Visa XLS and account PDF importers, exact Visa settlement reconciliation, and a first usable import/reconciliation UI workflow. Dashboards, categorisation, subscriptions, charts, and AI features are planned but not implemented.
+Sampo is a local-first macOS desktop application for analysing personal finances. It currently has a secure Electron/Vue shell, the local persistence/domain foundation, tested EVO/Bankinter Visa XLS and account PDF importers, exact Visa settlement reconciliation, a usable import/reconciliation UI workflow, and deterministic transaction categorisation with merchant aliases and user-approved rules. Dashboards, subscriptions, charts, recurring-series detection, and AI features are planned but not implemented.
 
 ## Stack
 
@@ -73,9 +73,8 @@ The application database is local-only at `app.getPath('userData')/sampo.sqlite3
 ## Current Limitations
 
 - No dashboards or transaction analysis
-- No reconciliation UI
 - No reconciliation review polish beyond the Phase 5 workflow
-- No categorisation or subscription detection
+- No subscription or recurring-series detection
 - No charts or financial insights
 - No own-account transfer detection or fuzzy/partial reconciliation
 - No AI analysis

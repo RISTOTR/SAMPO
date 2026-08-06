@@ -147,6 +147,13 @@ export class TransactionRepository {
     transactionType?: TransactionType
     pending?: boolean
     excludedFromSpending?: boolean
+    categoryId?: string
+    merchantId?: string
+    usageType?: string
+    costBehaviour?: string
+    necessity?: string
+    classificationStatus?: string
+    unclassifiedOnly?: boolean
     sortBy: 'transactionDate' | 'amount'
     sortDirection: 'asc' | 'desc'
     limit: number
@@ -156,48 +163,92 @@ export class TransactionRepository {
     const params: Record<string, string | number> = {}
 
     if (query.accountId) {
-      where.push('account_id = @accountId')
+      where.push('transactions.account_id = @accountId')
       params['accountId'] = query.accountId
     }
 
     if (query.dateFrom) {
-      where.push('transaction_date >= @dateFrom')
+      where.push('transactions.transaction_date >= @dateFrom')
       params['dateFrom'] = query.dateFrom
     }
 
     if (query.dateTo) {
-      where.push('transaction_date <= @dateTo')
+      where.push('transactions.transaction_date <= @dateTo')
       params['dateTo'] = query.dateTo
     }
 
     if (query.transactionType) {
-      where.push('transaction_type = @transactionType')
+      where.push('transactions.transaction_type = @transactionType')
       params['transactionType'] = query.transactionType
     }
 
     if (query.pending !== undefined) {
-      where.push('is_pending = @isPending')
+      where.push('transactions.is_pending = @isPending')
       params['isPending'] = query.pending ? 1 : 0
     }
 
     if (query.excludedFromSpending !== undefined) {
-      where.push('excluded_from_spending = @excludedFromSpending')
+      where.push('transactions.excluded_from_spending = @excludedFromSpending')
       params['excludedFromSpending'] = query.excludedFromSpending ? 1 : 0
     }
 
+    if (query.categoryId) {
+      where.push('classification.category_id = @categoryId')
+      params['categoryId'] = query.categoryId
+    }
+
+    if (query.merchantId) {
+      where.push('classification.merchant_id = @merchantId')
+      params['merchantId'] = query.merchantId
+    }
+
+    if (query.usageType) {
+      where.push('classification.usage_type = @usageType')
+      params['usageType'] = query.usageType
+    }
+
+    if (query.costBehaviour) {
+      where.push('classification.cost_behaviour = @costBehaviour')
+      params['costBehaviour'] = query.costBehaviour
+    }
+
+    if (query.necessity) {
+      where.push('classification.necessity = @necessity')
+      params['necessity'] = query.necessity
+    }
+
+    if (query.classificationStatus) {
+      where.push('classification.classification_status = @classificationStatus')
+      params['classificationStatus'] = query.classificationStatus
+    }
+
+    if (query.unclassifiedOnly) {
+      where.push(
+        "(classification.transaction_id IS NULL OR classification.classification_source = 'unclassified')"
+      )
+    }
+
     const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''
-    const orderColumn = query.sortBy === 'amount' ? 'amount_cents' : 'transaction_date'
+    const orderColumn =
+      query.sortBy === 'amount' ? 'transactions.amount_cents' : 'transactions.transaction_date'
     const direction = query.sortDirection === 'asc' ? 'ASC' : 'DESC'
+    const fromSql = `
+      FROM transactions transactions
+      LEFT JOIN transaction_classifications classification
+        ON classification.transaction_id = transactions.id
+    `
     const total = this.database
-      .prepare(`SELECT COUNT(*) AS count FROM transactions ${whereSql}`)
+      .prepare(`SELECT COUNT(*) AS count ${fromSql} ${whereSql}`)
       .get(params) as { count: number }
 
     const items = this.database
       .prepare(
         `
-          SELECT * FROM transactions
+          SELECT transactions.* FROM transactions transactions
+          LEFT JOIN transaction_classifications classification
+            ON classification.transaction_id = transactions.id
           ${whereSql}
-          ORDER BY ${orderColumn} ${direction}, created_at DESC
+          ORDER BY ${orderColumn} ${direction}, transactions.created_at DESC
           LIMIT @limit OFFSET @offset
         `
       )
@@ -208,6 +259,21 @@ export class TransactionRepository {
       items,
       total: total.count
     }
+  }
+
+  listCommittedForClassification(): Transaction[] {
+    return this.database
+      .prepare(
+        `
+          SELECT transactions.*
+          FROM transactions transactions
+          JOIN import_batches batches ON batches.id = transactions.import_batch_id
+          WHERE batches.status = 'committed'
+          ORDER BY transactions.transaction_date ASC, transactions.created_at ASC
+        `
+      )
+      .all()
+      .map((row) => transactionSchema.parse(mapTransaction(row as never)))
   }
 
   insertForImportBatch(input: {

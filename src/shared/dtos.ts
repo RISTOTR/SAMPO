@@ -18,6 +18,12 @@ export const transactionTypeDtoSchema = z.enum([
 export const reviewStatusDtoSchema = z.enum(['confirmed', 'needs_review'])
 export const sortDirectionDtoSchema = z.enum(['asc', 'desc'])
 export const transactionSortByDtoSchema = z.enum(['transactionDate', 'amount'])
+export const aliasMatchKindDtoSchema = z.enum(['exact', 'starts_with', 'contains'])
+export const usageTypeDtoSchema = z.enum(['personal', 'business', 'mixed', 'unspecified'])
+export const costBehaviourDtoSchema = z.enum(['fixed', 'variable', 'unspecified'])
+export const necessityDtoSchema = z.enum(['essential', 'discretionary', 'unspecified'])
+export const classificationSourceDtoSchema = z.enum(['manual', 'rule', 'unclassified'])
+export const classificationStatusDtoSchema = z.enum(['confirmed', 'needs_review', 'ambiguous'])
 
 export const uuidDtoSchema = z.string().uuid()
 export const isoDateDtoSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -43,6 +49,19 @@ export const operationErrorCodeDtoSchema = z.enum([
   'amount_mismatch',
   'ambiguous_candidate',
   'invalid_reconciliation_state',
+  'category_not_found',
+  'category_in_use',
+  'category_cycle',
+  'duplicate_category',
+  'merchant_not_found',
+  'duplicate_merchant',
+  'alias_conflict',
+  'rule_not_found',
+  'invalid_rule',
+  'ambiguous_classification',
+  'manual_classification_preserved',
+  'bulk_update_conflict',
+  'entity_in_use',
   'database_error',
   'unexpected_error'
 ])
@@ -167,10 +186,31 @@ export const transactionListQueryDtoSchema = z.object({
   transactionType: transactionTypeDtoSchema.optional(),
   pending: z.boolean().optional(),
   excludedFromSpending: z.boolean().optional(),
+  categoryId: uuidDtoSchema.optional(),
+  merchantId: uuidDtoSchema.optional(),
+  usageType: usageTypeDtoSchema.optional(),
+  costBehaviour: costBehaviourDtoSchema.optional(),
+  necessity: necessityDtoSchema.optional(),
+  classificationStatus: classificationStatusDtoSchema.optional(),
+  unclassifiedOnly: z.boolean().optional(),
   sortBy: transactionSortByDtoSchema.default('transactionDate'),
   sortDirection: sortDirectionDtoSchema.default('desc'),
   limit: z.number().int().min(1).max(100).default(50),
   offset: z.number().int().min(0).default(0)
+})
+
+export const classificationSummaryDtoSchema = z.object({
+  merchantId: uuidDtoSchema.optional(),
+  merchantName: z.string().min(1).optional(),
+  categoryId: uuidDtoSchema.optional(),
+  categoryPath: z.array(z.string().min(1)).optional(),
+  usageType: usageTypeDtoSchema,
+  costBehaviour: costBehaviourDtoSchema,
+  necessity: necessityDtoSchema,
+  classificationSource: classificationSourceDtoSchema,
+  classificationStatus: classificationStatusDtoSchema,
+  appliedRuleId: uuidDtoSchema.optional(),
+  appliedRuleName: z.string().min(1).optional()
 })
 
 export const transactionRowDtoSchema = z.object({
@@ -188,6 +228,7 @@ export const transactionRowDtoSchema = z.object({
   isPending: z.boolean(),
   excludedFromSpending: z.boolean(),
   reviewStatus: reviewStatusDtoSchema,
+  classification: classificationSummaryDtoSchema.optional(),
   createdAt: utcTimestampDtoSchema
 })
 
@@ -265,7 +306,152 @@ export const overviewStatsDtoSchema = z.object({
   accountCount: z.number().int().min(0),
   committedImportCount: z.number().int().min(0),
   transactionCount: z.number().int().min(0),
-  unreconciledCardSettlementCount: z.number().int().min(0)
+  unreconciledCardSettlementCount: z.number().int().min(0),
+  classifiedTransactionCount: z.number().int().min(0).optional(),
+  unclassifiedTransactionCount: z.number().int().min(0).optional(),
+  classificationNeedsReviewCount: z.number().int().min(0).optional(),
+  activeCategorisationRuleCount: z.number().int().min(0).optional()
+})
+
+export const categoryDtoSchema = z.object({
+  id: uuidDtoSchema,
+  key: z.string().min(1).optional(),
+  name: z.string().min(1),
+  parentId: uuidDtoSchema.optional(),
+  sortOrder: z.number().int(),
+  isSystem: z.boolean(),
+  isActive: z.boolean(),
+  createdAt: utcTimestampDtoSchema,
+  updatedAt: utcTimestampDtoSchema
+})
+
+export const createCategoryInputDtoSchema = z.object({
+  name: z.string().trim().min(1),
+  parentId: uuidDtoSchema.optional(),
+  sortOrder: z.number().int().default(0)
+})
+
+export const updateCategoryInputDtoSchema = createCategoryInputDtoSchema.extend({
+  id: uuidDtoSchema
+})
+
+export const merchantDtoSchema = z.object({
+  id: uuidDtoSchema,
+  name: z.string().min(1),
+  createdAt: utcTimestampDtoSchema,
+  updatedAt: utcTimestampDtoSchema
+})
+
+export const merchantListQueryDtoSchema = z.object({
+  search: z.string().trim().min(1).optional()
+})
+
+export const createMerchantInputDtoSchema = z.object({
+  name: z.string().trim().min(1)
+})
+
+export const updateMerchantInputDtoSchema = createMerchantInputDtoSchema.extend({
+  id: uuidDtoSchema
+})
+
+export const merchantAliasDtoSchema = z.object({
+  id: uuidDtoSchema,
+  merchantId: uuidDtoSchema,
+  matchKind: aliasMatchKindDtoSchema,
+  pattern: z.string().min(1),
+  priority: z.number().int(),
+  isActive: z.boolean(),
+  createdAt: utcTimestampDtoSchema,
+  updatedAt: utcTimestampDtoSchema
+})
+
+export const createMerchantAliasInputDtoSchema = z.object({
+  merchantId: uuidDtoSchema,
+  matchKind: aliasMatchKindDtoSchema,
+  pattern: z.string().trim().min(1),
+  priority: z.number().int().default(0)
+})
+
+export const updateMerchantAliasInputDtoSchema = createMerchantAliasInputDtoSchema.extend({
+  id: uuidDtoSchema
+})
+
+export const classificationConflictDtoSchema = z.object({
+  field: z.enum(['merchant', 'category', 'usageType', 'costBehaviour', 'necessity']),
+  reason: z.string().min(1)
+})
+
+export const classificationProposalDtoSchema = z.object({
+  transactionId: uuidDtoSchema,
+  merchantId: uuidDtoSchema.optional(),
+  merchantName: z.string().min(1).optional(),
+  categoryId: uuidDtoSchema.optional(),
+  categoryPath: z.array(z.string().min(1)).optional(),
+  usageType: usageTypeDtoSchema,
+  costBehaviour: costBehaviourDtoSchema,
+  necessity: necessityDtoSchema,
+  matchedRuleId: uuidDtoSchema.optional(),
+  matchedRuleName: z.string().min(1).optional(),
+  status: classificationStatusDtoSchema,
+  source: classificationSourceDtoSchema,
+  conflicts: z.array(classificationConflictDtoSchema)
+})
+
+export const saveManualClassificationInputDtoSchema = z.object({
+  transactionId: uuidDtoSchema,
+  merchantId: uuidDtoSchema.optional(),
+  categoryId: uuidDtoSchema.optional(),
+  usageType: usageTypeDtoSchema.default('unspecified'),
+  costBehaviour: costBehaviourDtoSchema.default('unspecified'),
+  necessity: necessityDtoSchema.default('unspecified')
+})
+
+export const ruleInputDtoSchema = z.object({
+  name: z.string().trim().min(1),
+  merchantId: uuidDtoSchema.optional(),
+  descriptionMatchKind: aliasMatchKindDtoSchema.optional(),
+  descriptionPattern: z.string().trim().min(1).optional(),
+  categoryId: uuidDtoSchema.optional(),
+  usageType: usageTypeDtoSchema.default('unspecified'),
+  costBehaviour: costBehaviourDtoSchema.default('unspecified'),
+  necessity: necessityDtoSchema.default('unspecified'),
+  priority: z.number().int().default(0)
+})
+
+export const categorisationRuleDtoSchema = ruleInputDtoSchema.extend({
+  id: uuidDtoSchema,
+  isActive: z.boolean(),
+  createdAt: utcTimestampDtoSchema,
+  updatedAt: utcTimestampDtoSchema
+})
+
+export const ruleApplicationPreviewDtoSchema = z.object({
+  matchCount: z.number().int().min(0),
+  manualPreservedCount: z.number().int().min(0),
+  ruleChangeCount: z.number().int().min(0),
+  ambiguousCount: z.number().int().min(0),
+  unchangedCount: z.number().int().min(0),
+  proposals: z.array(classificationProposalDtoSchema)
+})
+
+export const applyRuleInputDtoSchema = z.object({
+  ruleId: uuidDtoSchema,
+  overwriteRuleClassifications: z.boolean().default(false)
+})
+
+export const bulkClassificationInputDtoSchema = z.object({
+  transactionIds: z.array(uuidDtoSchema).min(1).max(100),
+  merchantId: uuidDtoSchema.optional(),
+  categoryId: uuidDtoSchema.optional(),
+  usageType: usageTypeDtoSchema.optional(),
+  costBehaviour: costBehaviourDtoSchema.optional(),
+  necessity: necessityDtoSchema.optional(),
+  markConfirmed: z.boolean().default(true),
+  overwriteManual: z.boolean().default(false)
+})
+
+export const bulkClassificationResultDtoSchema = z.object({
+  updatedCount: z.number().int().min(0)
 })
 
 export type AccountSummaryDto = z.infer<typeof accountSummaryDtoSchema>
@@ -280,10 +466,31 @@ export type ImportBatchSummaryDto = z.infer<typeof importBatchSummaryDtoSchema>
 export type TransactionListQueryDto = z.input<typeof transactionListQueryDtoSchema>
 export type TransactionPageDto = z.infer<typeof transactionPageDtoSchema>
 export type TransactionRowDto = z.infer<typeof transactionRowDtoSchema>
+export type ClassificationSummaryDto = z.infer<typeof classificationSummaryDtoSchema>
 export type SettlementSummaryDto = z.infer<typeof settlementSummaryDtoSchema>
 export type ReconciliationCandidateDto = z.infer<typeof reconciliationCandidateDtoSchema>
 export type ReconciliationPreviewDto = z.infer<typeof reconciliationPreviewDtoSchema>
 export type CommittedReconciliationDto = z.infer<typeof committedReconciliationDtoSchema>
 export type ReversedReconciliationDto = z.infer<typeof reversedReconciliationDtoSchema>
 export type OverviewStatsDto = z.infer<typeof overviewStatsDtoSchema>
+export type CategoryDto = z.infer<typeof categoryDtoSchema>
+export type CreateCategoryInputDto = z.input<typeof createCategoryInputDtoSchema>
+export type UpdateCategoryInputDto = z.input<typeof updateCategoryInputDtoSchema>
+export type MerchantDto = z.infer<typeof merchantDtoSchema>
+export type MerchantListQueryDto = z.input<typeof merchantListQueryDtoSchema>
+export type CreateMerchantInputDto = z.input<typeof createMerchantInputDtoSchema>
+export type UpdateMerchantInputDto = z.input<typeof updateMerchantInputDtoSchema>
+export type MerchantAliasDto = z.infer<typeof merchantAliasDtoSchema>
+export type CreateMerchantAliasInputDto = z.input<typeof createMerchantAliasInputDtoSchema>
+export type UpdateMerchantAliasInputDto = z.input<typeof updateMerchantAliasInputDtoSchema>
+export type ClassificationProposalDto = z.infer<typeof classificationProposalDtoSchema>
+export type SaveManualClassificationInputDto = z.input<
+  typeof saveManualClassificationInputDtoSchema
+>
+export type RuleInputDto = z.input<typeof ruleInputDtoSchema>
+export type CategorisationRuleDto = z.infer<typeof categorisationRuleDtoSchema>
+export type RuleApplicationPreviewDto = z.infer<typeof ruleApplicationPreviewDtoSchema>
+export type ApplyRuleInputDto = z.input<typeof applyRuleInputDtoSchema>
+export type BulkClassificationInputDto = z.input<typeof bulkClassificationInputDtoSchema>
+export type BulkClassificationResultDto = z.infer<typeof bulkClassificationResultDtoSchema>
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: OperationErrorDto }

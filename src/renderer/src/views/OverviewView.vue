@@ -38,6 +38,22 @@ onMounted(async () => {
           <dt>Unreconciled settlements</dt>
           <dd>{{ stats.unreconciledCardSettlementCount }}</dd>
         </div>
+        <div>
+          <dt>Classified</dt>
+          <dd>{{ stats.classifiedTransactionCount ?? 0 }}</dd>
+        </div>
+        <div>
+          <dt>Unclassified</dt>
+          <dd>{{ stats.unclassifiedTransactionCount ?? 0 }}</dd>
+        </div>
+        <div>
+          <dt>Needs classification review</dt>
+          <dd>{{ stats.classificationNeedsReviewCount ?? 0 }}</dd>
+        </div>
+        <div>
+          <dt>Active rules</dt>
+          <dd>{{ stats.activeCategorisationRuleCount ?? 0 }}</dd>
+        </div>
       </dl>
     </div>
   </section>

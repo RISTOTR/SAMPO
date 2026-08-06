@@ -21,6 +21,12 @@ export const transactionLinkKinds = [
   'refund',
   'related'
 ] as const
+export const aliasMatchKinds = ['exact', 'starts_with', 'contains'] as const
+export const usageTypes = ['personal', 'business', 'mixed', 'unspecified'] as const
+export const costBehaviours = ['fixed', 'variable', 'unspecified'] as const
+export const necessities = ['essential', 'discretionary', 'unspecified'] as const
+export const classificationSources = ['manual', 'rule', 'unclassified'] as const
+export const classificationStatuses = ['confirmed', 'needs_review', 'ambiguous'] as const
 
 export const reconciliationWarningCodes = [
   'settlement_not_found',
@@ -179,6 +185,68 @@ export const preparedImportSchema = z.object({
   transactions: z.array(newTransactionSchema).min(1)
 })
 
+export const categorySchema = z.object({
+  id: uuidSchema,
+  key: z.string().trim().min(1).optional(),
+  name: nonBlankStringSchema,
+  parentId: uuidSchema.optional(),
+  sortOrder: z.number().int(),
+  isSystem: z.boolean(),
+  isActive: z.boolean(),
+  createdAt: utcTimestampSchema,
+  updatedAt: utcTimestampSchema
+})
+
+export const merchantSchema = z.object({
+  id: uuidSchema,
+  name: nonBlankStringSchema,
+  createdAt: utcTimestampSchema,
+  updatedAt: utcTimestampSchema
+})
+
+export const merchantAliasSchema = z.object({
+  id: uuidSchema,
+  merchantId: uuidSchema,
+  matchKind: z.enum(aliasMatchKinds),
+  pattern: nonBlankStringSchema,
+  normalisedPattern: nonBlankStringSchema,
+  priority: z.number().int(),
+  isActive: z.boolean(),
+  createdAt: utcTimestampSchema,
+  updatedAt: utcTimestampSchema
+})
+
+export const categorisationRuleSchema = z.object({
+  id: uuidSchema,
+  name: nonBlankStringSchema,
+  merchantId: uuidSchema.optional(),
+  descriptionMatchKind: z.enum(aliasMatchKinds).optional(),
+  descriptionPattern: z.string().trim().min(1).optional(),
+  normalisedDescriptionPattern: z.string().trim().min(1).optional(),
+  categoryId: uuidSchema.optional(),
+  usageType: z.enum(usageTypes),
+  costBehaviour: z.enum(costBehaviours),
+  necessity: z.enum(necessities),
+  priority: z.number().int(),
+  isActive: z.boolean(),
+  createdAt: utcTimestampSchema,
+  updatedAt: utcTimestampSchema
+})
+
+export const transactionClassificationSchema = z.object({
+  transactionId: uuidSchema,
+  merchantId: uuidSchema.optional(),
+  categoryId: uuidSchema.optional(),
+  usageType: z.enum(usageTypes),
+  costBehaviour: z.enum(costBehaviours),
+  necessity: z.enum(necessities),
+  classificationSource: z.enum(classificationSources),
+  classificationStatus: z.enum(classificationStatuses),
+  appliedRuleId: uuidSchema.optional(),
+  createdAt: utcTimestampSchema,
+  updatedAt: utcTimestampSchema
+})
+
 export const reconciliationWarningSchema = z.object({
   code: z.enum(reconciliationWarningCodes),
   message: z.string().min(1),
@@ -251,3 +319,14 @@ export type AccountKind = (typeof accountKinds)[number]
 export type ImportStatus = (typeof importStatuses)[number]
 export type ImportSourceKind = (typeof importSourceKinds)[number]
 export type TransactionType = (typeof transactionTypes)[number]
+export type AliasMatchKind = (typeof aliasMatchKinds)[number]
+export type UsageType = (typeof usageTypes)[number]
+export type CostBehaviour = (typeof costBehaviours)[number]
+export type Necessity = (typeof necessities)[number]
+export type ClassificationSource = (typeof classificationSources)[number]
+export type ClassificationStatus = (typeof classificationStatuses)[number]
+export type Category = z.infer<typeof categorySchema>
+export type Merchant = z.infer<typeof merchantSchema>
+export type MerchantAlias = z.infer<typeof merchantAliasSchema>
+export type CategorisationRule = z.infer<typeof categorisationRuleSchema>
+export type TransactionClassification = z.infer<typeof transactionClassificationSchema>

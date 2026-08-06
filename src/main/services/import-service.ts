@@ -15,6 +15,7 @@ import { AccountRepository } from '../storage/accounts'
 import { ImportBatchRepository } from '../storage/import-batches'
 import { TransactionLinkRepository } from '../storage/transaction-links'
 import { TransactionRepository } from '../storage/transactions'
+import { ClassificationService } from '../categorisation/classification-service'
 
 export type CommitPreparedImportResult = {
   batch: ImportBatch
@@ -74,7 +75,17 @@ export class ImportService {
       }
     })
 
-    return commit()
+    const result = commit()
+
+    try {
+      new ClassificationService(this.database).applyToTransactions(
+        result.transactions.map((transaction) => transaction.id)
+      )
+    } catch {
+      // Classification enrichment must not invalidate a committed financial import.
+    }
+
+    return result
   }
 
   markPendingBatchFailed(id: string): ImportBatch {

@@ -62,6 +62,56 @@ export function registerApplicationIpcHandlers(
   handle(IPC_CHANNELS.reconciliationReverse, isTrustedSender, (settlementTransactionId) =>
     workflow.reverseReconciliation(z.string().uuid().parse(settlementTransactionId))
   )
+  handle(IPC_CHANNELS.categoriesList, isTrustedSender, () => workflow.listCategories())
+  handle(IPC_CHANNELS.categoriesCreate, isTrustedSender, (input) => workflow.createCategory(input))
+  handle(IPC_CHANNELS.categoriesUpdate, isTrustedSender, (input) => workflow.updateCategory(input))
+  handle(IPC_CHANNELS.categoriesDeactivate, isTrustedSender, (id) =>
+    workflow.deactivateCategory(z.string().uuid().parse(id))
+  )
+  handle(IPC_CHANNELS.categoriesReactivate, isTrustedSender, (id) =>
+    workflow.reactivateCategory(z.string().uuid().parse(id))
+  )
+  handle(IPC_CHANNELS.categoriesDeleteUnused, isTrustedSender, (id) => {
+    workflow.deleteUnusedCategory(z.string().uuid().parse(id))
+  })
+  handle(IPC_CHANNELS.merchantsList, isTrustedSender, (query) => workflow.listMerchants(query))
+  handle(IPC_CHANNELS.merchantsCreate, isTrustedSender, (input) => workflow.createMerchant(input))
+  handle(IPC_CHANNELS.merchantsUpdate, isTrustedSender, (input) => workflow.updateMerchant(input))
+  handle(IPC_CHANNELS.merchantAliasesList, isTrustedSender, () => workflow.listMerchantAliases())
+  handle(IPC_CHANNELS.merchantAliasesCreate, isTrustedSender, (input) =>
+    workflow.createMerchantAlias(input)
+  )
+  handle(IPC_CHANNELS.merchantAliasesUpdate, isTrustedSender, (input) =>
+    workflow.updateMerchantAlias(input)
+  )
+  handle(IPC_CHANNELS.merchantAliasesDeactivate, isTrustedSender, (id) =>
+    workflow.deactivateMerchantAlias(z.string().uuid().parse(id))
+  )
+  handle(IPC_CHANNELS.classificationGet, isTrustedSender, (transactionId) =>
+    workflow.getClassification(z.string().uuid().parse(transactionId))
+  )
+  handle(IPC_CHANNELS.classificationSaveManual, isTrustedSender, (input) =>
+    workflow.saveManualClassification(input)
+  )
+  handle(IPC_CHANNELS.classificationPreviewRule, isTrustedSender, (input) =>
+    workflow.previewRule(input)
+  )
+  handle(IPC_CHANNELS.classificationCreateRule, isTrustedSender, (input) =>
+    workflow.createRule(input)
+  )
+  handle(IPC_CHANNELS.classificationApplyRule, isTrustedSender, (input) =>
+    workflow.applyRule(input)
+  )
+  handle(IPC_CHANNELS.classificationBulkUpdate, isTrustedSender, (input) =>
+    workflow.bulkUpdateClassification(input)
+  )
+  handle(IPC_CHANNELS.rulesList, isTrustedSender, () => workflow.listRules())
+  handle(IPC_CHANNELS.rulesActivate, isTrustedSender, (id) =>
+    workflow.activateRule(z.string().uuid().parse(id))
+  )
+  handle(IPC_CHANNELS.rulesDeactivate, isTrustedSender, (id) =>
+    workflow.deactivateRule(z.string().uuid().parse(id))
+  )
 }
 
 function handle<T>(

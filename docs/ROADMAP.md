@@ -1,6 +1,6 @@
 # Roadmap
 
-Current milestone: Phase 5 - End-to-End Import and Reconciliation UI complete.
+Current milestone: Phase 6 - Transaction Categorisation and Merchant Rules complete.
 
 ## Phase 0 - Foundation
 
@@ -62,11 +62,13 @@ Current milestone: Phase 5 - End-to-End Import and Reconciliation UI complete.
 
 ## Phase 6 - Categorisation
 
-- Categories
-- Merchant normalisation
-- Manual corrections
-- Reusable rules
-- Business/personal classification
+- Categories and subcategories - complete
+- Canonical merchants and aliases - complete
+- Manual transaction classification - complete
+- Reusable deterministic rules - complete
+- Historical rule preview and application - complete
+- Business/personal, fixed/variable and essential/discretionary classification - complete
+- Transaction filters by classification data - complete
 
 ## Phase 7 - Subscriptions and Analysis
 

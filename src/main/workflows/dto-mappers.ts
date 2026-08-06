@@ -1,17 +1,29 @@
 import type {
   Account,
+  CategorisationRule,
+  Category,
   ImportBatch,
   ImportSourceKind,
+  Merchant,
+  MerchantAlias,
   NewTransaction,
   ReconciliationCandidate,
   SettlementReconciliationPreview,
-  Transaction
+  Transaction,
+  TransactionClassification
 } from '../domain/schemas'
+import type { ClassificationProposal } from '../categorisation/classification-service'
 import type { ImportInspection } from '../importers/types'
 import type {
   AccountSummaryDto,
+  CategorisationRuleDto,
+  CategoryDto,
+  ClassificationProposalDto,
+  ClassificationSummaryDto,
   ImportBatchSummaryDto,
   ImportPreviewTransactionDto,
+  MerchantAliasDto,
+  MerchantDto,
   ReconciliationCandidateDto,
   ReconciliationPreviewDto,
   SettlementSummaryDto,
@@ -66,7 +78,11 @@ export function previewTransactionToDto(
   }
 }
 
-export function transactionToRowDto(transaction: Transaction, account: Account): TransactionRowDto {
+export function transactionToRowDto(
+  transaction: Transaction,
+  account: Account,
+  classification?: ClassificationSummaryDto
+): TransactionRowDto {
   return {
     id: transaction.id,
     accountId: transaction.accountId,
@@ -82,7 +98,101 @@ export function transactionToRowDto(transaction: Transaction, account: Account):
     isPending: transaction.isPending,
     excludedFromSpending: transaction.excludedFromSpending,
     reviewStatus: transaction.reviewStatus,
+    classification,
     createdAt: transaction.createdAt
+  }
+}
+
+export function categoryToDto(category: Category): CategoryDto {
+  return {
+    id: category.id,
+    key: category.key,
+    name: category.name,
+    parentId: category.parentId,
+    sortOrder: category.sortOrder,
+    isSystem: category.isSystem,
+    isActive: category.isActive,
+    createdAt: category.createdAt,
+    updatedAt: category.updatedAt
+  }
+}
+
+export function merchantToDto(merchant: Merchant): MerchantDto {
+  return {
+    id: merchant.id,
+    name: merchant.name,
+    createdAt: merchant.createdAt,
+    updatedAt: merchant.updatedAt
+  }
+}
+
+export function merchantAliasToDto(alias: MerchantAlias): MerchantAliasDto {
+  return {
+    id: alias.id,
+    merchantId: alias.merchantId,
+    matchKind: alias.matchKind,
+    pattern: alias.pattern,
+    priority: alias.priority,
+    isActive: alias.isActive,
+    createdAt: alias.createdAt,
+    updatedAt: alias.updatedAt
+  }
+}
+
+export function ruleToDto(rule: CategorisationRule): CategorisationRuleDto {
+  return {
+    id: rule.id,
+    name: rule.name,
+    merchantId: rule.merchantId,
+    descriptionMatchKind: rule.descriptionMatchKind,
+    descriptionPattern: rule.descriptionPattern,
+    categoryId: rule.categoryId,
+    usageType: rule.usageType,
+    costBehaviour: rule.costBehaviour,
+    necessity: rule.necessity,
+    priority: rule.priority,
+    isActive: rule.isActive,
+    createdAt: rule.createdAt,
+    updatedAt: rule.updatedAt
+  }
+}
+
+export function proposalToDto(proposal: ClassificationProposal): ClassificationProposalDto {
+  return {
+    transactionId: proposal.transactionId,
+    merchantId: proposal.merchantId,
+    merchantName: proposal.merchantName,
+    categoryId: proposal.categoryId,
+    categoryPath: proposal.categoryPath,
+    usageType: proposal.usageType,
+    costBehaviour: proposal.costBehaviour,
+    necessity: proposal.necessity,
+    matchedRuleId: proposal.matchedRuleId,
+    matchedRuleName: proposal.matchedRuleName,
+    status: proposal.status,
+    source: proposal.source,
+    conflicts: proposal.conflicts
+  }
+}
+
+export function classificationToSummaryDto(input: {
+  classification: TransactionClassification
+  merchantName?: string
+  categoryPath?: string[]
+  appliedRuleName?: string
+}): ClassificationSummaryDto {
+  return {
+    merchantId: input.classification.merchantId,
+    merchantName: input.merchantName,
+    categoryId: input.classification.categoryId,
+    categoryPath: input.categoryPath,
+    usageType: input.classification.usageType,
+    costBehaviour: input.classification.costBehaviour,
+    necessity: input.classification.necessity,
+    classificationSource: input.classification.classificationSource,
+    classificationStatus: input.classification.classificationStatus,
+    appliedRuleId: input.classification.appliedRuleId,
+    appliedRuleName: input.appliedRuleName
   }
 }
 

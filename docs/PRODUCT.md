@@ -16,7 +16,8 @@ Bank exports are fragmented: Visa purchases, pending movements, card settlements
 - Clear monthly spending and income summaries
 - Duplicate-resistant imports
 - Visible reconciliation between card purchases and card settlement payments
-- Better merchant, category, location, date, and weekday analysis
+- Deterministic merchant and category enrichment for imported transactions
+- Better location, date, and weekday analysis later
 - Optional explanations and suggestions later, without treating AI as authoritative
 
 ## Privacy Principles

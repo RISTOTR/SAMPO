@@ -1,6 +1,6 @@
 # Data Model
 
-Current milestone: Phase 5 end-to-end import and reconciliation UI over the Phase 1 schema foundation. The database schema may still evolve through forward-only migrations before external-user use.
+Current milestone: Phase 6 transaction categorisation over the Phase 1-5 import and reconciliation foundation. The database schema may still evolve through forward-only migrations before external-user use.
 
 ## Locked Conventions
 
@@ -28,16 +28,20 @@ Current milestone: Phase 5 end-to-end import and reconciliation UI over the Phas
 
 `transaction_links` stores directional links between transactions for future reconciliation. Links can represent card settlements, own-account transfers, refunds, or related transactions. Link creation does not change amounts.
 
+`categories` stores a two-level category tree. Default system categories are seeded with stable IDs. User categories can be added, deactivated, reactivated, and deleted only while unused.
+
+`merchants` stores canonical merchant names. `merchant_aliases` stores deterministic case-insensitive description matching patterns for `exact`, `starts_with`, and `contains` matches. Aliases preserve the user-entered pattern and store a normalised pattern only for matching.
+
+`categorisation_rules` stores user-approved deterministic rules based on either a canonical merchant or a supported description match. Rules may assign category, usage type, cost behaviour, necessity, and merchant-related enrichment.
+
+`transaction_classifications` stores one classification record per transaction. It is separate from imported transaction facts and is deleted by foreign-key cascade when an import rollback deletes its transactions.
+
 `schema_migrations` records applied forward-only database migrations.
 
 ## Planned Entities
 
-The following planned entities are not implemented in Phase 1:
+The following planned entities are not implemented:
 
-- `Merchant`
-- `MerchantAlias`
-- `Category`
-- `CategorisationRule`
 - `RecurringSeries`
 - `MonthlyReport`
 
@@ -97,3 +101,20 @@ After commit, the settlement is excluded from spending and marked confirmed. Vis
 Phase 5 exposes explicit DTOs for account summaries, import previews, import batches, transaction pages, reconciliation candidates, reconciliation previews, and safe operation errors. DTOs use camelCase and do not expose SQL row names, database paths, full source paths, file hashes, importer objects, or native library objects.
 
 Import preview sessions are not stored in SQLite. They exist only in main-process memory and are referenced by an opaque UUID until commit, discard, expiry, or shutdown.
+
+## Classification Enrichment
+
+Imported source facts remain immutable for categorisation purposes: dates, descriptions, amounts, balances, transaction type, pending state, import batch, and reconciliation links are not overwritten by Phase 6.
+
+Classification enrichment is stored separately in `transaction_classifications`:
+
+- `merchant_id`
+- `category_id`
+- `usage_type`: `personal`, `business`, `mixed`, or `unspecified`
+- `cost_behaviour`: `fixed`, `variable`, or `unspecified`
+- `necessity`: `essential`, `discretionary`, or `unspecified`
+- `classification_source`: `manual`, `rule`, or `unclassified`
+- `classification_status`: `confirmed`, `needs_review`, or `ambiguous`
+- optional `applied_rule_id`
+
+Manual classifications are authoritative. Rule application fills unclassified or rule-generated values and preserves manual rows by default.

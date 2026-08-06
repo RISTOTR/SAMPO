@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   createAccountInputDtoSchema,
+  bulkClassificationInputDtoSchema,
   importPreviewSessionDtoSchema,
+  ruleInputDtoSchema,
   transactionListQueryDtoSchema
 } from '../../../shared/dtos'
 
@@ -30,6 +32,22 @@ describe('shared renderer DTO schemas', () => {
       offset: 0
     })
     expect(() => transactionListQueryDtoSchema.parse({ limit: 500 })).toThrow()
+  })
+
+  it('validates Phase 6 classification DTO inputs', () => {
+    expect(
+      transactionListQueryDtoSchema.parse({
+        classificationStatus: 'ambiguous',
+        unclassifiedOnly: true
+      })
+    ).toMatchObject({ classificationStatus: 'ambiguous', unclassifiedOnly: true })
+
+    expect(() => ruleInputDtoSchema.parse({ name: '' })).toThrow()
+    expect(() =>
+      bulkClassificationInputDtoSchema.parse({
+        transactionIds: Array.from({ length: 101 }, () => '11111111-1111-4111-8111-111111111111')
+      })
+    ).toThrow()
   })
 
   it('rejects preview sessions that expose full file paths instead of filenames', () => {

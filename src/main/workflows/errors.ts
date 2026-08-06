@@ -1,4 +1,18 @@
 import {
+  AliasConflictError,
+  AmbiguousClassificationError,
+  BulkUpdateConflictError,
+  CategoryCycleError,
+  CategoryInUseError,
+  CategoryNotFoundError,
+  DuplicateCategoryError,
+  DuplicateMerchantError,
+  InvalidRuleError,
+  ManualClassificationPreservedError,
+  MerchantNotFoundError,
+  RuleNotFoundError
+} from '../categorisation/errors'
+import {
   ActiveReconciliationError,
   DuplicateImportError,
   EntityNotFoundError,
@@ -86,6 +100,60 @@ export function toOperationError(error: unknown): OperationErrorDto {
       code: 'invalid_reconciliation_state',
       message: 'The reconciliation state is no longer valid.'
     }
+  }
+
+  if (error instanceof CategoryNotFoundError) {
+    return { code: 'category_not_found', message: 'The selected category was not found.' }
+  }
+
+  if (error instanceof CategoryInUseError) {
+    return { code: 'category_in_use', message: 'This category is still in use.' }
+  }
+
+  if (error instanceof CategoryCycleError) {
+    return { code: 'category_cycle', message: 'That category hierarchy is not allowed.' }
+  }
+
+  if (error instanceof DuplicateCategoryError) {
+    return { code: 'duplicate_category', message: 'A sibling category already has that name.' }
+  }
+
+  if (error instanceof MerchantNotFoundError) {
+    return { code: 'merchant_not_found', message: 'The selected merchant was not found.' }
+  }
+
+  if (error instanceof DuplicateMerchantError) {
+    return { code: 'duplicate_merchant', message: 'A merchant already has that name.' }
+  }
+
+  if (error instanceof AliasConflictError) {
+    return { code: 'alias_conflict', message: 'That alias conflicts with another merchant.' }
+  }
+
+  if (error instanceof RuleNotFoundError) {
+    return { code: 'rule_not_found', message: 'The selected rule was not found.' }
+  }
+
+  if (error instanceof InvalidRuleError) {
+    return { code: 'invalid_rule', message: 'The categorisation rule is invalid.' }
+  }
+
+  if (error instanceof AmbiguousClassificationError) {
+    return {
+      code: 'ambiguous_classification',
+      message: 'The classification is ambiguous and needs review.'
+    }
+  }
+
+  if (error instanceof ManualClassificationPreservedError) {
+    return {
+      code: 'manual_classification_preserved',
+      message: 'Manual classifications are preserved by default.'
+    }
+  }
+
+  if (error instanceof BulkUpdateConflictError) {
+    return { code: 'bulk_update_conflict', message: 'The bulk update could not be applied.' }
   }
 
   if (error instanceof SampoError && error.code === 'ACCOUNT_IN_USE') {

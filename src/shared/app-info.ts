@@ -1,19 +1,37 @@
 import type {
   AccountSummaryDto,
   ApiResult,
+  ApplyRuleInputDto,
+  BulkClassificationInputDto,
+  BulkClassificationResultDto,
+  CategorisationRuleDto,
+  CategoryDto,
+  ClassificationProposalDto,
   CommittedImportDto,
   CommittedReconciliationDto,
   CreateAccountInputDto,
+  CreateCategoryInputDto,
+  CreateMerchantAliasInputDto,
+  CreateMerchantInputDto,
   ImportBatchSummaryDto,
   ImportPreviewSessionDto,
+  MerchantAliasDto,
+  MerchantDto,
+  MerchantListQueryDto,
   OverviewStatsDto,
   ReconciliationCandidateDto,
   ReconciliationPreviewDto,
   ReversedReconciliationDto,
+  RuleApplicationPreviewDto,
+  RuleInputDto,
+  SaveManualClassificationInputDto,
   SettlementSummaryDto,
   TransactionListQueryDto,
   TransactionPageDto,
-  UpdateAccountInputDto
+  UpdateAccountInputDto,
+  UpdateCategoryInputDto,
+  UpdateMerchantAliasInputDto,
+  UpdateMerchantInputDto
 } from './dtos'
 
 export type AppInfo = {
@@ -58,5 +76,41 @@ export type SampoApi = {
       visaImportBatchId: string
     ) => Promise<ApiResult<CommittedReconciliationDto>>
     reverse: (settlementTransactionId: string) => Promise<ApiResult<ReversedReconciliationDto>>
+  }
+  categories: {
+    list: () => Promise<ApiResult<CategoryDto[]>>
+    create: (input: CreateCategoryInputDto) => Promise<ApiResult<CategoryDto>>
+    update: (input: UpdateCategoryInputDto) => Promise<ApiResult<CategoryDto>>
+    deactivate: (id: string) => Promise<ApiResult<CategoryDto>>
+    reactivate: (id: string) => Promise<ApiResult<CategoryDto>>
+    deleteUnused: (id: string) => Promise<ApiResult<void>>
+  }
+  merchants: {
+    list: (query?: MerchantListQueryDto) => Promise<ApiResult<MerchantDto[]>>
+    create: (input: CreateMerchantInputDto) => Promise<ApiResult<MerchantDto>>
+    update: (input: UpdateMerchantInputDto) => Promise<ApiResult<MerchantDto>>
+  }
+  merchantAliases: {
+    list: () => Promise<ApiResult<MerchantAliasDto[]>>
+    create: (input: CreateMerchantAliasInputDto) => Promise<ApiResult<MerchantAliasDto>>
+    update: (input: UpdateMerchantAliasInputDto) => Promise<ApiResult<MerchantAliasDto>>
+    deactivate: (id: string) => Promise<ApiResult<MerchantAliasDto>>
+  }
+  classification: {
+    get: (transactionId: string) => Promise<ApiResult<ClassificationProposalDto>>
+    saveManual: (
+      input: SaveManualClassificationInputDto
+    ) => Promise<ApiResult<ClassificationProposalDto>>
+    previewRule: (input: RuleInputDto) => Promise<ApiResult<RuleApplicationPreviewDto>>
+    createRule: (input: RuleInputDto) => Promise<ApiResult<CategorisationRuleDto>>
+    applyRule: (input: ApplyRuleInputDto) => Promise<ApiResult<RuleApplicationPreviewDto>>
+    bulkUpdate: (
+      input: BulkClassificationInputDto
+    ) => Promise<ApiResult<BulkClassificationResultDto>>
+  }
+  rules: {
+    list: () => Promise<ApiResult<CategorisationRuleDto[]>>
+    activate: (id: string) => Promise<ApiResult<CategorisationRuleDto>>
+    deactivate: (id: string) => Promise<ApiResult<CategorisationRuleDto>>
   }
 }

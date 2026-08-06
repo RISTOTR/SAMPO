@@ -1,6 +1,6 @@
 # Import Rules
 
-Current milestone: Phase 5 end-to-end import and reconciliation UI complete.
+Current milestone: Phase 6 transaction categorisation and merchant rules complete.
 
 ## EVO/Bankinter Visa
 
@@ -96,7 +96,7 @@ Visa importer tests generate temporary BIFF `.xls` workbooks from synthetic rows
 
 - No silent partial import
 - Own-account transfer detection
-- Categories, subscriptions, dashboards and AI
+- Subscriptions, dashboards and AI
 
 ## Phase 5 UI Import Rules
 
@@ -110,3 +110,16 @@ Visa importer tests generate temporary BIFF `.xls` workbooks from synthetic rows
 - Cash and other account kinds are not import targets in Phase 5.
 - Import history keeps batch records; rollback does not delete history.
 - Active card-settlement reconciliation blocks rollback until reversal.
+
+## Phase 6 Categorisation Rules
+
+- Categorisation is enrichment and never overwrites imported transaction facts.
+- Active rules are evaluated after a successful import commit for newly inserted transactions.
+- A categorisation failure must not roll back or invalidate a valid financial import.
+- Pending movements can receive merchant/category enrichment but remain `needs_review`.
+- Manual classifications are preserved by default during rule evaluation and historical application.
+- Import rollback deletes transactions and cascades their transaction classification rows. Categories, merchants, aliases and rules remain.
+- Reconciliation links and settlement exclusion flags are independent from categorisation.
+- Broad description rules do not automatically categorise card settlements or transfers; exact or merchant-targeted rules are required.
+- Merchant alias matching is deterministic, case-insensitive, whitespace-normalised, and limited to exact, starts-with and contains matching.
+- Regular expressions, AI merchant lookup, internet research and hidden automatic rules are not implemented.

@@ -26,6 +26,10 @@
 - Card-settlement reconciliation must use exact signed integer-cent matching.
 - Reconciliation links must point from the account settlement transaction to each Visa movement.
 - Never reconcile pending Visa movements, partial Visa batches, or fuzzy/tolerant differences.
+- Keep imported transaction facts separate from user-managed classification enrichment.
+- Manual transaction classifications are authoritative and must not be silently overwritten by rules.
+- Categorisation rules must be deterministic, user-approved and local-only; do not add AI or internet merchant lookup.
+- Rule conflicts must become reviewable ambiguity rather than arbitrary automatic choices.
 - Avoid large components and unrelated refactoring.
 - Do not add dependencies without a clear reason.
 - Preserve user data compatibility once persistence is introduced.
