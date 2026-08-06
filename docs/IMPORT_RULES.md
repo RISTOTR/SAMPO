@@ -1,6 +1,6 @@
 # Import Rules
 
-Current milestone: Phase 3 EVO/Bankinter account PDF importer complete.
+Current milestone: Phase 4 Visa settlement reconciliation complete.
 
 ## EVO/Bankinter Visa
 
@@ -32,7 +32,7 @@ Current milestone: Phase 3 EVO/Bankinter account PDF importer complete.
 - `RECIBO VISA CLASICA` in the account statement is the card settlement.
 - The settlement must remain visible.
 - Before matching, the settlement remains visible and is not excluded from spending.
-- Once matched in a later reconciliation phase, the settlement must be excluded from spending totals.
+- Once matched by explicit reconciliation commit, the settlement must be excluded from spending totals.
 - A settlement difference must be visible and reviewed rather than silently ignored.
 
 ## Implemented Import Foundation
@@ -42,6 +42,7 @@ Current milestone: Phase 3 EVO/Bankinter account PDF importer complete.
 - A committed file hash cannot be imported twice for the same account.
 - A rolled-back file may be deliberately imported again.
 - Rollback removes the imported transactions and related transaction links, preserves the batch record, sets status to `rolled_back`, and resets `transaction_count` to zero.
+- Rollback is rejected while any transaction in the import batch participates in active `card_settlement` reconciliation links.
 - Source adapters must store only source filenames, never full source paths.
 
 ## Visa XLS Importer Rules
@@ -69,6 +70,24 @@ Current milestone: Phase 3 EVO/Bankinter account PDF importer complete.
 - The importer recognises a Visa settlement description pattern as `card_settlement`, sets `reviewStatus: needs_review`, keeps it visible, and does not exclude it from spending until Phase 4 reconciliation.
 - Synthetic tests generate text-based PDFs at runtime with invented data; no generated PDFs are committed.
 
+## Visa Settlement Reconciliation Rules
+
+- Candidate discovery is read-only and never chooses or commits a candidate automatically.
+- Preview is read-only and requires an explicit settlement transaction ID and Visa import-batch ID.
+- Commit requires the same explicit settlement and Visa batch IDs and runs atomically.
+- Link direction is settlement transaction to Visa movement with `kind: card_settlement`.
+- Only completed Visa `expense` and `refund` transactions from the selected committed Visa batch are included.
+- Pending Visa movements are counted for preview information but ignored for totals and links.
+- Settlement amount must exactly equal the signed integer-cent sum of included Visa movements.
+- Refunds remain positive and reduce the signed Visa net amount.
+- No tolerance, rounding, fuzzy matching, inferred missing transaction, partial batch match, or subset reconciliation is allowed.
+- Settlement date must not be earlier than the latest included Visa movement date.
+- A Visa movement can be linked to only one active card settlement.
+- Commit marks only the settlement as excluded from spending and confirmed; Visa movements remain unchanged.
+- Reversal deletes only the settlement's `card_settlement` links, restores the settlement to visible and needs-review, and permits reconciliation again.
+- Multiple exact candidates are reported as ambiguous and are not auto-selected.
+- Historical reconciliation audit beyond link creation timestamps remains a future enhancement.
+
 ## Synthetic Fixture Policy
 
 Visa importer tests generate temporary BIFF `.xls` workbooks from synthetic rows. Account PDF importer tests generate temporary text-based PDFs from synthetic positioned content. No binary workbook or generated PDF fixtures are committed. Synthetic fixtures use invented merchants, descriptions, dates, references and amounts and must never copy genuine statement content.
@@ -79,6 +98,5 @@ Visa importer tests generate temporary BIFF `.xls` workbooks from synthetic rows
 - Validation errors
 - Confidence and review states
 - No silent partial import
-- Visa settlement reconciliation
 - Own-account transfer detection
 - Categories, subscriptions, dashboards and AI

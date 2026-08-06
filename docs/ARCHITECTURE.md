@@ -1,6 +1,6 @@
 # Architecture
 
-Current milestone: Phase 3 - EVO/Bankinter Account PDF Importer complete.
+Current milestone: Phase 4 - Visa Settlement Reconciliation complete.
 
 ```text
 Vue renderer
@@ -14,7 +14,7 @@ Application services
 Import adapters / repositories / SQLite
 ```
 
-The Electron shell, typed preload API, renderer layout, validation setup, SQLite initialization, migrations, repositories, prepared-import service, EVO/Bankinter Visa XLS importer, and EVO/Bankinter account PDF importer are implemented. Import UI, dashboards, categorisation, subscriptions, and reconciliation UI remain planned.
+The Electron shell, typed preload API, renderer layout, validation setup, SQLite initialization, migrations, repositories, prepared-import service, EVO/Bankinter Visa XLS importer, EVO/Bankinter account PDF importer, and Visa settlement reconciliation service are implemented. Import UI, dashboards, categorisation, subscriptions, and reconciliation UI remain planned.
 
 ## Responsibilities
 
@@ -79,6 +79,29 @@ The importer validates debit/credit signs and resulting balances in integer cent
 Recognised Visa settlement rows are mapped as `card_settlement`, remain visible, keep `excludedFromSpending: false`, and use `reviewStatus: needs_review`. Settlement exclusion and linking remain deferred to reconciliation.
 
 The account PDF importer enforces a 10 MB maximum before parsing, stores only the basename as `sourceFileName`, and calculates file hashes with the streaming SHA-256 utility.
+
+## Visa Settlement Reconciliation
+
+The Phase 4 reconciliation service is main-process/application-layer code. It is not exposed through renderer IPC and does not add a UI.
+
+Reconciliation uses `transaction_links` as the persisted representation. Each included Visa movement gets one directional link:
+
+```text
+account settlement transaction -> individual Visa movement
+kind = card_settlement
+```
+
+The service has three separate operations:
+
+- Candidate discovery is read-only and ranks possible committed Visa batches for one explicit settlement.
+- Preview is read-only for one explicit settlement transaction ID and one explicit Visa import-batch ID.
+- Commit and reversal are explicit atomic mutations.
+
+Commit requires exact signed integer-cent equality between the settlement amount and the sum of all eligible completed Visa movements from the selected committed Visa batch. Pending Visa movements are counted for preview information but ignored for totals and links. Refunds are positive Visa movements and naturally reduce the signed Visa net amount. There is no tolerance, fuzzy match, subset matching, or automatic reconciliation.
+
+On successful commit, the service creates one `card_settlement` link per included completed Visa movement, sets the settlement `excludedFromSpending: true`, and sets its review status to `confirmed`. Visa movements are not modified. Reversal deletes only the settlement's `card_settlement` links, restores the settlement to `excludedFromSpending: false` and `reviewStatus: needs_review`, and allows later reconciliation again.
+
+Rollback is protected while active card-settlement links involve any transaction in an import batch, either as settlement source or Visa destination. Reconciliation must be reversed before rolling back either side. Historical audit beyond link creation timestamps remains a future enhancement.
 
 ## Deterministic Calculations
 

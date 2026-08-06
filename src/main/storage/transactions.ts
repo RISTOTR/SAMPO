@@ -29,6 +29,35 @@ export class TransactionRepository {
       .map((row) => transactionSchema.parse(mapTransaction(row as never)))
   }
 
+  listEligibleVisaMovementsForImportBatch(importBatchId: string): Transaction[] {
+    return this.database
+      .prepare(
+        `
+          SELECT * FROM transactions
+          WHERE import_batch_id = ?
+            AND is_pending = 0
+            AND transaction_type IN ('expense', 'refund')
+          ORDER BY transaction_date ASC, source_row_index ASC
+        `
+      )
+      .all(importBatchId)
+      .map((row) => transactionSchema.parse(mapTransaction(row as never)))
+  }
+
+  countPendingForImportBatch(importBatchId: string): number {
+    const row = this.database
+      .prepare(
+        `
+          SELECT COUNT(*) AS count
+          FROM transactions
+          WHERE import_batch_id = ? AND is_pending = 1
+        `
+      )
+      .get(importBatchId) as { count: number }
+
+    return row.count
+  }
+
   listForAccount(accountId: string): Transaction[] {
     return this.database
       .prepare('SELECT * FROM transactions WHERE account_id = ? ORDER BY transaction_date ASC')
@@ -129,5 +158,34 @@ export class TransactionRepository {
 
   deleteForImportBatch(importBatchId: string): void {
     this.database.prepare('DELETE FROM transactions WHERE import_batch_id = ?').run(importBatchId)
+  }
+
+  updateReconciliationFlags(
+    id: string,
+    input: {
+      excludedFromSpending: boolean
+      reviewStatus: Transaction['reviewStatus']
+    }
+  ): Transaction {
+    this.findById(id)
+
+    this.database
+      .prepare(
+        `
+          UPDATE transactions
+          SET excluded_from_spending = @excludedFromSpending,
+              review_status = @reviewStatus,
+              updated_at = @updatedAt
+          WHERE id = @id
+        `
+      )
+      .run({
+        id,
+        excludedFromSpending: input.excludedFromSpending ? 1 : 0,
+        reviewStatus: input.reviewStatus,
+        updatedAt: new Date().toISOString()
+      })
+
+    return this.findById(id)
   }
 }

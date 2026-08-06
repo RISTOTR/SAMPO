@@ -23,6 +23,9 @@
 - Never open or modify the real user database from automated tests.
 - Import adapters must remain separate from the normalised transaction model.
 - Importer tests must use synthetic fixtures and must not copy genuine statement rows.
+- Card-settlement reconciliation must use exact signed integer-cent matching.
+- Reconciliation links must point from the account settlement transaction to each Visa movement.
+- Never reconcile pending Visa movements, partial Visa batches, or fuzzy/tolerant differences.
 - Avoid large components and unrelated refactoring.
 - Do not add dependencies without a clear reason.
 - Preserve user data compatibility once persistence is introduced.

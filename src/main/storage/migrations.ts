@@ -106,6 +106,25 @@ export const migrations: Migration[] = [
           ON transaction_links(to_transaction_id);
       `)
     }
+  },
+  {
+    version: 2,
+    name: 'add_card_settlement_reconciliation_indexes',
+    up: (database) => {
+      database.exec(`
+        CREATE INDEX transaction_links_card_settlement_from_idx
+          ON transaction_links(from_transaction_id)
+          WHERE kind = 'card_settlement';
+
+        CREATE INDEX transaction_links_card_settlement_to_idx
+          ON transaction_links(to_transaction_id)
+          WHERE kind = 'card_settlement';
+
+        CREATE UNIQUE INDEX transaction_links_card_settlement_unique_destination_idx
+          ON transaction_links(to_transaction_id)
+          WHERE kind = 'card_settlement';
+      `)
+    }
   }
 ]
 

@@ -104,3 +104,15 @@ export class BalanceValidationError extends SampoError {
     super(message, 'BALANCE_VALIDATION_FAILED', cause)
   }
 }
+
+export class ReconciliationError extends SampoError {
+  constructor(message = 'Reconciliation validation failed', cause?: unknown) {
+    super(message, 'RECONCILIATION_FAILED', cause)
+  }
+}
+
+export class ActiveReconciliationError extends SampoError {
+  constructor(message = 'Import batch participates in an active reconciliation') {
+    super(message, 'ACTIVE_RECONCILIATION')
+  }
+}

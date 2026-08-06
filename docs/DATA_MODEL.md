@@ -1,6 +1,6 @@
 # Data Model
 
-Current milestone: Phase 3 account PDF importer over the Phase 1 schema foundation. The database schema may still evolve through forward-only migrations before external-user use.
+Current milestone: Phase 4 Visa settlement reconciliation over the Phase 1 schema foundation. The database schema may still evolve through forward-only migrations before external-user use.
 
 ## Locked Conventions
 
@@ -41,7 +41,7 @@ The following planned entities are not implemented in Phase 1:
 - `RecurringSeries`
 - `MonthlyReport`
 
-`TransactionLink` is implemented as the foundation for future reconciliation, but reconciliation behaviour itself remains planned.
+`TransactionLink` stores Phase 4 Visa settlement reconciliation links. Historical reconciliation audit beyond link creation timestamps remains planned.
 
 Fields and relationships remain subject to forward-only migrations once importer evidence is available.
 
@@ -75,3 +75,19 @@ The EVO/Bankinter account PDF importer maps validated statement movements to `Ne
 - Structurally recognised Visa settlement rows are `card_settlement`, `reviewStatus: needs_review`, and remain `excludedFromSpending: false` until Phase 4 reconciliation links them to Visa movements.
 
 The importer does not detect own-account transfers, refunds, categories, merchants, subscriptions, or reconciliation links.
+
+## Visa Settlement Reconciliation Mapping
+
+Phase 4 reconciles one account `card_settlement` transaction to one committed EVO Visa import batch. The persisted link direction is:
+
+```text
+from_transaction_id = account settlement transaction
+to_transaction_id   = individual Visa transaction
+kind                = card_settlement
+```
+
+Only completed Visa `expense` and `refund` transactions from the selected batch are eligible. Pending Visa transactions are ignored for matching and are not linked. The selected Visa batch is matched as a whole; partial settlement matching is not implemented.
+
+The settlement amount must exactly equal the signed integer-cent sum of eligible Visa transactions. Refunds are positive and reduce the net Visa charge. No tolerance, rounding, or fuzzy matching is allowed.
+
+After commit, the settlement is excluded from spending and marked confirmed. Visa transactions remain unchanged. Reversal removes only the settlement's `card_settlement` links and restores the settlement to visible, needs-review state.

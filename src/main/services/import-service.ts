@@ -1,6 +1,7 @@
 import type { Database } from 'better-sqlite3'
 import {
   AccountMismatchError,
+  ActiveReconciliationError,
   DuplicateImportError,
   InvalidImportStatusTransitionError
 } from '../domain/errors'
@@ -12,6 +13,7 @@ import {
 } from '../domain/schemas'
 import { AccountRepository } from '../storage/accounts'
 import { ImportBatchRepository } from '../storage/import-batches'
+import { TransactionLinkRepository } from '../storage/transaction-links'
 import { TransactionRepository } from '../storage/transactions'
 
 export type CommitPreparedImportResult = {
@@ -22,11 +24,13 @@ export type CommitPreparedImportResult = {
 export class ImportService {
   private readonly accounts: AccountRepository
   private readonly importBatches: ImportBatchRepository
+  private readonly links: TransactionLinkRepository
   private readonly transactions: TransactionRepository
 
   constructor(private readonly database: Database) {
     this.accounts = new AccountRepository(database)
     this.importBatches = new ImportBatchRepository(database)
+    this.links = new TransactionLinkRepository(database)
     this.transactions = new TransactionRepository(database)
   }
 
@@ -83,6 +87,10 @@ export class ImportService {
 
       if (batch.status !== 'committed') {
         throw new InvalidImportStatusTransitionError(batch.status, 'rolled_back')
+      }
+
+      if (this.links.importBatchParticipatesInCardSettlementLinks(id)) {
+        throw new ActiveReconciliationError()
       }
 
       this.transactions.deleteForImportBatch(id)

@@ -85,6 +85,19 @@ export class ImportBatchRepository {
       .map((row) => importBatchSchema.parse(mapImportBatch(row as never)))
   }
 
+  listCommittedBySourceKind(sourceKind: ImportBatch['sourceKind']): ImportBatch[] {
+    return this.database
+      .prepare(
+        `
+          SELECT * FROM import_batches
+          WHERE source_kind = ? AND status = 'committed'
+          ORDER BY committed_at ASC, created_at ASC
+        `
+      )
+      .all(sourceKind)
+      .map((row) => importBatchSchema.parse(mapImportBatch(row as never)))
+  }
+
   findCommittedDuplicate(accountId: string, fileSha256: string): ImportBatch | undefined {
     const row = this.database
       .prepare(

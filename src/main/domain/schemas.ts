@@ -22,6 +22,30 @@ export const transactionLinkKinds = [
   'related'
 ] as const
 
+export const reconciliationWarningCodes = [
+  'settlement_not_found',
+  'settlement_wrong_type',
+  'settlement_pending',
+  'settlement_non_negative',
+  'settlement_already_reconciled',
+  'settlement_wrong_source',
+  'settlement_account_wrong_kind',
+  'settlement_excluded_without_links',
+  'visa_batch_not_found',
+  'visa_batch_not_committed',
+  'visa_batch_wrong_source',
+  'visa_account_wrong_kind',
+  'currency_mismatch',
+  'no_completed_visa_transactions',
+  'visa_transaction_already_reconciled',
+  'amount_mismatch',
+  'settlement_before_visa_movements',
+  'ambiguous_candidate',
+  'active_reconciliation',
+  'invalid_reconciliation_state',
+  'unusual_date_gap'
+] as const
+
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/
 const utcTimestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/
 const sha256Pattern = /^[a-f0-9]{64}$/
@@ -155,6 +179,54 @@ export const preparedImportSchema = z.object({
   transactions: z.array(newTransactionSchema).min(1)
 })
 
+export const reconciliationWarningSchema = z.object({
+  code: z.enum(reconciliationWarningCodes),
+  message: z.string().min(1),
+  blocking: z.boolean()
+})
+
+export const reconciliationCandidateSchema = z.object({
+  settlementTransactionId: uuidSchema,
+  visaImportBatchId: uuidSchema,
+  visaAccountId: uuidSchema,
+  completedTransactionCount: z.number().int().min(0),
+  pendingTransactionCount: z.number().int().min(0),
+  settlementAmountCents: integerCentsSchema,
+  visaNetAmountCents: integerCentsSchema,
+  differenceCents: integerCentsSchema,
+  earliestVisaDate: isoDateSchema.optional(),
+  latestVisaDate: isoDateSchema.optional(),
+  settlementDate: isoDateSchema,
+  exactAmountMatch: z.boolean(),
+  dateOrderValid: z.boolean(),
+  warnings: z.array(reconciliationWarningSchema).default([])
+})
+
+export const settlementReconciliationPreviewSchema = z.object({
+  settlementTransactionId: uuidSchema,
+  visaImportBatchId: uuidSchema,
+  settlementAmountCents: integerCentsSchema,
+  completedVisaTransactionCount: z.number().int().min(0),
+  ignoredPendingTransactionCount: z.number().int().min(0),
+  visaNetAmountCents: integerCentsSchema,
+  differenceCents: integerCentsSchema,
+  canCommit: z.boolean(),
+  warnings: z.array(reconciliationWarningSchema)
+})
+
+export const committedSettlementReconciliationSchema = z.object({
+  settlementTransactionId: uuidSchema,
+  visaImportBatchId: uuidSchema,
+  linkedTransactionCount: z.number().int().min(1),
+  reconciledAt: utcTimestampSchema
+})
+
+export const reversedSettlementReconciliationSchema = z.object({
+  settlementTransactionId: uuidSchema,
+  removedLinkCount: z.number().int().min(1),
+  reversedAt: utcTimestampSchema
+})
+
 export type Account = z.infer<typeof accountSchema>
 export type NewAccount = z.input<typeof newAccountSchema>
 export type ImportBatch = z.infer<typeof importBatchSchema>
@@ -166,6 +238,15 @@ export type TransactionLink = z.infer<typeof transactionLinkSchema>
 export type NewTransactionLink = z.input<typeof newTransactionLinkSchema>
 export type PreparedImport = z.input<typeof preparedImportSchema>
 export type NormalizedPreparedImport = z.output<typeof preparedImportSchema>
+export type ReconciliationWarning = z.infer<typeof reconciliationWarningSchema>
+export type ReconciliationCandidate = z.infer<typeof reconciliationCandidateSchema>
+export type SettlementReconciliationPreview = z.infer<typeof settlementReconciliationPreviewSchema>
+export type CommittedSettlementReconciliation = z.infer<
+  typeof committedSettlementReconciliationSchema
+>
+export type ReversedSettlementReconciliation = z.infer<
+  typeof reversedSettlementReconciliationSchema
+>
 export type AccountKind = (typeof accountKinds)[number]
 export type ImportStatus = (typeof importStatuses)[number]
 export type ImportSourceKind = (typeof importSourceKinds)[number]

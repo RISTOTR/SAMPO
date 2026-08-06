@@ -1,6 +1,6 @@
 # Roadmap
 
-Current milestone: Phase 3 - EVO/Bankinter Account PDF Importer complete.
+Current milestone: Phase 4 - Visa Settlement Reconciliation complete.
 
 ## Phase 0 - Foundation
 
@@ -41,9 +41,13 @@ Current milestone: Phase 3 - EVO/Bankinter Account PDF Importer complete.
 
 ## Phase 4 - Reconciliation
 
-- Visa settlement matching
+- Visa settlement matching - complete
+- Candidate discovery and preview - complete
+- Atomic commit and reversal - complete
+- Import rollback protection during active reconciliation - complete
+- Privacy-safe ignored real-file smoke validation - complete
 - Own-account transfer detection
-- Refund linking
+- Refund linking beyond Visa-settlement batch matching
 - Reconciliation review UI
 
 ## Phase 5 - Categorisation
