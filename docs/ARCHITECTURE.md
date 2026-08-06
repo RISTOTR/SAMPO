@@ -1,6 +1,6 @@
 # Architecture
 
-Current milestone: Phase 2 - EVO/Bankinter Visa XLS Importer.
+Current milestone: Phase 3 - EVO/Bankinter Account PDF Importer complete.
 
 ```text
 Vue renderer
@@ -14,7 +14,7 @@ Application services
 Import adapters / repositories / SQLite
 ```
 
-The Electron shell, typed preload API, renderer layout, validation setup, SQLite initialization, migrations, repositories, prepared-import service, and EVO/Bankinter Visa XLS importer are implemented. Account PDF import, dashboards, categorisation, subscriptions, and reconciliation UI remain planned.
+The Electron shell, typed preload API, renderer layout, validation setup, SQLite initialization, migrations, repositories, prepared-import service, EVO/Bankinter Visa XLS importer, and EVO/Bankinter account PDF importer are implemented. Import UI, dashboards, categorisation, subscriptions, and reconciliation UI remain planned.
 
 ## Responsibilities
 
@@ -65,6 +65,20 @@ Importer operations:
 - `prepare` returns a validated `PreparedImport` and performs no duplicate checks or database writes.
 
 The importer enforces a 5 MB maximum before loading workbook buffers. It stores only the basename as `sourceFileName` and calculates file hashes with the streaming SHA-256 utility.
+
+## EVO Account PDF Importer
+
+The detected EVO/Bankinter account statement is a text-based PDF with repeated page and table headers, separate transaction date and value date columns, reference, description, debit, credit, and resulting balance columns. The importer uses `pdfjs-dist` in the Electron main-process/application layer to extract positioned text items. Direct text extraction is sufficient for the supported format because the statement contains a usable text layer with stable coordinates; OCR is not implemented for this adapter.
+
+PDF-specific code is isolated behind the extraction and account-statement parser modules. It is not exposed to the Vue renderer, preload API, IPC, or the Visa importer. PDF.js is configured for local byte parsing without browser UI extraction, OCR, or remote services.
+
+The parser groups positioned text by page and y-coordinate tolerance, orders each visual row by x-coordinate, reconstructs columns from documented x ranges anchored to the detected table header, and removes repeated headers plus the stable footer band. It recognises opening, carried, and final balance rows internally and does not map them to domain transactions.
+
+The importer validates debit/credit signs and resulting balances in integer cents. Debit rows become negative transaction amounts, credit rows become positive transaction amounts, and balance continuity is validated across page boundaries. Blocking structural, parse, or balance warnings prevent preparation; no partial account PDF import is allowed.
+
+Recognised Visa settlement rows are mapped as `card_settlement`, remain visible, keep `excludedFromSpending: false`, and use `reviewStatus: needs_review`. Settlement exclusion and linking remain deferred to reconciliation.
+
+The account PDF importer enforces a 10 MB maximum before parsing, stores only the basename as `sourceFileName`, and calculates file hashes with the streaming SHA-256 utility.
 
 ## Deterministic Calculations
 

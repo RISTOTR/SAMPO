@@ -1,6 +1,6 @@
 # Roadmap
 
-Current milestone: Phase 2 - EVO/Bankinter Visa XLS Importer complete.
+Current milestone: Phase 3 - EVO/Bankinter Account PDF Importer complete.
 
 ## Phase 0 - Foundation
 
@@ -30,18 +30,18 @@ Current milestone: Phase 2 - EVO/Bankinter Visa XLS Importer complete.
 
 ## Phase 3 - Account PDF Importer
 
-- PDF.js text extraction
-- Coordinate-based row reconstruction
-- Multi-page statements
-- Header and footer removal
-- Debit and credit detection
-- Balance validation
-- Anonymised fixtures and tests
+- PDF.js text extraction - complete
+- Coordinate-based row reconstruction - complete
+- Multi-page statements - complete
+- Header and footer removal - complete
+- Debit and credit detection - complete
+- Balance validation - complete
+- Anonymised generated fixtures and tests - complete
+- Privacy-safe ignored real-file smoke validation - complete
 
 ## Phase 4 - Reconciliation
 
-- Visa settlement detection
-- Settlement matching
+- Visa settlement matching
 - Own-account transfer detection
 - Refund linking
 - Reconciliation review UI

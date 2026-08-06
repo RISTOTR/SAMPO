@@ -26,15 +26,41 @@ export const importWarningCodes = [
   'zero_amount',
   'unrecognised_row',
   'ambiguous_sign',
-  'duplicate_source_row'
+  'duplicate_source_row',
+  'missing_opening_balance',
+  'missing_final_balance',
+  'carried_balance_mismatch',
+  'transaction_balance_mismatch',
+  'final_balance_mismatch',
+  'ambiguous_amount_column',
+  'missing_transaction_amount',
+  'missing_resulting_balance',
+  'unsupported_layout',
+  'unknown_table_row',
+  'missing_text_layer',
+  'encrypted_pdf',
+  'pdf_parse_failed'
 ] as const
 
 export const importWarningSchema = z.object({
   sourceRowNumber: z.number().int().min(1).optional(),
+  pageNumber: z.number().int().min(1).optional(),
+  visualRowNumber: z.number().int().min(1).optional(),
   code: z.enum(importWarningCodes),
   message: z.string().min(1),
   field: z.string().min(1).optional(),
   blocking: z.boolean()
+})
+
+export const pdfImportInspectionDetailsSchema = z.object({
+  pageCount: z.number().int().min(0),
+  transactionCount: z.number().int().min(0),
+  invalidRowCount: z.number().int().min(0),
+  warningCount: z.number().int().min(0),
+  openingBalanceFound: z.boolean(),
+  finalBalanceFound: z.boolean(),
+  balanceContinuityPassed: z.boolean(),
+  tableHeaderDetected: z.boolean()
 })
 
 export const importInspectionSchema = z.object({
@@ -49,7 +75,8 @@ export const importInspectionSchema = z.object({
   statementPeriodStart: isoDateSchema.optional(),
   statementPeriodEnd: isoDateSchema.optional(),
   canImport: z.boolean(),
-  warnings: z.array(importWarningSchema)
+  warnings: z.array(importWarningSchema),
+  details: pdfImportInspectionDetailsSchema.optional()
 })
 
 export type ImportWarning = z.infer<typeof importWarningSchema>

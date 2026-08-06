@@ -68,3 +68,39 @@ export class ImportParseError extends SampoError {
     super(message, 'IMPORT_PARSE_FAILED', cause)
   }
 }
+
+export class UnsupportedPdfFormatError extends SampoError {
+  constructor(message = 'Unsupported account statement PDF format', cause?: unknown) {
+    super(message, 'UNSUPPORTED_PDF_FORMAT', cause)
+  }
+}
+
+export class MissingPdfTextLayerError extends SampoError {
+  constructor(message = 'PDF does not contain a usable text layer', cause?: unknown) {
+    super(message, 'MISSING_PDF_TEXT_LAYER', cause)
+  }
+}
+
+export class EncryptedPdfError extends SampoError {
+  constructor(message = 'Encrypted PDFs are not supported', cause?: unknown) {
+    super(message, 'ENCRYPTED_PDF', cause)
+  }
+}
+
+export class UnsupportedStatementLayoutError extends SampoError {
+  constructor(message = 'Unsupported account statement layout', cause?: unknown) {
+    super(message, 'UNSUPPORTED_STATEMENT_LAYOUT', cause)
+  }
+}
+
+export class PdfParseError extends SampoError {
+  constructor(message = 'PDF parsing failed', cause?: unknown) {
+    super(message, 'PDF_PARSE_FAILED', cause)
+  }
+}
+
+export class BalanceValidationError extends SampoError {
+  constructor(message = 'Account statement balance validation failed', cause?: unknown) {
+    super(message, 'BALANCE_VALIDATION_FAILED', cause)
+  }
+}

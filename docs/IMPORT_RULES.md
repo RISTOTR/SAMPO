@@ -1,6 +1,6 @@
 # Import Rules
 
-Current milestone: Phase 2 EVO/Bankinter Visa XLS importer. The account PDF parser is not implemented yet.
+Current milestone: Phase 3 EVO/Bankinter account PDF importer complete.
 
 ## EVO/Bankinter Visa
 
@@ -16,18 +16,23 @@ Current milestone: Phase 2 EVO/Bankinter Visa XLS importer. The account PDF pars
 ## EVO/Bankinter Account Statement
 
 - Source format: text-based PDF
+- Parsed with `pdfjs-dist` positioned text extraction in the main process/application layer
 - Known columns: transaction date, reference, value date, description, debit, credit, balance
-- Repeated headers and footers must be ignored
-- Previous balance, carried balance and final balance are not transactions
-- Balance continuity can help validate extraction
-- OCR is not needed for the provided example, but may be a future fallback
+- Repeated headers and stable footer content are ignored
+- Previous balance, carried balance and final balance are validation markers and are not transactions
+- Debit values become negative integer cents; credit values become positive integer cents
+- Resulting balances are parsed as integer cents and validated with exact balance continuity
+- Balance continuity is validated across page boundaries and against carried/final balances where present
+- The observed statement period is derived from the minimum and maximum parsed transaction dates
+- OCR, image-only PDFs, encrypted PDFs and unsupported changed layouts are not implemented
 
 ## Reconciliation Rule
 
 - Individual Visa purchases count as expenses.
 - `RECIBO VISA CLASICA` in the account statement is the card settlement.
 - The settlement must remain visible.
-- Once matched, the settlement must be excluded from spending totals.
+- Before matching, the settlement remains visible and is not excluded from spending.
+- Once matched in a later reconciliation phase, the settlement must be excluded from spending totals.
 - A settlement difference must be visible and reviewed rather than silently ignored.
 
 ## Implemented Import Foundation
@@ -51,14 +56,29 @@ Current milestone: Phase 2 EVO/Bankinter Visa XLS importer. The account PDF pars
 - A candidate key helper exists for future pending/completed comparison using date, normalised description, absolute amount, and currency. It is not a permanent identity and does not delete or merge transactions.
 - Candidate-key limitations: posting dates can change, merchant text can change, exchange-rate amounts can change, and multiple purchases can legitimately share the same date, description, and amount.
 
+## Account PDF Importer Rules
+
+- `canHandle` requires a valid PDF signature, usable text layer, repeated table header, supported account-statement structure and parsed transactions.
+- `inspect` reports only safe structural counts and generic warnings; warnings must not include raw descriptions, references, dates, amounts, balances, names or account identifiers.
+- `prepare` returns a validated `PreparedImport` and performs no database writes or duplicate checks.
+- Preparation fails if any transaction-like row cannot be parsed safely.
+- Preparation fails on carried-balance, transaction-balance or final-balance mismatches.
+- Unknown non-empty content inside the table region is blocking unless recognised as header, footer or balance-marker structure.
+- Date parsing is explicit for European short dates; `Date.parse()` is not used for source dates.
+- Money parsing is strict European decimal parsing into integer cents and rejects malformed separators, ambiguous signs and zero movement amounts.
+- The importer recognises a Visa settlement description pattern as `card_settlement`, sets `reviewStatus: needs_review`, keeps it visible, and does not exclude it from spending until Phase 4 reconciliation.
+- Synthetic tests generate text-based PDFs at runtime with invented data; no generated PDFs are committed.
+
 ## Synthetic Fixture Policy
 
-Visa importer tests generate temporary BIFF `.xls` workbooks from synthetic rows. No binary workbook fixtures are committed. Synthetic fixtures use invented merchants, dates, and amounts and must never copy genuine statement content.
+Visa importer tests generate temporary BIFF `.xls` workbooks from synthetic rows. Account PDF importer tests generate temporary text-based PDFs from synthetic positioned content. No binary workbook or generated PDF fixtures are committed. Synthetic fixtures use invented merchants, descriptions, dates, references and amounts and must never copy genuine statement content.
 
 ## Future Import Requirements
 
 - Import preview
 - Validation errors
 - Confidence and review states
-- Anonymised test fixtures
 - No silent partial import
+- Visa settlement reconciliation
+- Own-account transfer detection
+- Categories, subscriptions, dashboards and AI

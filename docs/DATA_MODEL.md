@@ -1,6 +1,6 @@
 # Data Model
 
-Current milestone: Phase 2 Visa importer over the Phase 1 schema foundation. The database schema may still evolve through forward-only migrations before external-user use.
+Current milestone: Phase 3 account PDF importer over the Phase 1 schema foundation. The database schema may still evolve through forward-only migrations before external-user use.
 
 ## Locked Conventions
 
@@ -12,7 +12,7 @@ Current milestone: Phase 2 Visa importer over the Phase 1 schema foundation. The
 - The default currency is `EUR`.
 - Every imported transaction belongs to an import batch.
 - Every imported transaction belongs to an account.
-- Card settlements remain visible but are excluded from spending after reconciliation.
+- Card settlements remain visible and are excluded from spending only after reconciliation.
 - Own-account transfers remain visible but are excluded from income and spending.
 - Pending Visa movements are not included in final monthly totals.
 - Financial totals must never use floating-point values.
@@ -58,3 +58,20 @@ The EVO/Bankinter Visa importer maps workbook movements to `NewTransaction` obje
 - `sourceRowIndex` is the zero-based physical worksheet row index, which is deterministic and unique within a statement.
 
 The importer does not create categories, merchants, subscriptions, reconciliation results, or permanent duplicate identities.
+
+## Account PDF Import Mapping
+
+The EVO/Bankinter account PDF importer maps validated statement movements to `NewTransaction` objects:
+
+- Debit column values become negative integer-cent amounts.
+- Credit column values become positive integer-cent amounts.
+- Resulting account balances are stored as `balanceCents`.
+- Transaction date and value date are parsed explicitly from short European dates and stored as ISO `YYYY-MM-DD`.
+- References are stored when present.
+- Currency defaults to `EUR` for the supported statement layout.
+- `sourceRowIndex` is a deterministic zero-based transaction-row index after structural rows are excluded.
+- Opening, carried, and final balance rows are validation markers only and are not persisted as transactions.
+- Normal negative movements are `expense`; normal positive movements are `income`.
+- Structurally recognised Visa settlement rows are `card_settlement`, `reviewStatus: needs_review`, and remain `excludedFromSpending: false` until Phase 4 reconciliation links them to Visa movements.
+
+The importer does not detect own-account transfers, refunds, categories, merchants, subscriptions, or reconciliation links.
