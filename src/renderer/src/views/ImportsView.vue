@@ -186,7 +186,7 @@ async function reverseReconciliation(): Promise<void> {
       </div>
 
       <h4>Transactions</h4>
-      <div class="table-wrap">
+      <div class="table-wrap preview-table-wrap">
         <table>
           <thead>
             <tr>
@@ -228,7 +228,7 @@ async function reverseReconciliation(): Promise<void> {
         </table>
       </div>
 
-      <div class="button-row">
+      <div class="button-row preview-actions">
         <button
           type="button"
           :disabled="!imports.preview.inspection.canImport || imports.submitting"
