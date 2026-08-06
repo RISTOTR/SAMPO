@@ -366,6 +366,88 @@ describe('import service and transaction repository', () => {
     )
   })
 
+  it('lists transactions with focused filters, sorting, pagination, and enforced limits', () => {
+    const otherAccount = accounts.create({ name: 'Synthetic savings', kind: 'current' })
+    service.commitPreparedImport(
+      makePreparedImport(account.id, [
+        makeTransaction(account.id, {
+          sourceRowIndex: 0,
+          transactionDate: '2026-01-10',
+          amountCents: -3000,
+          originalDescription: 'Synthetic groceries'
+        }),
+        makeTransaction(account.id, {
+          sourceRowIndex: 1,
+          transactionDate: '2026-01-12',
+          amountCents: 500,
+          transactionType: 'refund',
+          isPending: true,
+          originalDescription: 'Synthetic refund'
+        }),
+        makeTransaction(account.id, {
+          sourceRowIndex: 2,
+          transactionDate: '2026-02-01',
+          amountCents: -900,
+          excludedFromSpending: true,
+          originalDescription: 'Synthetic excluded movement'
+        })
+      ])
+    )
+    service.commitPreparedImport(
+      makePreparedImport(otherAccount.id, [
+        makeTransaction(otherAccount.id, {
+          sourceRowIndex: 0,
+          transactionDate: '2026-02-02',
+          amountCents: 2000,
+          transactionType: 'income',
+          originalDescription: 'Synthetic income'
+        })
+      ])
+    )
+
+    const accountPage = transactions.listPage({
+      accountId: account.id,
+      sortBy: 'transactionDate',
+      sortDirection: 'desc',
+      limit: 2,
+      offset: 0
+    })
+    expect(accountPage.total).toBe(3)
+    expect(accountPage.items).toHaveLength(2)
+    expect(accountPage.items[0]?.transactionDate).toBe('2026-02-01')
+    expect(
+      transactions
+        .listPage({
+          dateFrom: '2026-02-01',
+          dateTo: '2026-02-28',
+          sortBy: 'amount',
+          sortDirection: 'asc',
+          limit: 50,
+          offset: 0
+        })
+        .items.map((transaction) => transaction.amountCents)
+    ).toEqual([-900, 2000])
+    expect(
+      transactions.listPage({
+        transactionType: 'refund',
+        pending: true,
+        sortBy: 'transactionDate',
+        sortDirection: 'desc',
+        limit: 50,
+        offset: 0
+      }).items
+    ).toHaveLength(1)
+    expect(
+      transactions.listPage({
+        excludedFromSpending: true,
+        sortBy: 'transactionDate',
+        sortDirection: 'desc',
+        limit: 50,
+        offset: 0
+      }).items
+    ).toHaveLength(1)
+  })
+
   it('creates, retrieves, lists, deletes, and validates transaction links', () => {
     const result = service.commitPreparedImport(
       makePreparedImport(account.id, [

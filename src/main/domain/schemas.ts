@@ -250,3 +250,4 @@ export type ReversedSettlementReconciliation = z.infer<
 export type AccountKind = (typeof accountKinds)[number]
 export type ImportStatus = (typeof importStatuses)[number]
 export type ImportSourceKind = (typeof importSourceKinds)[number]
+export type TransactionType = (typeof transactionTypes)[number]

@@ -1,6 +1,6 @@
 # Import Rules
 
-Current milestone: Phase 4 Visa settlement reconciliation complete.
+Current milestone: Phase 5 end-to-end import and reconciliation UI complete.
 
 ## EVO/Bankinter Visa
 
@@ -94,9 +94,19 @@ Visa importer tests generate temporary BIFF `.xls` workbooks from synthetic rows
 
 ## Future Import Requirements
 
-- Import preview
-- Validation errors
-- Confidence and review states
 - No silent partial import
 - Own-account transfer detection
 - Categories, subscriptions, dashboards and AI
+
+## Phase 5 UI Import Rules
+
+- File selection uses Electron's native main-process open-file dialog.
+- The renderer never provides or receives a full source path.
+- Import preview sessions live only in main-process memory and expire after 30 minutes.
+- Preview sessions store the prepared import internally and expose only safe DTOs.
+- Commit requires explicit user confirmation and revalidates that the file hash has not changed.
+- Current accounts can import only supported account PDFs.
+- Credit-card accounts can import only supported Visa XLS files.
+- Cash and other account kinds are not import targets in Phase 5.
+- Import history keeps batch records; rollback does not delete history.
+- Active card-settlement reconciliation blocks rollback until reversal.

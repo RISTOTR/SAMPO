@@ -1,6 +1,6 @@
 # Data Model
 
-Current milestone: Phase 4 Visa settlement reconciliation over the Phase 1 schema foundation. The database schema may still evolve through forward-only migrations before external-user use.
+Current milestone: Phase 5 end-to-end import and reconciliation UI over the Phase 1 schema foundation. The database schema may still evolve through forward-only migrations before external-user use.
 
 ## Locked Conventions
 
@@ -91,3 +91,9 @@ Only completed Visa `expense` and `refund` transactions from the selected batch 
 The settlement amount must exactly equal the signed integer-cent sum of eligible Visa transactions. Refunds are positive and reduce the net Visa charge. No tolerance, rounding, or fuzzy matching is allowed.
 
 After commit, the settlement is excluded from spending and marked confirmed. Visa transactions remain unchanged. Reversal removes only the settlement's `card_settlement` links and restores the settlement to visible, needs-review state.
+
+## Renderer DTOs
+
+Phase 5 exposes explicit DTOs for account summaries, import previews, import batches, transaction pages, reconciliation candidates, reconciliation previews, and safe operation errors. DTOs use camelCase and do not expose SQL row names, database paths, full source paths, file hashes, importer objects, or native library objects.
+
+Import preview sessions are not stored in SQLite. They exist only in main-process memory and are referenced by an opaque UUID until commit, discard, expiry, or shutdown.

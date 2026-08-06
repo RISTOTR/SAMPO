@@ -1,6 +1,6 @@
 # Architecture
 
-Current milestone: Phase 4 - Visa Settlement Reconciliation complete.
+Current milestone: Phase 5 - End-to-End Import and Reconciliation UI complete.
 
 ```text
 Vue renderer
@@ -14,7 +14,7 @@ Application services
 Import adapters / repositories / SQLite
 ```
 
-The Electron shell, typed preload API, renderer layout, validation setup, SQLite initialization, migrations, repositories, prepared-import service, EVO/Bankinter Visa XLS importer, EVO/Bankinter account PDF importer, and Visa settlement reconciliation service are implemented. Import UI, dashboards, categorisation, subscriptions, and reconciliation UI remain planned.
+The Electron shell, typed preload API, renderer layout, validation setup, SQLite initialization, migrations, repositories, prepared-import service, EVO/Bankinter Visa XLS importer, EVO/Bankinter account PDF importer, Visa settlement reconciliation service, account management UI, import preview UI, transaction list UI, import history, and reconciliation review workflow are implemented. Dashboards, categorisation, subscriptions, charts, and AI remain planned.
 
 ## Responsibilities
 
@@ -35,6 +35,8 @@ Shared IPC channel constants live in `src/shared/ipc.ts`. Shared preload API typ
 Financial storage uses local-only SQLite through `better-sqlite3`, installed as an application dependency and used only by Electron main-process modules.
 
 The production database path is `app.getPath('userData')/sampo.sqlite3`. Tests supply explicit temporary database paths and never open the real user database.
+
+Development can override the database path with `SAMPO_DATABASE_PATH` for disposable manual workflow testing. This is a main-process environment override only; the renderer cannot choose database paths. Production builds continue to use `app.getPath('userData')/sampo.sqlite3`.
 
 Database initialization enables foreign keys, applies a busy timeout, uses WAL mode for file-backed application databases, runs forward-only migrations, and closes the connection during application shutdown. Initialization failures are surfaced as typed errors; damaged databases are not silently recreated or deleted.
 
@@ -102,6 +104,25 @@ Commit requires exact signed integer-cent equality between the settlement amount
 On successful commit, the service creates one `card_settlement` link per included completed Visa movement, sets the settlement `excludedFromSpending: true`, and sets its review status to `confirmed`. Visa movements are not modified. Reversal deletes only the settlement's `card_settlement` links, restores the settlement to `excludedFromSpending: false` and `reviewStatus: needs_review`, and allows later reconciliation again.
 
 Rollback is protected while active card-settlement links involve any transaction in an import batch, either as settlement source or Visa destination. Reconciliation must be reversed before rolling back either side. Historical audit beyond link creation timestamps remains a future enhancement.
+
+## Phase 5 Workflow UI
+
+The first usable workflow is exposed through narrow grouped preload APIs under `window.sampo.accounts`, `window.sampo.imports`, `window.sampo.transactions`, `window.sampo.reconciliation`, and `window.sampo.overview`. The preload does not expose raw `ipcRenderer`, arbitrary channels, SQL, file paths, database paths, importer instances, or native objects.
+
+Renderer requests are validated in the main process with Zod-backed DTO schemas. Responses use explicit camelCase DTOs rather than storage rows. Main-process errors are mapped to stable renderer-safe error codes without stack traces, SQL, native errors, or full file paths.
+
+Native file selection happens only in the main process with Electron's open-file dialog. Import preview sessions are stored only in main-process memory, use unpredictable UUIDs, expire after 30 minutes, store full source paths internally only, and are removed after commit, discard, expiry, or shutdown. The renderer receives only source filenames, inspection summaries, and prepared transaction previews.
+
+Supported Phase 5 account/source combinations are:
+
+```text
+current account     -> EVO account PDF
+credit-card account -> EVO Visa XLS
+```
+
+Imports remain all-or-nothing. Preview and inspection do not write to SQLite. Commit revalidates source compatibility and file hash, then uses the existing atomic prepared-import service. Import history supports rollback for unreconciled committed batches and communicates active reconciliation blocking.
+
+The transaction list uses focused repository filtering and pagination with a default page size of 50. The reconciliation review workflow lists card settlements, displays candidate Visa batches, requires explicit preview and confirmation, and supports explicit reversal.
 
 ## Deterministic Calculations
 

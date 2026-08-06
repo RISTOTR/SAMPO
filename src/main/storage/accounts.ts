@@ -1,6 +1,6 @@
 import type { Database } from 'better-sqlite3'
 import { randomUUID } from 'crypto'
-import { EntityNotFoundError } from '../domain/errors'
+import { EntityNotFoundError, SampoError } from '../domain/errors'
 import { accountSchema, newAccountSchema, type Account, type NewAccount } from '../domain/schemas'
 import { mapAccount } from './row-mappers'
 
@@ -93,9 +93,20 @@ export class AccountRepository {
       .get({ id }) as { importBatchCount: number; transactionCount: number }
 
     if (references.importBatchCount > 0 || references.transactionCount > 0) {
-      throw new Error('Cannot delete an account that still has imports or transactions')
+      throw new SampoError(
+        'Cannot delete an account that still has imports or transactions',
+        'ACCOUNT_IN_USE'
+      )
     }
 
     this.database.prepare('DELETE FROM accounts WHERE id = ?').run(id)
+  }
+
+  count(): number {
+    const row = this.database.prepare('SELECT COUNT(*) AS count FROM accounts').get() as {
+      count: number
+    }
+
+    return row.count
   }
 }

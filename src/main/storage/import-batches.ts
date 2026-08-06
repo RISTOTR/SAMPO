@@ -85,6 +85,14 @@ export class ImportBatchRepository {
       .map((row) => importBatchSchema.parse(mapImportBatch(row as never)))
   }
 
+  countCommitted(): number {
+    const row = this.database
+      .prepare("SELECT COUNT(*) AS count FROM import_batches WHERE status = 'committed'")
+      .get() as { count: number }
+
+    return row.count
+  }
+
   listCommittedBySourceKind(sourceKind: ImportBatch['sourceKind']): ImportBatch[] {
     return this.database
       .prepare(

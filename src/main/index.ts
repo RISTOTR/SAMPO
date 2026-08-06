@@ -1,9 +1,20 @@
-import { app, BrowserWindow, ipcMain, session, WebContents } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  session,
+  WebContents,
+  type IpcMainInvokeEvent
+} from 'electron'
 import { join } from 'path'
 import { IPC_CHANNELS } from '../shared/ipc'
+import { registerApplicationIpcHandlers } from './ipc-handlers'
 import { createApplicationDatabase, type SampoDatabase } from './storage/database'
+import { ApplicationWorkflow } from './workflows/application-workflow'
+import { NativeFileDialogAdapter } from './workflows/native-file-dialog'
 
 let sampoDatabase: SampoDatabase | undefined
+let workflow: ApplicationWorkflow | undefined
 
 function isTrustedSender(sender: WebContents): boolean {
   const senderUrl = sender.getURL()
@@ -13,6 +24,10 @@ function isTrustedSender(sender: WebContents): boolean {
   }
 
   return senderUrl.startsWith('file://')
+}
+
+function isTrustedIpcSender(event: IpcMainInvokeEvent): boolean {
+  return isTrustedSender(event.sender)
 }
 
 function createWindow(): void {
@@ -60,6 +75,7 @@ app.whenReady().then(() => {
   app.setName('Sampo')
   app.setAppUserModelId('es.ristotapani.sampo')
   sampoDatabase = createApplicationDatabase()
+  workflow = new ApplicationWorkflow(sampoDatabase.connection, new NativeFileDialogAdapter())
 
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
     callback(false)
@@ -78,6 +94,8 @@ app.whenReady().then(() => {
     }
   })
 
+  registerApplicationIpcHandlers(workflow, isTrustedIpcSender)
+
   createWindow()
 
   app.on('activate', () => {
@@ -94,6 +112,8 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  workflow?.clearPreviewSessions()
+  workflow = undefined
   sampoDatabase?.close()
   sampoDatabase = undefined
 })

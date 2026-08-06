@@ -1,6 +1,6 @@
 # Roadmap
 
-Current milestone: Phase 4 - Visa Settlement Reconciliation complete.
+Current milestone: Phase 5 - End-to-End Import and Reconciliation UI complete.
 
 ## Phase 0 - Foundation
 
@@ -50,7 +50,17 @@ Current milestone: Phase 4 - Visa Settlement Reconciliation complete.
 - Refund linking beyond Visa-settlement batch matching
 - Reconciliation review UI
 
-## Phase 5 - Categorisation
+## Phase 5 - End-to-End Workflow UI
+
+- Account management UI - complete
+- Native file selection and import preview sessions - complete
+- Explicit all-or-nothing import commit - complete
+- Import history and rollback controls - complete
+- Paginated transaction list with filters - complete
+- Reconciliation review, commit and reversal UI - complete
+- Privacy-safe real-file workflow validation - complete
+
+## Phase 6 - Categorisation
 
 - Categories
 - Merchant normalisation
@@ -58,7 +68,7 @@ Current milestone: Phase 4 - Visa Settlement Reconciliation complete.
 - Reusable rules
 - Business/personal classification
 
-## Phase 6 - Subscriptions and Analysis
+## Phase 7 - Subscriptions and Analysis
 
 - Recurring-series detection
 - Subscription review
@@ -66,7 +76,7 @@ Current milestone: Phase 4 - Visa Settlement Reconciliation complete.
 - Weekday analysis
 - Merchant and location analysis
 
-## Phase 7 - Optional AI
+## Phase 8 - Optional AI
 
 - Unknown merchant research
 - Category suggestions
@@ -74,7 +84,7 @@ Current milestone: Phase 4 - Visa Settlement Reconciliation complete.
 - Natural-language questions
 - Strict data minimisation
 
-## Phase 8 - Distribution
+## Phase 9 - Distribution
 
 - Signing
 - Notarisation

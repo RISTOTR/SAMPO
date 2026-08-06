@@ -18,6 +18,10 @@ export type CreateDatabaseOptions = {
 }
 
 export function getApplicationDatabasePath(): string {
+  if (!app.isPackaged && process.env['SAMPO_DATABASE_PATH']) {
+    return process.env['SAMPO_DATABASE_PATH']
+  }
+
   return join(app.getPath('userData'), 'sampo.sqlite3')
 }
 

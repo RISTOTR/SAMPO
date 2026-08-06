@@ -125,6 +125,19 @@ export const migrations: Migration[] = [
           WHERE kind = 'card_settlement';
       `)
     }
+  },
+  {
+    version: 3,
+    name: 'add_ui_query_indexes',
+    up: (database) => {
+      database.exec(`
+        CREATE INDEX transactions_date_created_idx
+          ON transactions(transaction_date, created_at);
+
+        CREATE INDEX transactions_type_pending_exclusion_idx
+          ON transactions(transaction_type, is_pending, excluded_from_spending);
+      `)
+    }
   }
 ]
 
