@@ -22,8 +22,23 @@ export const aliasMatchKindDtoSchema = z.enum(['exact', 'starts_with', 'contains
 export const usageTypeDtoSchema = z.enum(['personal', 'business', 'mixed', 'unspecified'])
 export const costBehaviourDtoSchema = z.enum(['fixed', 'variable', 'unspecified'])
 export const necessityDtoSchema = z.enum(['essential', 'discretionary', 'unspecified'])
-export const classificationSourceDtoSchema = z.enum(['manual', 'rule', 'unclassified'])
+export const classificationSourceDtoSchema = z.enum(['manual', 'rule', 'ai', 'unclassified'])
 export const classificationStatusDtoSchema = z.enum(['confirmed', 'needs_review', 'ambiguous'])
+export const aiSuggestionStatusDtoSchema = z.enum([
+  'pending',
+  'accepted',
+  'rejected',
+  'superseded',
+  'failed'
+])
+export const aiConnectionStatusDtoSchema = z.enum([
+  'connected',
+  'invalid_key',
+  'permission_error',
+  'quota_or_rate_limit',
+  'network_error',
+  'service_error'
+])
 
 export const uuidDtoSchema = z.string().uuid()
 export const isoDateDtoSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -62,6 +77,21 @@ export const operationErrorCodeDtoSchema = z.enum([
   'manual_classification_preserved',
   'bulk_update_conflict',
   'entity_in_use',
+  'ai_not_configured',
+  'ai_disabled',
+  'ai_invalid_key',
+  'ai_permission_error',
+  'ai_rate_limited',
+  'ai_quota_exceeded',
+  'ai_timeout',
+  'ai_network_error',
+  'ai_service_error',
+  'ai_invalid_response',
+  'ai_partial_response',
+  'ai_web_lookup_disabled',
+  'ai_web_lookup_failed',
+  'secret_storage_unavailable',
+  'secret_corrupted',
   'database_error',
   'unexpected_error'
 ])
@@ -454,6 +484,98 @@ export const bulkClassificationResultDtoSchema = z.object({
   updatedCount: z.number().int().min(0)
 })
 
+export const aiModelInfoDtoSchema = z.object({
+  bulkClassificationModel: z.string().min(1),
+  webLookupModel: z.string().min(1),
+  reasoningEffort: z.string().min(1),
+  webReasoningEffort: z.string().min(1)
+})
+
+export const aiSettingsDtoSchema = z.object({
+  keyConfigured: z.boolean(),
+  aiEnabled: z.boolean(),
+  classifyNewImports: z.boolean(),
+  allowWebLookup: z.boolean(),
+  autoAcceptHighConfidence: z.boolean(),
+  country: z.string().trim().min(1).optional(),
+  city: z.string().trim().min(1).optional(),
+  models: aiModelInfoDtoSchema
+})
+
+export const updateAiSettingsInputDtoSchema = z.object({
+  aiEnabled: z.boolean().optional(),
+  classifyNewImports: z.boolean().optional(),
+  allowWebLookup: z.boolean().optional(),
+  autoAcceptHighConfidence: z.boolean().optional(),
+  country: z.string().trim().min(1).optional(),
+  city: z.string().trim().min(1).optional()
+})
+
+export const saveOpenAiApiKeyInputDtoSchema = z.object({
+  apiKey: z.string().trim().min(1)
+})
+
+export const aiConnectionTestDtoSchema = z.object({
+  status: aiConnectionStatusDtoSchema
+})
+
+export const aiSuggestionDtoSchema = z.object({
+  id: uuidDtoSchema,
+  transactionId: uuidDtoSchema,
+  suggestedMerchantName: z.string().min(1).optional(),
+  suggestedCategoryId: uuidDtoSchema.optional(),
+  suggestedCategoryPath: z.array(z.string().min(1)).optional(),
+  merchantConfidence: z.number().int().min(0).max(1000),
+  categoryConfidence: z.number().int().min(0).max(1000),
+  merchantConfidenceBand: z.enum(['high', 'medium', 'low']),
+  categoryConfidenceBand: z.enum(['high', 'medium', 'low']),
+  needsWebLookup: z.boolean(),
+  status: aiSuggestionStatusDtoSchema,
+  usedWebSearch: z.boolean(),
+  reasonCode: z.enum([
+    'known_brand',
+    'merchant_name_signal',
+    'local_business_signal',
+    'category_signal_only',
+    'ambiguous',
+    'unknown'
+  ]),
+  createdAt: utcTimestampDtoSchema,
+  reviewedAt: utcTimestampDtoSchema.optional()
+})
+
+export const smartClassifyInputDtoSchema = z.object({
+  transactionIds: z.array(uuidDtoSchema).min(1).max(200),
+  allowWebLookup: z.boolean().optional()
+})
+
+export const smartClassifyBatchInputDtoSchema = z.object({
+  importBatchId: uuidDtoSchema
+})
+
+export const smartClassifySummaryDtoSchema = z.object({
+  eligibleTransactionCount: z.number().int().min(0),
+  uniqueDescriptionCount: z.number().int().min(0),
+  suggestionsCreated: z.number().int().min(0),
+  highConfidenceCategories: z.number().int().min(0),
+  mediumConfidenceCategories: z.number().int().min(0),
+  lowConfidenceCategories: z.number().int().min(0),
+  unknownCategories: z.number().int().min(0),
+  canonicalMerchantsSuggested: z.number().int().min(0),
+  webLookupsPerformed: z.number().int().min(0),
+  skippedDeterministicOrManual: z.number().int().min(0)
+})
+
+export const acceptAiSuggestionInputDtoSchema = z.object({
+  suggestionId: uuidDtoSchema,
+  acceptCategory: z.boolean().default(true),
+  acceptMerchant: z.boolean().default(true)
+})
+
+export const rejectAiSuggestionInputDtoSchema = z.object({
+  suggestionId: uuidDtoSchema
+})
+
 export type AccountSummaryDto = z.infer<typeof accountSummaryDtoSchema>
 export type CreateAccountInputDto = z.input<typeof createAccountInputDtoSchema>
 export type UpdateAccountInputDto = z.input<typeof updateAccountInputDtoSchema>
@@ -493,4 +615,14 @@ export type RuleApplicationPreviewDto = z.infer<typeof ruleApplicationPreviewDto
 export type ApplyRuleInputDto = z.input<typeof applyRuleInputDtoSchema>
 export type BulkClassificationInputDto = z.input<typeof bulkClassificationInputDtoSchema>
 export type BulkClassificationResultDto = z.infer<typeof bulkClassificationResultDtoSchema>
+export type AiSettingsDto = z.infer<typeof aiSettingsDtoSchema>
+export type UpdateAiSettingsInputDto = z.input<typeof updateAiSettingsInputDtoSchema>
+export type SaveOpenAiApiKeyInputDto = z.input<typeof saveOpenAiApiKeyInputDtoSchema>
+export type AiConnectionTestDto = z.infer<typeof aiConnectionTestDtoSchema>
+export type AiSuggestionDto = z.infer<typeof aiSuggestionDtoSchema>
+export type SmartClassifyInputDto = z.input<typeof smartClassifyInputDtoSchema>
+export type SmartClassifyBatchInputDto = z.input<typeof smartClassifyBatchInputDtoSchema>
+export type SmartClassifySummaryDto = z.infer<typeof smartClassifySummaryDtoSchema>
+export type AcceptAiSuggestionInputDto = z.input<typeof acceptAiSuggestionInputDtoSchema>
+export type RejectAiSuggestionInputDto = z.input<typeof rejectAiSuggestionInputDtoSchema>
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: OperationErrorDto }

@@ -42,7 +42,7 @@ export type ClassificationProposal = {
   matchedRuleId?: string
   matchedRuleName?: string
   status: ClassificationStatus
-  source: 'manual' | 'rule' | 'unclassified'
+  source: 'manual' | 'rule' | 'ai' | 'unclassified'
   conflicts: ClassificationConflict[]
 }
 

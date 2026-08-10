@@ -1,5 +1,9 @@
 import type {
   AccountSummaryDto,
+  AcceptAiSuggestionInputDto,
+  AiConnectionTestDto,
+  AiSettingsDto,
+  AiSuggestionDto,
   ApiResult,
   ApplyRuleInputDto,
   BulkClassificationInputDto,
@@ -25,10 +29,15 @@ import type {
   RuleApplicationPreviewDto,
   RuleInputDto,
   SaveManualClassificationInputDto,
+  SaveOpenAiApiKeyInputDto,
   SettlementSummaryDto,
+  SmartClassifyBatchInputDto,
+  SmartClassifyInputDto,
+  SmartClassifySummaryDto,
   TransactionListQueryDto,
   TransactionPageDto,
   UpdateAccountInputDto,
+  UpdateAiSettingsInputDto,
   UpdateCategoryInputDto,
   UpdateMerchantAliasInputDto,
   UpdateMerchantInputDto
@@ -112,5 +121,19 @@ export type SampoApi = {
     list: () => Promise<ApiResult<CategorisationRuleDto[]>>
     activate: (id: string) => Promise<ApiResult<CategorisationRuleDto>>
     deactivate: (id: string) => Promise<ApiResult<CategorisationRuleDto>>
+  }
+  ai: {
+    getSettings: () => Promise<ApiResult<AiSettingsDto>>
+    saveOpenAiApiKey: (input: SaveOpenAiApiKeyInputDto) => Promise<ApiResult<AiSettingsDto>>
+    deleteOpenAiApiKey: () => Promise<ApiResult<AiSettingsDto>>
+    updateSettings: (input: UpdateAiSettingsInputDto) => Promise<ApiResult<AiSettingsDto>>
+    testConnection: () => Promise<ApiResult<AiConnectionTestDto>>
+    smartClassify: (input: SmartClassifyInputDto) => Promise<ApiResult<SmartClassifySummaryDto>>
+    smartClassifyImportBatch: (
+      input: SmartClassifyBatchInputDto
+    ) => Promise<ApiResult<SmartClassifySummaryDto>>
+    listSuggestions: () => Promise<ApiResult<AiSuggestionDto[]>>
+    acceptSuggestion: (input: AcceptAiSuggestionInputDto) => Promise<ApiResult<AiSuggestionDto>>
+    rejectSuggestion: (input: { suggestionId: string }) => Promise<ApiResult<AiSuggestionDto>>
   }
 }

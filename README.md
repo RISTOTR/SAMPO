@@ -1,6 +1,6 @@
 # Sampo
 
-Sampo is a local-first macOS desktop application for analysing personal finances. It currently has a secure Electron/Vue shell, the local persistence/domain foundation, tested EVO/Bankinter Visa XLS and account PDF importers, exact Visa settlement reconciliation, a usable import/reconciliation UI workflow, and deterministic transaction categorisation with merchant aliases and user-approved rules. Dashboards, subscriptions, charts, recurring-series detection, and AI features are planned but not implemented.
+Sampo is a local-first macOS desktop application for analysing personal finances. It currently has a secure Electron/Vue shell, the local persistence/domain foundation, tested EVO/Bankinter Visa XLS and account PDF importers, exact Visa settlement reconciliation, a usable import/reconciliation UI workflow, deterministic transaction categorisation with merchant aliases and user-approved rules, and optional AI categorisation suggestions. Dashboards, subscriptions, charts, and recurring-series detection are planned but not implemented.
 
 ## Stack
 
@@ -10,6 +10,7 @@ Sampo is a local-first macOS desktop application for analysing personal finances
 - SQLite through `better-sqlite3` in the Electron main process
 - `@e965/xlsx` for legacy BIFF `.xls` Visa workbook parsing
 - `pdfjs-dist` for text-based account statement PDF extraction
+- OpenAI Responses API for optional descriptor-only categorisation suggestions
 - npm, Vitest, ESLint, Prettier
 - electron-builder for personal macOS packaging
 
@@ -70,6 +71,8 @@ Sampo is designed for local financial data. Do not place real bank statements, V
 
 The application database is local-only at `app.getPath('userData')/sampo.sqlite3`. Tests use explicitly supplied temporary database paths and must never open the real application database.
 
+AI categorisation is optional and disabled by default. When enabled, Sampo sends normalised transaction descriptors and category context to OpenAI for suggestions only; it does not send amounts, balances, account identifiers, full source files, or API keys back to the renderer. OpenAI response storage is disabled in provider requests, and web lookup is an explicit separate setting.
+
 ## Current Limitations
 
 - No dashboards or transaction analysis
@@ -77,7 +80,7 @@ The application database is local-only at `app.getPath('userData')/sampo.sqlite3
 - No subscription or recurring-series detection
 - No charts or financial insights
 - No own-account transfer detection or fuzzy/partial reconciliation
-- No AI analysis
+- AI is limited to optional merchant/category suggestions and is never authoritative financial data
 - No OCR, image-only PDF import, encrypted PDF import, or unsupported changed-layout PDF import
 - No signing, notarisation, auto-update, telemetry, or cloud synchronisation
 

@@ -23,6 +23,15 @@ export class TransactionRepository {
     return transactionSchema.parse(mapTransaction(row as never))
   }
 
+  listByIds(ids: string[]): Transaction[] {
+    if (ids.length === 0) return []
+    const placeholders = ids.map(() => '?').join(', ')
+    return this.database
+      .prepare(`SELECT * FROM transactions WHERE id IN (${placeholders})`)
+      .all(...ids)
+      .map((row) => transactionSchema.parse(mapTransaction(row as never)))
+  }
+
   listForImportBatch(importBatchId: string): Transaction[] {
     return this.database
       .prepare('SELECT * FROM transactions WHERE import_batch_id = ? ORDER BY source_row_index ASC')

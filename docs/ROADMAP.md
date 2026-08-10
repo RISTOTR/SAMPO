@@ -1,6 +1,6 @@
 # Roadmap
 
-Current milestone: Phase 6 - Transaction Categorisation and Merchant Rules complete.
+Current milestone: Phase 7 - Smart AI Categorisation complete.
 
 ## Phase 0 - Foundation
 
@@ -70,7 +70,16 @@ Current milestone: Phase 6 - Transaction Categorisation and Merchant Rules compl
 - Business/personal, fixed/variable and essential/discretionary classification - complete
 - Transaction filters by classification data - complete
 
-## Phase 7 - Subscriptions and Analysis
+## Phase 7 - Smart AI Categorisation
+
+- Optional local settings and API-key storage - complete
+- Descriptor-only OpenAI classification provider with response storage disabled - complete
+- Pending AI suggestions separate from imported transaction facts - complete
+- Explicit suggestion accept/reject workflow - complete
+- Optional web lookup setting - complete
+- Post-import AI classification when enabled - complete
+
+## Phase 8 - Subscriptions and Analysis
 
 - Recurring-series detection
 - Subscription review
@@ -78,15 +87,13 @@ Current milestone: Phase 6 - Transaction Categorisation and Merchant Rules compl
 - Weekday analysis
 - Merchant and location analysis
 
-## Phase 8 - Optional AI
+## Phase 9 - AI Analysis Extensions
 
-- Unknown merchant research
-- Category suggestions
 - Monthly explanations
 - Natural-language questions
-- Strict data minimisation
+- Strict data minimisation for any expanded AI use
 
-## Phase 9 - Distribution
+## Phase 10 - Distribution
 
 - Signing
 - Notarisation

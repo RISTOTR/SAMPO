@@ -4,11 +4,13 @@ import { RouterLink } from 'vue-router'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import { formatCents, formatDate, formatDateTime, sourceLabel } from '../formatters'
 import { useAccountsStore } from '../stores/accounts'
+import { useAiStore } from '../stores/ai'
 import { useImportsStore } from '../stores/imports'
 import { useReconciliationStore } from '../stores/reconciliation'
 import { useTransactionsStore } from '../stores/transactions'
 
 const accounts = useAccountsStore()
+const ai = useAiStore()
 const imports = useImportsStore()
 const reconciliation = useReconciliationStore()
 const transactions = useTransactionsStore()
@@ -32,7 +34,12 @@ const selectedCandidate = computed(() =>
 )
 
 onMounted(async () => {
-  await Promise.all([accounts.load(), imports.loadHistory(), reconciliation.loadSettlements()])
+  await Promise.all([
+    accounts.load(),
+    ai.loadSettings(),
+    imports.loadHistory(),
+    reconciliation.loadSettlements()
+  ])
   selectedAccountId.value = importableAccounts.value[0]?.id ?? ''
 })
 
@@ -43,7 +50,11 @@ async function inspect(): Promise<void> {
 
 async function commitImport(): Promise<void> {
   pendingCommitImport.value = false
-  if (await imports.commitPreview()) {
+  const committed = await imports.commitPreview()
+  if (committed) {
+    if (ai.settings?.aiEnabled && ai.settings.classifyNewImports) {
+      await ai.classifyImportBatch(committed.batchId)
+    }
     await Promise.all([transactions.load(), reconciliation.loadSettlements()])
   }
 }
@@ -101,6 +112,8 @@ async function reverseReconciliation(): Promise<void> {
     <p v-if="reconciliation.error" class="error-message" aria-live="polite">
       {{ reconciliation.error }}
     </p>
+    <p v-if="ai.error" class="error-message" aria-live="polite">{{ ai.error }}</p>
+    <p v-if="ai.message" class="status-message" aria-live="polite">{{ ai.message }}</p>
 
     <div class="panel">
       <h3>New import</h3>

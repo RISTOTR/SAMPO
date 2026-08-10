@@ -1,6 +1,6 @@
 # Import Rules
 
-Current milestone: Phase 6 transaction categorisation and merchant rules complete.
+Current milestone: Phase 7 smart AI categorisation complete.
 
 ## EVO/Bankinter Visa
 
@@ -96,7 +96,7 @@ Visa importer tests generate temporary BIFF `.xls` workbooks from synthetic rows
 
 - No silent partial import
 - Own-account transfer detection
-- Subscriptions, dashboards and AI
+- Subscriptions and dashboards
 
 ## Phase 5 UI Import Rules
 
@@ -122,4 +122,15 @@ Visa importer tests generate temporary BIFF `.xls` workbooks from synthetic rows
 - Reconciliation links and settlement exclusion flags are independent from categorisation.
 - Broad description rules do not automatically categorise card settlements or transfers; exact or merchant-targeted rules are required.
 - Merchant alias matching is deterministic, case-insensitive, whitespace-normalised, and limited to exact, starts-with and contains matching.
-- Regular expressions, AI merchant lookup, internet research and hidden automatic rules are not implemented.
+- Regular expressions and hidden automatic rules are not implemented.
+
+## Phase 7 AI Categorisation Rules
+
+- AI categorisation is optional and disabled by default.
+- AI requests are created in the main process only.
+- Bulk classification sends normalised descriptors and category context, not amounts, balances, account identifiers, source files, source paths, or statement contents.
+- Web lookup is disabled unless the user explicitly enables it.
+- AI suggestions are pending review records and do not change imported transaction facts.
+- Manual classifications remain authoritative and are not silently overwritten by AI acceptance.
+- Accepting an AI suggestion is explicit and stores user-reviewed enrichment with source `ai`.
+- AI failures must not roll back or invalidate a valid financial import.

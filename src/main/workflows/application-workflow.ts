@@ -2,6 +2,10 @@ import type { Database } from 'better-sqlite3'
 import type { BrowserWindow } from 'electron'
 import {
   accountSummaryDtoSchema,
+  acceptAiSuggestionInputDtoSchema,
+  aiConnectionTestDtoSchema,
+  aiSettingsDtoSchema,
+  aiSuggestionDtoSchema,
   applyRuleInputDtoSchema,
   bulkClassificationInputDtoSchema,
   bulkClassificationResultDtoSchema,
@@ -17,16 +21,25 @@ import {
   merchantDtoSchema,
   merchantListQueryDtoSchema,
   overviewStatsDtoSchema,
+  rejectAiSuggestionInputDtoSchema,
   ruleApplicationPreviewDtoSchema,
   ruleInputDtoSchema,
   saveManualClassificationInputDtoSchema,
+  saveOpenAiApiKeyInputDtoSchema,
+  smartClassifyBatchInputDtoSchema,
+  smartClassifyInputDtoSchema,
+  smartClassifySummaryDtoSchema,
   transactionListQueryDtoSchema,
   transactionPageDtoSchema,
   updateAccountInputDtoSchema,
+  updateAiSettingsInputDtoSchema,
   updateCategoryInputDtoSchema,
   updateMerchantAliasInputDtoSchema,
   updateMerchantInputDtoSchema,
   type AccountSummaryDto,
+  type AiConnectionTestDto,
+  type AiSettingsDto,
+  type AiSuggestionDto,
   type BulkClassificationResultDto,
   type CategorisationRuleDto,
   type CategoryDto,
@@ -42,11 +55,17 @@ import {
   type ReconciliationPreviewDto,
   type ReversedReconciliationDto,
   type RuleApplicationPreviewDto,
+  type SmartClassifySummaryDto,
   type SettlementSummaryDto,
   type TransactionListQueryDto,
   type TransactionPageDto
 } from '../../shared/dtos'
 import type { ImportBatch } from '../domain/schemas'
+import { aiModelConfig } from '../ai/config'
+import { AiNotConfiguredError } from '../ai/errors'
+import { OpenAiClassificationProvider, type AiClassificationProvider } from '../ai/provider'
+import { SmartClassificationService } from '../ai/smart-classification-service'
+import { MemorySecretStore, type SecretStore } from '../ai/secret-store'
 import { ClassificationService } from '../categorisation/classification-service'
 import { ImportService } from '../services/import-service'
 import { VisaSettlementReconciliationService } from '../reconciliation/visa-settlement-reconciliation-service'
@@ -54,6 +73,7 @@ import { AccountRepository } from '../storage/accounts'
 import { ImportBatchRepository } from '../storage/import-batches'
 import { TransactionLinkRepository } from '../storage/transaction-links'
 import { TransactionRepository } from '../storage/transactions'
+import { AiSettingsRepository, AiSuggestionRepository } from '../storage/ai'
 import {
   CategorisationRuleRepository,
   CategoryRepository,
@@ -63,6 +83,7 @@ import {
 } from '../storage/categorisation'
 import {
   accountToDto,
+  aiSuggestionToDto,
   candidateToDto,
   categoryToDto,
   merchantAliasToDto,
@@ -93,9 +114,18 @@ export class ApplicationWorkflow {
   private readonly rules: CategorisationRuleRepository
   private readonly classifications: TransactionClassificationRepository
   private readonly classification: ClassificationService
+  private readonly secretStore: SecretStore
+  private readonly aiSettings: AiSettingsRepository
+  private readonly aiSuggestions: AiSuggestionRepository
+  private readonly smartClassification: SmartClassificationService
   readonly previews: ImportPreviewWorkflow
 
-  constructor(database: Database, dialogAdapter: FileDialogAdapter) {
+  constructor(
+    database: Database,
+    dialogAdapter: FileDialogAdapter,
+    secretStore: SecretStore = new MemorySecretStore(),
+    aiProvider?: AiClassificationProvider
+  ) {
     this.accounts = new AccountRepository(database)
     this.importBatches = new ImportBatchRepository(database)
     this.imports = new ImportService(database)
@@ -108,6 +138,13 @@ export class ApplicationWorkflow {
     this.rules = new CategorisationRuleRepository(database)
     this.classifications = new TransactionClassificationRepository(database)
     this.classification = new ClassificationService(database)
+    this.secretStore = secretStore
+    this.aiSettings = new AiSettingsRepository(database)
+    this.aiSuggestions = new AiSuggestionRepository(database)
+    this.smartClassification = new SmartClassificationService(
+      database,
+      aiProvider ?? new OpenAiClassificationProvider(secretStore)
+    )
     this.previews = new ImportPreviewWorkflow(database, dialogAdapter)
   }
 
@@ -364,6 +401,113 @@ export class ApplicationWorkflow {
     })
   }
 
+  async getAiSettings(): Promise<AiSettingsDto> {
+    const settings = this.aiSettings.get()
+    return aiSettingsDtoSchema.parse({
+      ...settings,
+      keyConfigured: await this.secretStore.hasOpenAiApiKey(),
+      models: aiModelConfig
+    })
+  }
+
+  async saveOpenAiApiKey(input: unknown): Promise<AiSettingsDto> {
+    const parsed = saveOpenAiApiKeyInputDtoSchema.parse(input)
+    await this.secretStore.setOpenAiApiKey(parsed.apiKey)
+    return this.getAiSettings()
+  }
+
+  async deleteOpenAiApiKey(): Promise<AiSettingsDto> {
+    await this.secretStore.deleteOpenAiApiKey()
+    this.aiSettings.update({ aiEnabled: false })
+    return this.getAiSettings()
+  }
+
+  async updateAiSettings(input: unknown): Promise<AiSettingsDto> {
+    const parsed = updateAiSettingsInputDtoSchema.parse(input)
+    this.aiSettings.update(parsed)
+    return this.getAiSettings()
+  }
+
+  async testAiConnection(): Promise<AiConnectionTestDto> {
+    if (!(await this.secretStore.hasOpenAiApiKey())) {
+      return aiConnectionTestDtoSchema.parse({ status: 'invalid_key' })
+    }
+
+    try {
+      await new OpenAiClassificationProvider(this.secretStore).classify(
+        [
+          {
+            inputId: 'connection-test',
+            descriptor: 'SAMPLE SUPERMARKET',
+            sourceContext: 'card_purchase'
+          }
+        ],
+        { categories: this.activeCategoryChoices(), allowWebLookup: false }
+      )
+      return aiConnectionTestDtoSchema.parse({ status: 'connected' })
+    } catch (error) {
+      return aiConnectionTestDtoSchema.parse({ status: this.mapAiConnectionError(error) })
+    }
+  }
+
+  async smartClassify(input: unknown): Promise<SmartClassifySummaryDto> {
+    const parsed = smartClassifyInputDtoSchema.parse(input)
+    const previousSettings = this.aiSettings.get()
+    if (typeof parsed.allowWebLookup === 'boolean') {
+      this.aiSettings.update({ allowWebLookup: parsed.allowWebLookup })
+    }
+
+    try {
+      const summary = await this.smartClassification.classifyTransactions(parsed.transactionIds)
+      return smartClassifySummaryDtoSchema.parse(summary)
+    } finally {
+      if (typeof parsed.allowWebLookup === 'boolean') this.aiSettings.update(previousSettings)
+    }
+  }
+
+  async smartClassifyImportBatch(input: unknown): Promise<SmartClassifySummaryDto> {
+    const parsed = smartClassifyBatchInputDtoSchema.parse(input)
+    const transactions = this.transactions.listForImportBatch(parsed.importBatchId)
+    return smartClassifySummaryDtoSchema.parse(
+      await this.smartClassification.classifyTransactions(
+        transactions.map((transaction) => transaction.id)
+      )
+    )
+  }
+
+  listAiSuggestions(): AiSuggestionDto[] {
+    return this.aiSuggestions.listPending().map((suggestion) =>
+      aiSuggestionDtoSchema.parse(
+        aiSuggestionToDto({
+          suggestion,
+          categoryPath: this.categoryPath(suggestion.suggestedCategoryId)
+        })
+      )
+    )
+  }
+
+  acceptAiSuggestion(input: unknown): AiSuggestionDto {
+    const parsed = acceptAiSuggestionInputDtoSchema.parse(input)
+    const suggestion = this.smartClassification.acceptSuggestion(parsed)
+    return aiSuggestionDtoSchema.parse(
+      aiSuggestionToDto({
+        suggestion,
+        categoryPath: this.categoryPath(suggestion.suggestedCategoryId)
+      })
+    )
+  }
+
+  rejectAiSuggestion(input: unknown): AiSuggestionDto {
+    const parsed = rejectAiSuggestionInputDtoSchema.parse(input)
+    const suggestion = this.smartClassification.rejectSuggestion(parsed.suggestionId)
+    return aiSuggestionDtoSchema.parse(
+      aiSuggestionToDto({
+        suggestion,
+        categoryPath: this.categoryPath(suggestion.suggestedCategoryId)
+      })
+    )
+  }
+
   listRules(): CategorisationRuleDto[] {
     return this.rules.list().map((rule) => categorisationRuleDtoSchema.parse(ruleToDto(rule)))
   }
@@ -383,6 +527,46 @@ export class ApplicationWorkflow {
       this.links.importBatchParticipatesInCardSettlementLinks(batch.id)
 
     return importBatchToDto(batch, account, rollbackBlockedByReconciliation)
+  }
+
+  private activeCategoryChoices(): {
+    id: string
+    key?: string
+    label: string
+    parentLabel?: string
+  }[] {
+    const categories = this.categories.list()
+    return categories
+      .filter((category) => category.isActive)
+      .map((category) => ({
+        id: category.id,
+        key: category.key,
+        label: category.name,
+        parentLabel: category.parentId
+          ? categories.find((parent) => parent.id === category.parentId)?.name
+          : undefined
+      }))
+  }
+
+  private categoryPath(categoryId: string | undefined): string[] | undefined {
+    if (!categoryId) return undefined
+    const categories = this.categories.list()
+    const category = categories.find((candidate) => candidate.id === categoryId)
+    if (!category) return undefined
+    const parent = category.parentId
+      ? categories.find((candidate) => candidate.id === category.parentId)
+      : undefined
+    return parent ? [parent.name, category.name] : [category.name]
+  }
+
+  private mapAiConnectionError(error: unknown): AiConnectionTestDto['status'] {
+    if (error instanceof AiNotConfiguredError) return 'invalid_key'
+    const code = (error as { code?: string }).code
+    if (code === 'AI_INVALID_KEY') return 'invalid_key'
+    if (code === 'AI_PERMISSION_ERROR') return 'permission_error'
+    if (code === 'AI_RATE_LIMITED' || code === 'AI_QUOTA_EXCEEDED') return 'quota_or_rate_limit'
+    if (code === 'AI_NETWORK_ERROR' || code === 'AI_TIMEOUT') return 'network_error'
+    return 'service_error'
   }
 }
 

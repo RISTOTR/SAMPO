@@ -112,6 +112,26 @@ export function registerApplicationIpcHandlers(
   handle(IPC_CHANNELS.rulesDeactivate, isTrustedSender, (id) =>
     workflow.deactivateRule(z.string().uuid().parse(id))
   )
+  handle(IPC_CHANNELS.aiGetSettings, isTrustedSender, () => workflow.getAiSettings())
+  handle(IPC_CHANNELS.aiSaveOpenAiApiKey, isTrustedSender, (input) =>
+    workflow.saveOpenAiApiKey(input)
+  )
+  handle(IPC_CHANNELS.aiDeleteOpenAiApiKey, isTrustedSender, () => workflow.deleteOpenAiApiKey())
+  handle(IPC_CHANNELS.aiUpdateSettings, isTrustedSender, (input) =>
+    workflow.updateAiSettings(input)
+  )
+  handle(IPC_CHANNELS.aiTestConnection, isTrustedSender, () => workflow.testAiConnection())
+  handle(IPC_CHANNELS.aiSmartClassify, isTrustedSender, (input) => workflow.smartClassify(input))
+  handle(IPC_CHANNELS.aiSmartClassifyImportBatch, isTrustedSender, (input) =>
+    workflow.smartClassifyImportBatch(input)
+  )
+  handle(IPC_CHANNELS.aiListSuggestions, isTrustedSender, () => workflow.listAiSuggestions())
+  handle(IPC_CHANNELS.aiAcceptSuggestion, isTrustedSender, (input) =>
+    workflow.acceptAiSuggestion(input)
+  )
+  handle(IPC_CHANNELS.aiRejectSuggestion, isTrustedSender, (input) =>
+    workflow.rejectAiSuggestion(input)
+  )
 }
 
 function handle<T>(

@@ -12,6 +12,7 @@ import {
   MerchantNotFoundError,
   RuleNotFoundError
 } from '../categorisation/errors'
+import { AiProviderError } from '../ai/errors'
 import {
   ActiveReconciliationError,
   DuplicateImportError,
@@ -156,6 +157,11 @@ export function toOperationError(error: unknown): OperationErrorDto {
     return { code: 'bulk_update_conflict', message: 'The bulk update could not be applied.' }
   }
 
+  if (error instanceof AiProviderError || error instanceof SampoError) {
+    const aiError = mapAiError(error.code)
+    if (aiError) return aiError
+  }
+
   if (error instanceof SampoError && error.code === 'ACCOUNT_IN_USE') {
     return { code: 'account_in_use', message: 'This account has imports or transactions.' }
   }
@@ -165,4 +171,31 @@ export function toOperationError(error: unknown): OperationErrorDto {
   }
 
   return { code: 'unexpected_error', message: 'Unexpected error.' }
+}
+
+function mapAiError(code: string): OperationErrorDto | undefined {
+  const messages: Partial<Record<OperationErrorDto['code'], string>> = {
+    ai_not_configured: 'OpenAI is not configured.',
+    ai_disabled: 'AI categorisation is disabled.',
+    ai_invalid_key: 'The OpenAI API key was rejected.',
+    ai_permission_error: 'The OpenAI API key does not have permission for this request.',
+    ai_rate_limited: 'OpenAI rate-limited the request.',
+    ai_quota_exceeded: 'OpenAI quota was exceeded.',
+    ai_timeout: 'The AI request timed out.',
+    ai_network_error: 'The AI service could not be reached.',
+    ai_service_error: 'The AI service returned an error.',
+    ai_invalid_response: 'The AI response was invalid.',
+    ai_partial_response: 'The AI response did not cover every requested item.',
+    ai_web_lookup_disabled: 'Web lookup is disabled.',
+    ai_web_lookup_failed: 'The web lookup failed.',
+    secret_storage_unavailable: 'Secure local secret storage is unavailable.',
+    secret_corrupted: 'The stored API key could not be decrypted.'
+  }
+
+  const dtoCode = code
+    .toLocaleLowerCase('en-US')
+    .replaceAll('ai_', 'ai_')
+    .replaceAll('secret_', 'secret_') as OperationErrorDto['code']
+  const message = messages[dtoCode]
+  return message ? { code: dtoCode, message } : undefined
 }

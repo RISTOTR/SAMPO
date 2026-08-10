@@ -37,5 +37,15 @@ export const IPC_CHANNELS = {
   classificationBulkUpdate: 'sampo:classification:bulk-update',
   rulesList: 'sampo:rules:list',
   rulesActivate: 'sampo:rules:activate',
-  rulesDeactivate: 'sampo:rules:deactivate'
+  rulesDeactivate: 'sampo:rules:deactivate',
+  aiGetSettings: 'sampo:ai:get-settings',
+  aiSaveOpenAiApiKey: 'sampo:ai:save-openai-api-key',
+  aiDeleteOpenAiApiKey: 'sampo:ai:delete-openai-api-key',
+  aiUpdateSettings: 'sampo:ai:update-settings',
+  aiTestConnection: 'sampo:ai:test-connection',
+  aiSmartClassify: 'sampo:ai:smart-classify',
+  aiSmartClassifyImportBatch: 'sampo:ai:smart-classify-import-batch',
+  aiListSuggestions: 'sampo:ai:list-suggestions',
+  aiAcceptSuggestion: 'sampo:ai:accept-suggestion',
+  aiRejectSuggestion: 'sampo:ai:reject-suggestion'
 } as const

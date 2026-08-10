@@ -9,6 +9,7 @@ import {
 import { join } from 'path'
 import { IPC_CHANNELS } from '../shared/ipc'
 import { registerApplicationIpcHandlers } from './ipc-handlers'
+import { FileSecretStore } from './ai/secret-store'
 import { createApplicationDatabase, type SampoDatabase } from './storage/database'
 import { ApplicationWorkflow } from './workflows/application-workflow'
 import { NativeFileDialogAdapter } from './workflows/native-file-dialog'
@@ -75,7 +76,11 @@ app.whenReady().then(() => {
   app.setName('Sampo')
   app.setAppUserModelId('es.ristotapani.sampo')
   sampoDatabase = createApplicationDatabase()
-  workflow = new ApplicationWorkflow(sampoDatabase.connection, new NativeFileDialogAdapter())
+  workflow = new ApplicationWorkflow(
+    sampoDatabase.connection,
+    new NativeFileDialogAdapter(),
+    FileSecretStore.forUserData()
+  )
 
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
     callback(false)

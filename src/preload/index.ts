@@ -76,6 +76,19 @@ const sampo: SampoApi = {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.rulesList),
     activate: (id) => ipcRenderer.invoke(IPC_CHANNELS.rulesActivate, id),
     deactivate: (id) => ipcRenderer.invoke(IPC_CHANNELS.rulesDeactivate, id)
+  },
+  ai: {
+    getSettings: () => ipcRenderer.invoke(IPC_CHANNELS.aiGetSettings),
+    saveOpenAiApiKey: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiSaveOpenAiApiKey, input),
+    deleteOpenAiApiKey: () => ipcRenderer.invoke(IPC_CHANNELS.aiDeleteOpenAiApiKey),
+    updateSettings: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiUpdateSettings, input),
+    testConnection: () => ipcRenderer.invoke(IPC_CHANNELS.aiTestConnection),
+    smartClassify: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiSmartClassify, input),
+    smartClassifyImportBatch: (input) =>
+      ipcRenderer.invoke(IPC_CHANNELS.aiSmartClassifyImportBatch, input),
+    listSuggestions: () => ipcRenderer.invoke(IPC_CHANNELS.aiListSuggestions),
+    acceptSuggestion: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiAcceptSuggestion, input),
+    rejectSuggestion: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiRejectSuggestion, input)
   }
 }
 

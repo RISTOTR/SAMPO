@@ -1,6 +1,10 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { ImportBatchSummaryDto, ImportPreviewSessionDto } from '../../../shared/dtos'
+import type {
+  CommittedImportDto,
+  ImportBatchSummaryDto,
+  ImportPreviewSessionDto
+} from '../../../shared/dtos'
 import { errorMessage, unwrapResult } from './api-result'
 
 export const useImportsStore = defineStore('imports', () => {
@@ -43,8 +47,8 @@ export const useImportsStore = defineStore('imports', () => {
     }
   }
 
-  async function commitPreview(): Promise<boolean> {
-    if (!preview.value || submitting.value) return false
+  async function commitPreview(): Promise<CommittedImportDto | null> {
+    if (!preview.value || submitting.value) return null
     submitting.value = true
     error.value = null
 
@@ -53,10 +57,10 @@ export const useImportsStore = defineStore('imports', () => {
       message.value = `Imported ${committed.transactionCount} transactions.`
       preview.value = null
       await loadHistory()
-      return true
+      return committed
     } catch (caught) {
       error.value = errorMessage(caught)
-      return false
+      return null
     } finally {
       submitting.value = false
     }

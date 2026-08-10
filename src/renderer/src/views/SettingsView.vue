@@ -2,9 +2,11 @@
 import { onMounted, reactive, ref } from 'vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import { useAccountsStore } from '../stores/accounts'
+import { useAiStore } from '../stores/ai'
 import { useClassificationStore } from '../stores/classification'
 
 const accounts = useAccountsStore()
+const ai = useAiStore()
 const classification = useClassificationStore()
 const createForm = reactive({ name: '', kind: 'current' as const, institution: '' })
 const categoryForm = reactive({ name: '', parentId: '', sortOrder: 0 })
@@ -28,11 +30,30 @@ const ruleForm = reactive({
 })
 const editing = reactive<Record<string, { name: string; institution: string }>>({})
 const pendingDeleteId = ref<string | null>(null)
-
-onMounted(() => {
-  void accounts.load()
-  void classification.loadReference()
+const apiKeyInput = ref('')
+const aiForm = reactive({
+  aiEnabled: false,
+  classifyNewImports: true,
+  allowWebLookup: false,
+  autoAcceptHighConfidence: false,
+  country: '',
+  city: ''
 })
+
+onMounted(async () => {
+  await Promise.all([accounts.load(), classification.loadReference(), ai.loadSettings()])
+  syncAiForm()
+})
+
+function syncAiForm(): void {
+  if (!ai.settings) return
+  aiForm.aiEnabled = ai.settings.aiEnabled
+  aiForm.classifyNewImports = ai.settings.classifyNewImports
+  aiForm.allowWebLookup = ai.settings.allowWebLookup
+  aiForm.autoAcceptHighConfidence = ai.settings.autoAcceptHighConfidence
+  aiForm.country = ai.settings.country ?? ''
+  aiForm.city = ai.settings.city ?? ''
+}
 
 async function createAccount(): Promise<void> {
   const ok = await accounts.create({
@@ -133,10 +154,110 @@ async function createRule(): Promise<void> {
   ruleForm.name = ''
   ruleForm.descriptionPattern = ''
 }
+
+async function saveAiSettings(): Promise<void> {
+  await ai.updateSettings({
+    aiEnabled: aiForm.aiEnabled,
+    classifyNewImports: aiForm.classifyNewImports,
+    allowWebLookup: aiForm.allowWebLookup,
+    autoAcceptHighConfidence: aiForm.autoAcceptHighConfidence,
+    country: aiForm.country || undefined,
+    city: aiForm.city || undefined
+  })
+  syncAiForm()
+}
+
+async function saveApiKey(): Promise<void> {
+  if (!apiKeyInput.value) return
+  await ai.saveApiKey(apiKeyInput.value)
+  apiKeyInput.value = ''
+  syncAiForm()
+}
 </script>
 
 <template>
   <section class="view-stack">
+    <div class="panel">
+      <h3>AI categorisation</h3>
+      <p>
+        Smart suggestions are optional. API keys are stored locally and transaction descriptors are
+        sent only when you run AI classification.
+      </p>
+
+      <p v-if="ai.error" class="error-message" aria-live="polite">{{ ai.error }}</p>
+      <p v-if="ai.message" class="status-message" aria-live="polite">{{ ai.message }}</p>
+
+      <form class="form-grid" @submit.prevent="saveApiKey">
+        <div class="form-field">
+          <label for="openai-key">OpenAI API key</label>
+          <input
+            id="openai-key"
+            v-model="apiKeyInput"
+            type="password"
+            autocomplete="new-password"
+            placeholder="Configured keys are never displayed"
+          />
+        </div>
+        <div class="form-field">
+          <label>Key status</label>
+          <span>{{ ai.settings?.keyConfigured ? 'Configured' : 'Not configured' }}</span>
+        </div>
+        <button type="submit" :disabled="ai.submitting || !apiKeyInput">Save key</button>
+        <button
+          class="secondary-button"
+          type="button"
+          :disabled="ai.submitting"
+          @click="ai.deleteApiKey"
+        >
+          Delete key
+        </button>
+        <button
+          class="secondary-button"
+          type="button"
+          :disabled="ai.submitting"
+          @click="ai.testConnection"
+        >
+          Test connection
+        </button>
+      </form>
+
+      <form class="form-grid" @submit.prevent="saveAiSettings">
+        <label class="form-field">
+          <span>AI enabled</span>
+          <input v-model="aiForm.aiEnabled" type="checkbox" />
+        </label>
+        <label class="form-field">
+          <span>Classify new imports</span>
+          <input v-model="aiForm.classifyNewImports" type="checkbox" />
+        </label>
+        <label class="form-field">
+          <span>Allow web lookup</span>
+          <input v-model="aiForm.allowWebLookup" type="checkbox" />
+        </label>
+        <label class="form-field">
+          <span>Auto-accept high confidence</span>
+          <input v-model="aiForm.autoAcceptHighConfidence" type="checkbox" />
+        </label>
+        <div class="form-field">
+          <label for="ai-country">Country context</label>
+          <input id="ai-country" v-model="aiForm.country" autocomplete="off" />
+        </div>
+        <div class="form-field">
+          <label for="ai-city">City context</label>
+          <input id="ai-city" v-model="aiForm.city" autocomplete="off" />
+        </div>
+        <div class="form-field">
+          <label>Bulk model</label>
+          <span>{{ ai.settings?.models.bulkClassificationModel ?? '' }}</span>
+        </div>
+        <div class="form-field">
+          <label>Web model</label>
+          <span>{{ ai.settings?.models.webLookupModel ?? '' }}</span>
+        </div>
+        <button type="submit" :disabled="ai.submitting">Save AI settings</button>
+      </form>
+    </div>
+
     <div class="panel">
       <h3>Accounts</h3>
       <p>

@@ -2,11 +2,13 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { formatCents, formatDate } from '../formatters'
 import { useAccountsStore } from '../stores/accounts'
+import { useAiStore } from '../stores/ai'
 import { useClassificationStore } from '../stores/classification'
 import { useTransactionsStore } from '../stores/transactions'
 import type { TransactionListQueryDto } from '../../../shared/dtos'
 
 const accounts = useAccountsStore()
+const ai = useAiStore()
 const classification = useClassificationStore()
 const transactions = useTransactionsStore()
 const filters = reactive({
@@ -51,7 +53,13 @@ const totalPages = computed(() =>
 )
 
 onMounted(async () => {
-  await Promise.all([accounts.load(), classification.loadReference(), loadTransactions()])
+  await Promise.all([
+    accounts.load(),
+    classification.loadReference(),
+    ai.loadSettings(),
+    ai.loadSuggestions(),
+    loadTransactions()
+  ])
 })
 
 async function loadTransactions(): Promise<void> {
@@ -143,6 +151,29 @@ async function bulkUpdate(): Promise<void> {
   selectedTransactionIds.value = []
   await loadTransactions()
 }
+
+async function classifySelectedWithAi(): Promise<void> {
+  await ai.classifyTransactions(selectedTransactionIds.value)
+  await loadTransactions()
+}
+
+async function acceptAiSuggestion(
+  suggestionId: string,
+  options: { acceptCategory: boolean; acceptMerchant: boolean }
+): Promise<void> {
+  await ai.acceptSuggestion(suggestionId, options)
+  await Promise.all([classification.loadReference(), loadTransactions()])
+}
+
+async function rejectAiSuggestion(suggestionId: string): Promise<void> {
+  await ai.rejectSuggestion(suggestionId)
+  await loadTransactions()
+}
+
+async function acceptHighConfidenceCategories(): Promise<void> {
+  await ai.acceptHighConfidenceCategories()
+  await loadTransactions()
+}
 </script>
 
 <template>
@@ -156,6 +187,8 @@ async function bulkUpdate(): Promise<void> {
     <p v-if="classification.message" class="status-message" aria-live="polite">
       {{ classification.message }}
     </p>
+    <p v-if="ai.error" class="error-message" aria-live="polite">{{ ai.error }}</p>
+    <p v-if="ai.message" class="status-message" aria-live="polite">{{ ai.message }}</p>
 
     <div class="panel">
       <h3>Filters</h3>
@@ -317,6 +350,106 @@ async function bulkUpdate(): Promise<void> {
         </div>
         <button type="submit" :disabled="classification.submitting">Apply to selected</button>
       </form>
+      <div class="button-row">
+        <button
+          type="button"
+          :disabled="ai.submitting || !ai.settings?.aiEnabled || !selectedTransactionIds.length"
+          @click="classifySelectedWithAi"
+        >
+          Smart classify selected
+        </button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>AI suggestions</h3>
+      <div class="button-row">
+        <button type="button" :disabled="ai.loading" @click="ai.loadSuggestions">Refresh</button>
+        <button
+          type="button"
+          :disabled="ai.submitting || ai.highConfidenceSuggestions.length === 0"
+          @click="acceptHighConfidenceCategories"
+        >
+          Accept high-confidence categories
+        </button>
+      </div>
+      <p v-if="ai.suggestions.length === 0">No pending AI suggestions.</p>
+      <div v-else class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Merchant</th>
+              <th>Category</th>
+              <th>Merchant confidence</th>
+              <th>Category confidence</th>
+              <th>Lookup</th>
+              <th>Reason</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="suggestion in ai.suggestions" :key="suggestion.id">
+              <td>{{ suggestion.suggestedMerchantName ?? '' }}</td>
+              <td>{{ suggestion.suggestedCategoryPath?.join(' / ') ?? '' }}</td>
+              <td>{{ suggestion.merchantConfidenceBand }}</td>
+              <td>{{ suggestion.categoryConfidenceBand }}</td>
+              <td>{{ suggestion.usedWebSearch ? 'Web' : 'Local' }}</td>
+              <td>{{ suggestion.reasonCode }}</td>
+              <td>
+                <div class="button-row">
+                  <button
+                    type="button"
+                    :disabled="ai.submitting || !suggestion.suggestedCategoryId"
+                    @click="
+                      acceptAiSuggestion(suggestion.id, {
+                        acceptCategory: true,
+                        acceptMerchant: false
+                      })
+                    "
+                  >
+                    Accept category
+                  </button>
+                  <button
+                    type="button"
+                    :disabled="ai.submitting || !suggestion.suggestedMerchantName"
+                    @click="
+                      acceptAiSuggestion(suggestion.id, {
+                        acceptCategory: false,
+                        acceptMerchant: true
+                      })
+                    "
+                  >
+                    Accept merchant
+                  </button>
+                  <button
+                    type="button"
+                    :disabled="
+                      ai.submitting ||
+                      (!suggestion.suggestedCategoryId && !suggestion.suggestedMerchantName)
+                    "
+                    @click="
+                      acceptAiSuggestion(suggestion.id, {
+                        acceptCategory: true,
+                        acceptMerchant: true
+                      })
+                    "
+                  >
+                    Accept both
+                  </button>
+                  <button
+                    class="danger-button"
+                    type="button"
+                    :disabled="ai.submitting"
+                    @click="rejectAiSuggestion(suggestion.id)"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <div class="panel">

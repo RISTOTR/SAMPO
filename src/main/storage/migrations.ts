@@ -279,6 +279,71 @@ export const migrations: Migration[] = [
 
       seedCategories(database)
     }
+  },
+  {
+    version: 5,
+    name: 'add_ai_classification_tables',
+    up: (database) => {
+      database.exec(`
+        CREATE TABLE ai_settings (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          ai_enabled INTEGER NOT NULL DEFAULT 0 CHECK (ai_enabled IN (0, 1)),
+          classify_new_imports INTEGER NOT NULL DEFAULT 1 CHECK (classify_new_imports IN (0, 1)),
+          allow_web_lookup INTEGER NOT NULL DEFAULT 0 CHECK (allow_web_lookup IN (0, 1)),
+          auto_accept_high_confidence INTEGER NOT NULL DEFAULT 0 CHECK (auto_accept_high_confidence IN (0, 1)),
+          country TEXT,
+          city TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        INSERT INTO ai_settings (id, created_at, updated_at)
+        VALUES (1, datetime('now'), datetime('now'));
+
+        CREATE TABLE ai_classification_suggestions (
+          id TEXT PRIMARY KEY,
+          transaction_id TEXT NOT NULL,
+          provider TEXT NOT NULL,
+          model TEXT NOT NULL,
+          suggested_merchant_name TEXT,
+          suggested_category_id TEXT,
+          merchant_confidence INTEGER NOT NULL CHECK (merchant_confidence BETWEEN 0 AND 1000),
+          category_confidence INTEGER NOT NULL CHECK (category_confidence BETWEEN 0 AND 1000),
+          needs_web_lookup INTEGER NOT NULL DEFAULT 0 CHECK (needs_web_lookup IN (0, 1)),
+          status TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'rejected', 'superseded', 'failed')),
+          used_web_search INTEGER NOT NULL DEFAULT 0 CHECK (used_web_search IN (0, 1)),
+          reason_code TEXT NOT NULL CHECK (
+            reason_code IN (
+              'known_brand',
+              'merchant_name_signal',
+              'local_business_signal',
+              'category_signal_only',
+              'ambiguous',
+              'unknown'
+            )
+          ),
+          created_at TEXT NOT NULL,
+          reviewed_at TEXT,
+          FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE,
+          FOREIGN KEY (suggested_category_id) REFERENCES categories(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX ai_suggestions_transaction_status_idx
+          ON ai_classification_suggestions(transaction_id, status, created_at);
+
+        CREATE INDEX ai_suggestions_status_confidence_idx
+          ON ai_classification_suggestions(status, category_confidence, merchant_confidence);
+
+        CREATE TABLE ai_suggestion_sources (
+          id TEXT PRIMARY KEY,
+          suggestion_id TEXT NOT NULL,
+          title TEXT NOT NULL CHECK (length(trim(title)) > 0),
+          url TEXT NOT NULL CHECK (url LIKE 'https://%'),
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (suggestion_id) REFERENCES ai_classification_suggestions(id) ON DELETE CASCADE
+        );
+      `)
+    }
   }
 ]
 

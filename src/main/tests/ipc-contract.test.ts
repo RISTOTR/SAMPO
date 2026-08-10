@@ -11,6 +11,9 @@ describe('IPC contract', () => {
     expect(channels).not.toContain('sampo:query')
     expect(channels).not.toContain('sampo:filesystem')
     expect(channels).not.toContain('sampo:ipc')
+    expect(channels).not.toContain('sampo:ai:get-openai-api-key')
+    expect(channels).not.toContain('sampo:ai:openai-proxy')
+    expect(channels).not.toContain('sampo:openai')
   })
 
   it('validates stable renderer-safe error DTOs without stack traces', () => {

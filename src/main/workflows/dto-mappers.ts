@@ -1,5 +1,6 @@
 import type {
   Account,
+  AiClassificationSuggestion,
   CategorisationRule,
   Category,
   ImportBatch,
@@ -16,6 +17,7 @@ import type { ClassificationProposal } from '../categorisation/classification-se
 import type { ImportInspection } from '../importers/types'
 import type {
   AccountSummaryDto,
+  AiSuggestionDto,
   CategorisationRuleDto,
   CategoryDto,
   ClassificationProposalDto,
@@ -29,6 +31,7 @@ import type {
   SettlementSummaryDto,
   TransactionRowDto
 } from '../../shared/dtos'
+import { confidenceBand } from '../ai/config'
 
 export function accountToDto(account: Account): AccountSummaryDto {
   return {
@@ -193,6 +196,29 @@ export function classificationToSummaryDto(input: {
     classificationStatus: input.classification.classificationStatus,
     appliedRuleId: input.classification.appliedRuleId,
     appliedRuleName: input.appliedRuleName
+  }
+}
+
+export function aiSuggestionToDto(input: {
+  suggestion: AiClassificationSuggestion
+  categoryPath?: string[]
+}): AiSuggestionDto {
+  return {
+    id: input.suggestion.id,
+    transactionId: input.suggestion.transactionId,
+    suggestedMerchantName: input.suggestion.suggestedMerchantName,
+    suggestedCategoryId: input.suggestion.suggestedCategoryId,
+    suggestedCategoryPath: input.categoryPath,
+    merchantConfidence: input.suggestion.merchantConfidence,
+    categoryConfidence: input.suggestion.categoryConfidence,
+    merchantConfidenceBand: confidenceBand(input.suggestion.merchantConfidence),
+    categoryConfidenceBand: confidenceBand(input.suggestion.categoryConfidence),
+    needsWebLookup: input.suggestion.needsWebLookup,
+    status: input.suggestion.status,
+    usedWebSearch: input.suggestion.usedWebSearch,
+    reasonCode: input.suggestion.reasonCode,
+    createdAt: input.suggestion.createdAt,
+    reviewedAt: input.suggestion.reviewedAt
   }
 }
 

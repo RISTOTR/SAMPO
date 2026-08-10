@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   createAccountInputDtoSchema,
+  aiSettingsDtoSchema,
   bulkClassificationInputDtoSchema,
   importPreviewSessionDtoSchema,
   ruleInputDtoSchema,
+  saveOpenAiApiKeyInputDtoSchema,
   transactionListQueryDtoSchema
 } from '../../../shared/dtos'
 
@@ -48,6 +50,28 @@ describe('shared renderer DTO schemas', () => {
         transactionIds: Array.from({ length: 101 }, () => '11111111-1111-4111-8111-111111111111')
       })
     ).toThrow()
+  })
+
+  it('keeps AI settings readback separate from API key input', () => {
+    const settings = aiSettingsDtoSchema.parse({
+      keyConfigured: true,
+      aiEnabled: true,
+      classifyNewImports: false,
+      allowWebLookup: false,
+      autoAcceptHighConfidence: false,
+      models: {
+        bulkClassificationModel: 'gpt-5.6-luna',
+        webLookupModel: 'gpt-5.6-terra',
+        reasoningEffort: 'minimal',
+        webReasoningEffort: 'low',
+        batchSize: 40
+      }
+    })
+
+    expect(settings).not.toHaveProperty('apiKey')
+    expect(saveOpenAiApiKeyInputDtoSchema.parse({ apiKey: 'sk-test' })).toEqual({
+      apiKey: 'sk-test'
+    })
   })
 
   it('rejects preview sessions that expose full file paths instead of filenames', () => {

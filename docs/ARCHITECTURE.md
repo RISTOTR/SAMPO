@@ -1,6 +1,6 @@
 # Architecture
 
-Current milestone: Phase 6 - Transaction Categorisation and Merchant Rules complete.
+Current milestone: Phase 7 - Smart AI Categorisation complete.
 
 ```text
 Vue renderer
@@ -14,7 +14,7 @@ Application services
 Import adapters / repositories / SQLite
 ```
 
-The Electron shell, typed preload API, renderer layout, validation setup, SQLite initialization, migrations, repositories, prepared-import service, EVO/Bankinter Visa XLS importer, EVO/Bankinter account PDF importer, Visa settlement reconciliation service, account/import/transaction/reconciliation UI, and deterministic transaction categorisation are implemented. Subscriptions, recurring-series detection, charts, monthly analysis, and AI remain planned.
+The Electron shell, typed preload API, renderer layout, validation setup, SQLite initialization, migrations, repositories, prepared-import service, EVO/Bankinter Visa XLS importer, EVO/Bankinter account PDF importer, Visa settlement reconciliation service, account/import/transaction/reconciliation UI, deterministic transaction categorisation, and optional AI categorisation suggestions are implemented. Subscriptions, recurring-series detection, charts, monthly analysis, and broader AI analysis remain planned.
 
 ## Responsibilities
 
@@ -140,6 +140,12 @@ Reconciliation remains independent. Broad description rules do not automatically
 
 Financial totals must be calculated from stored integer-cent amounts and ISO dates. Import, reconciliation, categorisation, and reporting code must keep deterministic rules separate from optional suggestions.
 
-## Optional AI Isolation
+## Phase 7 Smart AI Categorisation
 
-AI may later help with merchant identification, category suggestions, or explanations. It must be optional, use strict data minimisation, and never generate authoritative financial totals.
+AI categorisation is main-process/application-layer code. Renderer APIs are grouped under `window.sampo.ai`; the preload does not expose raw OpenAI clients, arbitrary provider prompts, API-key readback, file paths, SQL, or a generic URL opener.
+
+The OpenAI API key is stored locally through Electron `safeStorage` in the user-data directory. The renderer can save, delete, and test the key, but it never receives the stored key value.
+
+Provider requests use the OpenAI Responses API with structured JSON output and `store: false`. The bulk classifier sends normalised descriptors, source context, enabled category choices, and optional country/city context. It does not send amounts, balances, account identifiers, transaction dates, source filenames, source paths, statement contents, or database rows. Web search is not attached unless the user enables web lookup.
+
+AI suggestions are persisted separately in `ai_classification_suggestions` and remain pending until explicitly accepted or rejected. Accepting a suggestion writes user-reviewed classification enrichment with source `ai`; it never overwrites manual classifications and never modifies imported transaction facts, reconciliation links, amounts, dates, descriptions, or import-batch history. AI output is suggestion data only and must never generate authoritative financial totals.

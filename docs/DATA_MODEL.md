@@ -1,6 +1,6 @@
 # Data Model
 
-Current milestone: Phase 6 transaction categorisation over the Phase 1-5 import and reconciliation foundation. The database schema may still evolve through forward-only migrations before external-user use.
+Current milestone: Phase 7 smart AI categorisation over the Phase 1-6 import, reconciliation, and deterministic categorisation foundation. The database schema may still evolve through forward-only migrations before external-user use.
 
 ## Locked Conventions
 
@@ -35,6 +35,12 @@ Current milestone: Phase 6 transaction categorisation over the Phase 1-5 import 
 `categorisation_rules` stores user-approved deterministic rules based on either a canonical merchant or a supported description match. Rules may assign category, usage type, cost behaviour, necessity, and merchant-related enrichment.
 
 `transaction_classifications` stores one classification record per transaction. It is separate from imported transaction facts and is deleted by foreign-key cascade when an import rollback deletes its transactions.
+
+`ai_settings` stores local AI feature flags and optional location context. It does not store the OpenAI API key.
+
+`ai_classification_suggestions` stores pending, accepted, rejected, superseded, or failed AI suggestions. Suggestions reference transactions and optional categories, keep provider/model/confidence metadata, and remain separate from accepted classification enrichment.
+
+`ai_suggestion_sources` stores HTTPS sources attached to web-derived AI suggestions.
 
 `schema_migrations` records applied forward-only database migrations.
 
@@ -113,8 +119,12 @@ Classification enrichment is stored separately in `transaction_classifications`:
 - `usage_type`: `personal`, `business`, `mixed`, or `unspecified`
 - `cost_behaviour`: `fixed`, `variable`, or `unspecified`
 - `necessity`: `essential`, `discretionary`, or `unspecified`
-- `classification_source`: `manual`, `rule`, or `unclassified`
+- `classification_source`: `manual`, `rule`, `ai`, or `unclassified`
 - `classification_status`: `confirmed`, `needs_review`, or `ambiguous`
 - optional `applied_rule_id`
 
 Manual classifications are authoritative. Rule application fills unclassified or rule-generated values and preserves manual rows by default.
+
+## AI Suggestion Enrichment
+
+AI suggestions are not imported transaction facts. They are review records with confidence metadata and do not affect reports until explicitly accepted. Accepting a suggestion may create classification enrichment with source `ai` and may create a canonical merchant or exact merchant alias when the user accepts the merchant suggestion. Manual classifications remain authoritative and are not silently overwritten by AI acceptance.

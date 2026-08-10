@@ -569,7 +569,7 @@ export type SaveClassificationInput = {
   usageType?: UsageType
   costBehaviour?: CostBehaviour
   necessity?: Necessity
-  classificationSource: 'manual' | 'rule' | 'unclassified'
+  classificationSource: 'manual' | 'rule' | 'ai' | 'unclassified'
   classificationStatus: ClassificationStatus
   appliedRuleId?: string
 }

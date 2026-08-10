@@ -1,6 +1,6 @@
 # Product
 
-Sampo is a local-first macOS desktop application for analysing personal finances from exported bank files. The initial target user is one personal user who wants reliable insight into card and account spending without sending financial records to external services.
+Sampo is a local-first macOS desktop application for analysing personal finances from exported bank files. The initial target user is one personal user who wants reliable insight into card and account spending while keeping financial records local by default.
 
 ## Core Problem
 
@@ -17,15 +17,16 @@ Bank exports are fragmented: Visa purchases, pending movements, card settlements
 - Duplicate-resistant imports
 - Visible reconciliation between card purchases and card settlement payments
 - Deterministic merchant and category enrichment for imported transactions
+- Optional AI merchant and category suggestions for explicit review
 - Better location, date, and weekday analysis later
-- Optional explanations and suggestions later, without treating AI as authoritative
+- Optional explanations later, without treating AI as authoritative
 
 ## Privacy Principles
 
 - Financial data is local only.
 - No telemetry, analytics, cloud sync, or automatic upload.
 - Real financial files must never be committed.
-- AI features, if added later, must be optional and minimise data exposure.
+- AI features must be optional, minimise data exposure, and never be authoritative financial data.
 
 ## V1 Scope
 
@@ -34,6 +35,7 @@ Bank exports are fragmented: Visa purchases, pending movements, card settlements
 - SQLite persistence in the Electron main process
 - Deterministic reporting and reconciliation
 - Manual review of uncertain import and reconciliation results
+- Optional descriptor-only AI categorisation suggestions
 
 ## Explicit Exclusions From V1
 
@@ -49,8 +51,6 @@ Bank exports are fragmented: Visa purchases, pending movements, card settlements
 
 ## Future Possibilities
 
-- Optional merchant research
-- Optional category suggestions
 - Natural-language questions over local summaries
 - Signing and notarisation
 - External-user testing

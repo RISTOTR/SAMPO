@@ -25,8 +25,15 @@ export const aliasMatchKinds = ['exact', 'starts_with', 'contains'] as const
 export const usageTypes = ['personal', 'business', 'mixed', 'unspecified'] as const
 export const costBehaviours = ['fixed', 'variable', 'unspecified'] as const
 export const necessities = ['essential', 'discretionary', 'unspecified'] as const
-export const classificationSources = ['manual', 'rule', 'unclassified'] as const
+export const classificationSources = ['manual', 'rule', 'ai', 'unclassified'] as const
 export const classificationStatuses = ['confirmed', 'needs_review', 'ambiguous'] as const
+export const aiSuggestionStatuses = [
+  'pending',
+  'accepted',
+  'rejected',
+  'superseded',
+  'failed'
+] as const
 
 export const reconciliationWarningCodes = [
   'settlement_not_found',
@@ -247,6 +254,30 @@ export const transactionClassificationSchema = z.object({
   updatedAt: utcTimestampSchema
 })
 
+export const aiClassificationSuggestionSchema = z.object({
+  id: uuidSchema,
+  transactionId: uuidSchema,
+  provider: z.string().min(1),
+  model: z.string().min(1),
+  suggestedMerchantName: z.string().trim().min(1).optional(),
+  suggestedCategoryId: uuidSchema.optional(),
+  merchantConfidence: z.number().int().min(0).max(1000),
+  categoryConfidence: z.number().int().min(0).max(1000),
+  needsWebLookup: z.boolean(),
+  status: z.enum(aiSuggestionStatuses),
+  usedWebSearch: z.boolean(),
+  reasonCode: z.enum([
+    'known_brand',
+    'merchant_name_signal',
+    'local_business_signal',
+    'category_signal_only',
+    'ambiguous',
+    'unknown'
+  ]),
+  createdAt: utcTimestampSchema,
+  reviewedAt: utcTimestampSchema.optional()
+})
+
 export const reconciliationWarningSchema = z.object({
   code: z.enum(reconciliationWarningCodes),
   message: z.string().min(1),
@@ -330,3 +361,5 @@ export type Merchant = z.infer<typeof merchantSchema>
 export type MerchantAlias = z.infer<typeof merchantAliasSchema>
 export type CategorisationRule = z.infer<typeof categorisationRuleSchema>
 export type TransactionClassification = z.infer<typeof transactionClassificationSchema>
+export type AiClassificationSuggestion = z.infer<typeof aiClassificationSuggestionSchema>
+export type AiSuggestionStatus = (typeof aiSuggestionStatuses)[number]
