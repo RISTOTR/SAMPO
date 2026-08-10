@@ -1,5 +1,5 @@
 import type { Database } from 'better-sqlite3'
-import { MigrationVersionIncompatibilityError } from '../domain/errors'
+import { MigrationApplicationError, MigrationVersionIncompatibilityError } from '../domain/errors'
 
 export type Migration = {
   version: number
@@ -478,7 +478,11 @@ export function runMigrations(database: Database): void {
         .run(migration.version, migration.name, new Date().toISOString())
     })
 
-    applyMigration()
+    try {
+      applyMigration()
+    } catch (error) {
+      throw new MigrationApplicationError(migration.version, migration.name, error)
+    }
   }
 }
 

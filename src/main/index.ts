@@ -10,6 +10,7 @@ import { join } from 'path'
 import { IPC_CHANNELS } from '../shared/ipc'
 import { registerApplicationIpcHandlers } from './ipc-handlers'
 import { FileSecretStore } from './ai/secret-store'
+import { formatErrorForDevelopment } from './domain/errors'
 import { createApplicationDatabase, type SampoDatabase } from './storage/database'
 import { ApplicationWorkflow } from './workflows/application-workflow'
 import { NativeFileDialogAdapter } from './workflows/native-file-dialog'
@@ -72,43 +73,49 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
-  app.setName('Sampo')
-  app.setAppUserModelId('es.ristotapani.sampo')
-  sampoDatabase = createApplicationDatabase()
-  workflow = new ApplicationWorkflow(
-    sampoDatabase.connection,
-    new NativeFileDialogAdapter(),
-    FileSecretStore.forUserData()
-  )
+app
+  .whenReady()
+  .then(() => {
+    app.setName('Sampo')
+    app.setAppUserModelId('es.ristotapani.sampo')
+    sampoDatabase = createApplicationDatabase()
+    workflow = new ApplicationWorkflow(
+      sampoDatabase.connection,
+      new NativeFileDialogAdapter(),
+      FileSecretStore.forUserData()
+    )
 
-  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
-    callback(false)
+    session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
+      callback(false)
+    })
+
+    ipcMain.handle(IPC_CHANNELS.getAppInfo, (event) => {
+      if (!isTrustedSender(event.sender)) {
+        throw new Error('Rejected IPC call from untrusted sender')
+      }
+
+      return {
+        name: app.getName(),
+        version: app.getVersion(),
+        platform: process.platform,
+        arch: process.arch
+      }
+    })
+
+    registerApplicationIpcHandlers(workflow, isTrustedIpcSender)
+
+    createWindow()
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow()
+      }
+    })
   })
-
-  ipcMain.handle(IPC_CHANNELS.getAppInfo, (event) => {
-    if (!isTrustedSender(event.sender)) {
-      throw new Error('Rejected IPC call from untrusted sender')
-    }
-
-    return {
-      name: app.getName(),
-      version: app.getVersion(),
-      platform: process.platform,
-      arch: process.arch
-    }
+  .catch((error: unknown) => {
+    console.error(formatErrorForDevelopment(error))
+    app.quit()
   })
-
-  registerApplicationIpcHandlers(workflow, isTrustedIpcSender)
-
-  createWindow()
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
-    }
-  })
-})
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

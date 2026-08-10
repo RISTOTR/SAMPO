@@ -10,7 +10,7 @@
     "format:check": "prettier --check .",
     "lint": "eslint --cache .",
     "rebuild:native:node": "npm rebuild better-sqlite3",
-    "rebuild:native:electron": "electron-builder install-app-deps",
+    "rebuild:native:electron": "electron-rebuild -f -w better-sqlite3",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "vue-tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",

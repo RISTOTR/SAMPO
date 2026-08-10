@@ -45,9 +45,27 @@ export class MigrationVersionIncompatibilityError extends SampoError {
   }
 }
 
+export class MigrationApplicationError extends SampoError {
+  constructor(
+    public readonly migrationVersion: number,
+    public readonly migrationName: string,
+    cause: unknown
+  ) {
+    super(
+      `Migration ${migrationVersion} (${migrationName}) failed: ${safeCauseSummary(cause)}`,
+      'MIGRATION_APPLICATION_FAILED',
+      cause
+    )
+  }
+}
+
 export class DatabaseInitializationError extends SampoError {
   constructor(cause: unknown) {
-    super('Database initialization failed', 'DATABASE_INITIALIZATION_FAILED', cause)
+    super(
+      `Database initialization failed: ${safeCauseSummary(cause)}`,
+      'DATABASE_INITIALIZATION_FAILED',
+      cause
+    )
   }
 }
 
@@ -115,4 +133,42 @@ export class ActiveReconciliationError extends SampoError {
   constructor(message = 'Import batch participates in an active reconciliation') {
     super(message, 'ACTIVE_RECONCILIATION')
   }
+}
+
+export function formatErrorForDevelopment(error: unknown): string {
+  const lines = ['Sampo startup failed.']
+  let current: unknown = error
+  let depth = 0
+
+  while (current && depth < 6) {
+    const prefix = depth === 0 ? 'Error' : `Cause ${depth}`
+    lines.push(`${prefix}: ${safeCauseSummary(current)}`)
+
+    const stack = current instanceof Error ? current.stack : undefined
+    if (stack) {
+      lines.push(stack)
+    }
+
+    current =
+      typeof current === 'object' && current !== null
+        ? (current as { cause?: unknown }).cause
+        : undefined
+    depth += 1
+  }
+
+  return lines.join('\n')
+}
+
+function safeCauseSummary(error: unknown): string {
+  if (error instanceof SampoError) {
+    return `${error.name} [${error.code}]: ${error.message}`
+  }
+
+  if (error instanceof Error) {
+    const errorCode = (error as { code?: unknown }).code
+    const code = typeof errorCode === 'string' ? ` [${errorCode}]` : ''
+    return `${error.name}${code}: ${error.message}`
+  }
+
+  return String(error)
 }

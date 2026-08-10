@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { createDatabase, type SampoDatabase } from '../storage/database'
@@ -85,6 +85,31 @@ describe('financial core migrations', () => {
     database.close()
   })
 
+  it('upgrades a synthetic Phase 6 database through Phase 7 without partial migration state', () => {
+    const path = tempDatabasePath(directory)
+    const phase6 = createDatabase({ path, useWal: false })
+
+    phase6.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(5)
+    phase6.connection.prepare('DROP TABLE ai_suggestion_sources').run()
+    phase6.connection.prepare('DROP TABLE ai_classification_suggestions').run()
+    phase6.connection.prepare('DROP TABLE ai_settings').run()
+    expect(getSchemaVersion(phase6.connection)).toBe(4)
+    phase6.close()
+
+    const upgraded = createDatabase({ path, useWal: false })
+    const aiSettingsCount = upgraded.connection
+      .prepare('SELECT COUNT(*) AS count FROM ai_settings')
+      .get() as { count: number }
+    const migrationCount = upgraded.connection
+      .prepare('SELECT COUNT(*) AS count FROM schema_migrations WHERE version = 5')
+      .get() as { count: number }
+
+    expect(upgraded.schemaVersion).toBe(latestMigrationVersion)
+    expect(aiSettingsCount.count).toBe(1)
+    expect(migrationCount.count).toBe(1)
+    upgraded.close()
+  })
+
   it('does not rerun migrations when reopened', () => {
     const first = createTestDatabase(directory)
     const appliedAt = first.connection
@@ -117,6 +142,13 @@ describe('financial core migrations', () => {
 
     expect(row).toBe(1)
     database.close()
+  })
+
+  it('includes a safe underlying cause in database initialization errors', () => {
+    const path = join(directory, 'not-a-database-directory')
+    mkdirSync(path)
+
+    expect(() => createDatabase({ path, useWal: false })).toThrow(/Database initialization failed:/)
   })
 })
 
