@@ -30,6 +30,18 @@ export class AiPartialResponseError extends SampoError {
   }
 }
 
+export class AiSuggestionNotFoundError extends SampoError {
+  constructor() {
+    super('AI suggestion was not found', 'AI_SUGGESTION_NOT_FOUND')
+  }
+}
+
+export class InvalidAiSuggestionAcceptanceError extends SampoError {
+  constructor(message = 'AI suggestion cannot be accepted with the requested options') {
+    super(message, 'AI_INVALID_SUGGESTION_ACCEPTANCE')
+  }
+}
+
 export class AiWebLookupDisabledError extends SampoError {
   constructor() {
     super('AI web lookup is disabled', 'AI_WEB_LOOKUP_DISABLED')

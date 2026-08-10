@@ -103,7 +103,7 @@ export const useAiStore = defineStore('ai', () => {
     await submit(async () => {
       unwrapResult(await window.sampo.ai.acceptSuggestion({ suggestionId, ...options }))
       await loadSuggestions()
-      message.value = 'AI suggestion accepted.'
+      message.value = acceptedSuggestionMessage(options)
     })
   }
 
@@ -158,3 +158,13 @@ export const useAiStore = defineStore('ai', () => {
     acceptHighConfidenceCategories
   }
 })
+
+function acceptedSuggestionMessage(options: {
+  acceptCategory: boolean
+  acceptMerchant: boolean
+}): string {
+  if (options.acceptCategory && options.acceptMerchant) return 'AI suggestion accepted.'
+  if (options.acceptCategory) return 'Category accepted.'
+  if (options.acceptMerchant) return 'Merchant accepted.'
+  return 'AI suggestion accepted.'
+}

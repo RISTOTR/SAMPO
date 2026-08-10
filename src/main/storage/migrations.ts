@@ -344,6 +344,65 @@ export const migrations: Migration[] = [
         );
       `)
     }
+  },
+  {
+    version: 6,
+    name: 'allow_ai_transaction_classifications',
+    up: (database) => {
+      database.exec(`
+        ALTER TABLE transaction_classifications RENAME TO transaction_classifications_old;
+
+        CREATE TABLE transaction_classifications (
+          transaction_id TEXT PRIMARY KEY,
+          merchant_id TEXT,
+          category_id TEXT,
+          usage_type TEXT NOT NULL DEFAULT 'unspecified' CHECK (
+            usage_type IN ('personal', 'business', 'mixed', 'unspecified')
+          ),
+          cost_behaviour TEXT NOT NULL DEFAULT 'unspecified' CHECK (
+            cost_behaviour IN ('fixed', 'variable', 'unspecified')
+          ),
+          necessity TEXT NOT NULL DEFAULT 'unspecified' CHECK (
+            necessity IN ('essential', 'discretionary', 'unspecified')
+          ),
+          classification_source TEXT NOT NULL CHECK (
+            classification_source IN ('manual', 'rule', 'ai', 'unclassified')
+          ),
+          classification_status TEXT NOT NULL CHECK (
+            classification_status IN ('confirmed', 'needs_review', 'ambiguous')
+          ),
+          applied_rule_id TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE,
+          FOREIGN KEY (merchant_id) REFERENCES merchants(id) ON DELETE RESTRICT,
+          FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE RESTRICT,
+          FOREIGN KEY (applied_rule_id) REFERENCES categorisation_rules(id) ON DELETE SET NULL
+        );
+
+        INSERT INTO transaction_classifications (
+          transaction_id, merchant_id, category_id, usage_type, cost_behaviour,
+          necessity, classification_source, classification_status, applied_rule_id,
+          created_at, updated_at
+        )
+        SELECT
+          transaction_id, merchant_id, category_id, usage_type, cost_behaviour,
+          necessity, classification_source, classification_status, applied_rule_id,
+          created_at, updated_at
+        FROM transaction_classifications_old;
+
+        DROP TABLE transaction_classifications_old;
+
+        CREATE INDEX transaction_classifications_category_idx
+          ON transaction_classifications(category_id);
+
+        CREATE INDEX transaction_classifications_merchant_idx
+          ON transaction_classifications(merchant_id);
+
+        CREATE INDEX transaction_classifications_status_idx
+          ON transaction_classifications(classification_status, classification_source);
+      `)
+    }
   }
 ]
 

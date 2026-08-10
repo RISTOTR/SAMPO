@@ -12,7 +12,11 @@ import {
   MerchantNotFoundError,
   RuleNotFoundError
 } from '../categorisation/errors'
-import { AiProviderError } from '../ai/errors'
+import {
+  AiProviderError,
+  AiSuggestionNotFoundError,
+  InvalidAiSuggestionAcceptanceError
+} from '../ai/errors'
 import {
   ActiveReconciliationError,
   DuplicateImportError,
@@ -153,6 +157,20 @@ export function toOperationError(error: unknown): OperationErrorDto {
     }
   }
 
+  if (error instanceof AiSuggestionNotFoundError) {
+    return {
+      code: 'ai_suggestion_not_found',
+      message: 'This AI suggestion is no longer available. Refresh and try again.'
+    }
+  }
+
+  if (error instanceof InvalidAiSuggestionAcceptanceError) {
+    return {
+      code: 'ai_invalid_suggestion_acceptance',
+      message: 'Could not apply the selected AI suggestion.'
+    }
+  }
+
   if (error instanceof BulkUpdateConflictError) {
     return { code: 'bulk_update_conflict', message: 'The bulk update could not be applied.' }
   }
@@ -177,8 +195,11 @@ function mapAiError(code: string): OperationErrorDto | undefined {
   const messages: Partial<Record<OperationErrorDto['code'], string>> = {
     ai_not_configured: 'OpenAI is not configured.',
     ai_disabled: 'AI categorisation is disabled.',
+    ai_invalid_request: 'The OpenAI request was invalid.',
+    ai_unprocessable_request: 'The OpenAI request was not processable.',
     ai_invalid_key: 'The OpenAI API key was rejected.',
     ai_permission_error: 'The OpenAI API key does not have permission for this request.',
+    ai_model_not_found: 'The configured OpenAI model was not found or is not available.',
     ai_rate_limited: 'OpenAI rate-limited the request.',
     ai_quota_exceeded: 'OpenAI quota was exceeded.',
     ai_timeout: 'The AI request timed out.',

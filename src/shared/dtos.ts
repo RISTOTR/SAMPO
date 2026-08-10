@@ -33,9 +33,12 @@ export const aiSuggestionStatusDtoSchema = z.enum([
 ])
 export const aiConnectionStatusDtoSchema = z.enum([
   'connected',
+  'invalid_request',
   'invalid_key',
   'permission_error',
+  'model_not_found',
   'quota_or_rate_limit',
+  'timeout',
   'network_error',
   'service_error'
 ])
@@ -79,8 +82,11 @@ export const operationErrorCodeDtoSchema = z.enum([
   'entity_in_use',
   'ai_not_configured',
   'ai_disabled',
+  'ai_invalid_request',
+  'ai_unprocessable_request',
   'ai_invalid_key',
   'ai_permission_error',
+  'ai_model_not_found',
   'ai_rate_limited',
   'ai_quota_exceeded',
   'ai_timeout',
@@ -88,6 +94,8 @@ export const operationErrorCodeDtoSchema = z.enum([
   'ai_service_error',
   'ai_invalid_response',
   'ai_partial_response',
+  'ai_suggestion_not_found',
+  'ai_invalid_suggestion_acceptance',
   'ai_web_lookup_disabled',
   'ai_web_lookup_failed',
   'secret_storage_unavailable',

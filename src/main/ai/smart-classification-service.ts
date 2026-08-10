@@ -1,6 +1,11 @@
 import type { Database } from 'better-sqlite3'
 import { aiModelConfig, confidenceBand } from './config'
-import { AiDisabledError, AiPartialResponseError } from './errors'
+import { isDevelopmentRuntime } from './diagnostics'
+import {
+  AiDisabledError,
+  AiPartialResponseError,
+  InvalidAiSuggestionAcceptanceError
+} from './errors'
 import type { AiClassificationInput, AiClassificationProvider } from './provider'
 import { normaliseMatchText } from '../categorisation/normalisation'
 import { ClassificationService } from '../categorisation/classification-service'
@@ -13,6 +18,7 @@ import {
 } from '../storage/categorisation'
 import { TransactionRepository } from '../storage/transactions'
 import type { AiClassificationSuggestion, Transaction } from '../domain/schemas'
+import { ManualClassificationPreservedError } from '../categorisation/errors'
 
 export type SmartClassifySummary = {
   eligibleTransactionCount: number
@@ -171,19 +177,42 @@ export class SmartClassificationService {
     acceptCategory: boolean
     acceptMerchant: boolean
   }): AiClassificationSuggestion {
+    const mode = acceptanceMode(input)
+    logReviewDiagnostic('workflow started', {
+      mode,
+      suggestionIdPresent: Boolean(input.suggestionId)
+    })
     const accept = this.database.transaction(() => {
+      logReviewDiagnostic('transaction started', { mode })
       const suggestion = this.suggestions.findById(input.suggestionId)
+      if (suggestion.status === 'accepted') {
+        logReviewDiagnostic('suggestion already accepted', { mode })
+        return suggestion
+      }
+      if (suggestion.status !== 'pending') {
+        throw new InvalidAiSuggestionAcceptanceError('AI suggestion is not pending')
+      }
+
       const existing = this.classifications.findByTransactionId(suggestion.transactionId)
-      if (existing?.classificationSource === 'manual')
-        return this.suggestions.mark(suggestion.id, 'rejected')
-      const merchantId =
-        input.acceptMerchant && suggestion.suggestedMerchantName
-          ? this.findOrCreateMerchant(suggestion.suggestedMerchantName)
-          : undefined
+      if (existing?.classificationSource === 'manual') {
+        throw new ManualClassificationPreservedError()
+      }
+
+      const shouldApplyCategory = input.acceptCategory && Boolean(suggestion.suggestedCategoryId)
+      const shouldApplyMerchant = input.acceptMerchant && Boolean(suggestion.suggestedMerchantName)
+      if (!shouldApplyCategory && !shouldApplyMerchant) {
+        throw new InvalidAiSuggestionAcceptanceError()
+      }
+
+      if (shouldApplyCategory) this.categories.assertAssignable(suggestion.suggestedCategoryId)
+      const merchantId = shouldApplyMerchant
+        ? this.findOrCreateMerchant(suggestion.suggestedMerchantName!)
+        : existing?.merchantId
+
       this.classifications.save({
         transactionId: suggestion.transactionId,
         merchantId,
-        categoryId: input.acceptCategory ? suggestion.suggestedCategoryId : undefined,
+        categoryId: shouldApplyCategory ? suggestion.suggestedCategoryId : existing?.categoryId,
         usageType: existing?.usageType ?? 'unspecified',
         costBehaviour: existing?.costBehaviour ?? 'unspecified',
         necessity: existing?.necessity ?? 'unspecified',
@@ -191,7 +220,9 @@ export class SmartClassificationService {
         classificationStatus: 'confirmed',
         appliedRuleId: undefined
       })
-      if (merchantId) {
+      logReviewDiagnostic('classification persisted', { mode })
+
+      if (shouldApplyMerchant && merchantId) {
         const transaction = this.transactions.findById(suggestion.transactionId)
         this.aliases.create({
           merchantId,
@@ -199,10 +230,24 @@ export class SmartClassificationService {
           pattern: transaction.originalDescription,
           priority: 0
         })
+        logReviewDiagnostic('merchant alias persisted', { mode })
       }
-      return this.suggestions.mark(suggestion.id, 'accepted')
+      const accepted = this.suggestions.mark(suggestion.id, 'accepted')
+      logReviewDiagnostic('suggestion status updated', { mode })
+      return accepted
     })
-    return accept()
+    try {
+      return accept()
+    } catch (error) {
+      logReviewDiagnostic('workflow failed', {
+        mode,
+        errorName: errorName(error),
+        message: safeErrorMessage(error),
+        sqliteCode: sqliteCode(error),
+        sqliteConstraint: sqliteConstraint(error)
+      })
+      throw error
+    }
   }
 
   rejectSuggestion(id: string): AiClassificationSuggestion {
@@ -258,4 +303,46 @@ export class SmartClassificationService {
       )
     return existing?.id ?? this.merchants.create({ name }).id
   }
+}
+
+function acceptanceMode(input: { acceptCategory: boolean; acceptMerchant: boolean }): string {
+  if (input.acceptCategory && input.acceptMerchant) return 'both'
+  if (input.acceptCategory) return 'category'
+  if (input.acceptMerchant) return 'merchant'
+  return 'none'
+}
+
+function logReviewDiagnostic(label: string, metadata: Record<string, unknown>): void {
+  if (!isDevelopmentRuntime()) return
+  console.warn(`[sampo-ai-review] ${label}`, metadata)
+}
+
+function errorName(error: unknown): string | undefined {
+  return error instanceof Error ? error.name : undefined
+}
+
+function sqliteCode(error: unknown): string | undefined {
+  return typeof (error as { code?: unknown }).code === 'string'
+    ? (error as { code: string }).code
+    : undefined
+}
+
+function sqliteConstraint(error: unknown): string | undefined {
+  const code = sqliteCode(error)
+  if (!code?.startsWith('SQLITE_CONSTRAINT')) return undefined
+  const message = error instanceof Error ? error.message : ''
+  if (message.includes('classification_source')) return 'classification_source_check'
+  if (message.includes('FOREIGN KEY')) return 'foreign_key'
+  if (message.includes('NOT NULL')) return 'not_null'
+  if (message.includes('UNIQUE')) return 'unique'
+  if (message.includes('CHECK')) return 'check'
+  return 'constraint'
+}
+
+function safeErrorMessage(error: unknown): string | undefined {
+  if (!(error instanceof Error)) return undefined
+  const code = sqliteCode(error)
+  if (code?.startsWith('SQLITE_CONSTRAINT')) return error.message
+  if (error.name.endsWith('Error')) return error.message
+  return undefined
 }

@@ -85,10 +85,11 @@ describe('financial core migrations', () => {
     database.close()
   })
 
-  it('upgrades a synthetic Phase 6 database through Phase 7 without partial migration state', () => {
+  it('upgrades a synthetic pre-AI database through latest migrations without partial migration state', () => {
     const path = tempDatabasePath(directory)
     const phase6 = createDatabase({ path, useWal: false })
 
+    phase6.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(6)
     phase6.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(5)
     phase6.connection.prepare('DROP TABLE ai_suggestion_sources').run()
     phase6.connection.prepare('DROP TABLE ai_classification_suggestions').run()
@@ -107,7 +108,76 @@ describe('financial core migrations', () => {
     expect(upgraded.schemaVersion).toBe(latestMigrationVersion)
     expect(aiSettingsCount.count).toBe(1)
     expect(migrationCount.count).toBe(1)
+    expect(
+      (
+        upgraded.connection
+          .prepare('SELECT COUNT(*) AS count FROM schema_migrations WHERE version = 6')
+          .get() as { count: number }
+      ).count
+    ).toBe(1)
     upgraded.close()
+  })
+
+  it('allows accepted AI transaction classifications after migrations', () => {
+    const database = createTestDatabase(directory)
+    const account = database.connection
+      .prepare(
+        `
+          INSERT INTO accounts (id, name, kind, institution, currency, created_at, updated_at)
+          VALUES ('22222222-2222-4222-8222-000000000001', 'Synthetic', 'current', NULL, 'EUR', datetime('now'), datetime('now'))
+          RETURNING id
+        `
+      )
+      .get() as { id: string }
+    const batch = database.connection
+      .prepare(
+        `
+          INSERT INTO import_batches (
+            id, account_id, source_kind, source_file_name, file_sha256, status,
+            transaction_count, created_at, committed_at
+          )
+          VALUES (
+            '22222222-2222-4222-8222-000000000002', @accountId, 'unknown',
+            'synthetic.txt', @hash, 'committed', 1, datetime('now'), datetime('now')
+          )
+          RETURNING id
+        `
+      )
+      .get({ accountId: account.id, hash: 'd'.repeat(64) }) as { id: string }
+    database.connection
+      .prepare(
+        `
+          INSERT INTO transactions (
+            id, import_batch_id, account_id, source_row_index, transaction_date,
+            original_description, amount_cents, currency, transaction_type,
+            is_pending, excluded_from_spending, review_status, created_at, updated_at
+          )
+          VALUES (
+            '22222222-2222-4222-8222-000000000003', @batchId, @accountId, 0,
+            '2026-02-01', 'Synthetic AI classification', -100, 'EUR', 'expense',
+            0, 0, 'confirmed', datetime('now'), datetime('now')
+          )
+        `
+      )
+      .run({ batchId: batch.id, accountId: account.id })
+
+    expect(() =>
+      database.connection
+        .prepare(
+          `
+            INSERT INTO transaction_classifications (
+              transaction_id, classification_source, classification_status,
+              created_at, updated_at
+            )
+            VALUES (
+              '22222222-2222-4222-8222-000000000003', 'ai', 'confirmed',
+              datetime('now'), datetime('now')
+            )
+          `
+        )
+        .run()
+    ).not.toThrow()
+    database.close()
   })
 
   it('does not rerun migrations when reopened', () => {

@@ -4,6 +4,7 @@ import {
   aiClassificationSuggestionSchema,
   type AiClassificationSuggestion
 } from '../domain/schemas'
+import { AiSuggestionNotFoundError } from '../ai/errors'
 
 type Row = Record<string, unknown>
 
@@ -109,7 +110,7 @@ export class AiSuggestionRepository {
     const row = this.database
       .prepare('SELECT * FROM ai_classification_suggestions WHERE id = ?')
       .get(id)
-    if (!row) throw new Error('AI suggestion not found')
+    if (!row) throw new AiSuggestionNotFoundError()
     return mapSuggestion(row as Row)
   }
 

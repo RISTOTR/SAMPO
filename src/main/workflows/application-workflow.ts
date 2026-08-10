@@ -62,8 +62,13 @@ import {
 } from '../../shared/dtos'
 import type { ImportBatch } from '../domain/schemas'
 import { aiModelConfig } from '../ai/config'
+import { isDevelopmentRuntime, probeOpenAiModelsEndpoint } from '../ai/diagnostics'
 import { AiNotConfiguredError } from '../ai/errors'
-import { OpenAiClassificationProvider, type AiClassificationProvider } from '../ai/provider'
+import {
+  OpenAiClassificationProvider,
+  testOpenAiResponsesConnection,
+  type AiClassificationProvider
+} from '../ai/provider'
 import { SmartClassificationService } from '../ai/smart-classification-service'
 import { MemorySecretStore, type SecretStore } from '../ai/secret-store'
 import { ClassificationService } from '../categorisation/classification-service'
@@ -434,16 +439,11 @@ export class ApplicationWorkflow {
     }
 
     try {
-      await new OpenAiClassificationProvider(this.secretStore).classify(
-        [
-          {
-            inputId: 'connection-test',
-            descriptor: 'SAMPLE SUPERMARKET',
-            sourceContext: 'card_purchase'
-          }
-        ],
-        { categories: this.activeCategoryChoices(), allowWebLookup: false }
-      )
+      if (isDevelopmentRuntime()) {
+        await probeOpenAiModelsEndpoint()
+      }
+
+      await testOpenAiResponsesConnection(this.secretStore)
       return aiConnectionTestDtoSchema.parse({ status: 'connected' })
     } catch (error) {
       return aiConnectionTestDtoSchema.parse({ status: this.mapAiConnectionError(error) })
@@ -488,6 +488,10 @@ export class ApplicationWorkflow {
 
   acceptAiSuggestion(input: unknown): AiSuggestionDto {
     const parsed = acceptAiSuggestionInputDtoSchema.parse(input)
+    logAiReviewDiagnostic('IPC received', {
+      mode: aiAcceptanceMode(parsed),
+      suggestionIdPresent: Boolean(parsed.suggestionId)
+    })
     const suggestion = this.smartClassification.acceptSuggestion(parsed)
     return aiSuggestionDtoSchema.parse(
       aiSuggestionToDto({
@@ -499,6 +503,9 @@ export class ApplicationWorkflow {
 
   rejectAiSuggestion(input: unknown): AiSuggestionDto {
     const parsed = rejectAiSuggestionInputDtoSchema.parse(input)
+    logAiReviewDiagnostic('reject IPC received', {
+      suggestionIdPresent: Boolean(parsed.suggestionId)
+    })
     const suggestion = this.smartClassification.rejectSuggestion(parsed.suggestionId)
     return aiSuggestionDtoSchema.parse(
       aiSuggestionToDto({
@@ -529,25 +536,6 @@ export class ApplicationWorkflow {
     return importBatchToDto(batch, account, rollbackBlockedByReconciliation)
   }
 
-  private activeCategoryChoices(): {
-    id: string
-    key?: string
-    label: string
-    parentLabel?: string
-  }[] {
-    const categories = this.categories.list()
-    return categories
-      .filter((category) => category.isActive)
-      .map((category) => ({
-        id: category.id,
-        key: category.key,
-        label: category.name,
-        parentLabel: category.parentId
-          ? categories.find((parent) => parent.id === category.parentId)?.name
-          : undefined
-      }))
-  }
-
   private categoryPath(categoryId: string | undefined): string[] | undefined {
     if (!categoryId) return undefined
     const categories = this.categories.list()
@@ -562,12 +550,28 @@ export class ApplicationWorkflow {
   private mapAiConnectionError(error: unknown): AiConnectionTestDto['status'] {
     if (error instanceof AiNotConfiguredError) return 'invalid_key'
     const code = (error as { code?: string }).code
+    if (code === 'AI_INVALID_REQUEST' || code === 'AI_UNPROCESSABLE_REQUEST')
+      return 'invalid_request'
     if (code === 'AI_INVALID_KEY') return 'invalid_key'
     if (code === 'AI_PERMISSION_ERROR') return 'permission_error'
+    if (code === 'AI_MODEL_NOT_FOUND') return 'model_not_found'
     if (code === 'AI_RATE_LIMITED' || code === 'AI_QUOTA_EXCEEDED') return 'quota_or_rate_limit'
-    if (code === 'AI_NETWORK_ERROR' || code === 'AI_TIMEOUT') return 'network_error'
+    if (code === 'AI_TIMEOUT') return 'timeout'
+    if (code === 'AI_NETWORK_ERROR') return 'network_error'
     return 'service_error'
   }
+}
+
+function aiAcceptanceMode(input: { acceptCategory: boolean; acceptMerchant: boolean }): string {
+  if (input.acceptCategory && input.acceptMerchant) return 'both'
+  if (input.acceptCategory) return 'category'
+  if (input.acceptMerchant) return 'merchant'
+  return 'none'
+}
+
+function logAiReviewDiagnostic(label: string, metadata: Record<string, unknown>): void {
+  if (process.env['NODE_ENV'] === 'production' && !process.env['ELECTRON_RENDERER_URL']) return
+  console.warn(`[sampo-ai-review] ${label}`, metadata)
 }
 
 export function ensureAccountSourceCompatibilityForTransaction(

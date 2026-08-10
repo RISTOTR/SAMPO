@@ -62,7 +62,7 @@ describe('shared renderer DTO schemas', () => {
       models: {
         bulkClassificationModel: 'gpt-5.6-luna',
         webLookupModel: 'gpt-5.6-terra',
-        reasoningEffort: 'minimal',
+        reasoningEffort: 'low',
         webReasoningEffort: 'low',
         batchSize: 40
       }

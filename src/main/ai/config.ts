@@ -1,7 +1,7 @@
 export const aiModelConfig = {
   bulkClassificationModel: 'gpt-5.6-luna',
   webLookupModel: 'gpt-5.6-terra',
-  reasoningEffort: 'minimal' as const,
+  reasoningEffort: 'low' as const,
   webReasoningEffort: 'low' as const,
   batchSize: 40
 }
