@@ -479,18 +479,20 @@ export class TransactionClassificationRepository {
       .prepare(
         `
           INSERT INTO transaction_classifications (
-            transaction_id, merchant_id, category_id, usage_type, cost_behaviour,
+            transaction_id, merchant_id, merchant_source, category_id, category_source, usage_type, cost_behaviour,
             necessity, classification_source, classification_status, applied_rule_id,
             created_at, updated_at
           )
           VALUES (
-            @transactionId, @merchantId, @categoryId, @usageType, @costBehaviour,
+            @transactionId, @merchantId, @merchantSource, @categoryId, @categorySource, @usageType, @costBehaviour,
             @necessity, @classificationSource, @classificationStatus, @appliedRuleId,
             @now, @now
           )
           ON CONFLICT(transaction_id) DO UPDATE SET
             merchant_id = excluded.merchant_id,
+            merchant_source = excluded.merchant_source,
             category_id = excluded.category_id,
+            category_source = excluded.category_source,
             usage_type = excluded.usage_type,
             cost_behaviour = excluded.cost_behaviour,
             necessity = excluded.necessity,
@@ -503,7 +505,13 @@ export class TransactionClassificationRepository {
       .run({
         transactionId: input.transactionId,
         merchantId: input.merchantId ?? null,
+        merchantSource: input.merchantId
+          ? (input.merchantSource ?? input.classificationSource)
+          : null,
         categoryId: input.categoryId ?? null,
+        categorySource: input.categoryId
+          ? (input.categorySource ?? input.classificationSource)
+          : null,
         usageType: input.usageType ?? 'unspecified',
         costBehaviour: input.costBehaviour ?? 'unspecified',
         necessity: input.necessity ?? 'unspecified',
@@ -565,7 +573,9 @@ export type RuleInput = {
 export type SaveClassificationInput = {
   transactionId: string
   merchantId?: string
+  merchantSource?: 'manual' | 'rule' | 'ai'
   categoryId?: string
+  categorySource?: 'manual' | 'rule' | 'ai'
   usageType?: UsageType
   costBehaviour?: CostBehaviour
   necessity?: Necessity
@@ -674,7 +684,9 @@ function mapClassification(row: Row): TransactionClassification {
   return transactionClassificationSchema.parse({
     transactionId: row['transaction_id'],
     merchantId: row['merchant_id'] ?? undefined,
+    merchantSource: row['merchant_source'] ?? undefined,
     categoryId: row['category_id'] ?? undefined,
+    categorySource: row['category_source'] ?? undefined,
     usageType: row['usage_type'],
     costBehaviour: row['cost_behaviour'],
     necessity: row['necessity'],

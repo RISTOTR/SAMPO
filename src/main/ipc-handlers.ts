@@ -125,7 +125,9 @@ export function registerApplicationIpcHandlers(
   handle(IPC_CHANNELS.aiSmartClassifyImportBatch, isTrustedSender, (input) =>
     workflow.smartClassifyImportBatch(input)
   )
-  handle(IPC_CHANNELS.aiListSuggestions, isTrustedSender, () => workflow.listAiSuggestions())
+  handle(IPC_CHANNELS.aiListSuggestions, isTrustedSender, (input) =>
+    workflow.listAiSuggestions(input)
+  )
   handle(IPC_CHANNELS.aiAcceptSuggestion, isTrustedSender, (input) =>
     workflow.acceptAiSuggestion(input)
   )

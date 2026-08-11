@@ -5,6 +5,7 @@ import {
   acceptAiSuggestionInputDtoSchema,
   aiConnectionTestDtoSchema,
   aiSettingsDtoSchema,
+  aiSuggestionReviewDtoSchema,
   aiSuggestionDtoSchema,
   applyRuleInputDtoSchema,
   bulkClassificationInputDtoSchema,
@@ -17,6 +18,7 @@ import {
   createMerchantAliasInputDtoSchema,
   createMerchantInputDtoSchema,
   importBatchSummaryDtoSchema,
+  listAiSuggestionsInputDtoSchema,
   merchantAliasDtoSchema,
   merchantDtoSchema,
   merchantListQueryDtoSchema,
@@ -40,9 +42,11 @@ import {
   type AiConnectionTestDto,
   type AiSettingsDto,
   type AiSuggestionDto,
+  type AiSuggestionReviewDto,
   type BulkClassificationResultDto,
   type CategorisationRuleDto,
   type CategoryDto,
+  type ClassificationSummaryDto,
   type ClassificationProposalDto,
   type CommittedImportDto,
   type CommittedReconciliationDto,
@@ -60,7 +64,7 @@ import {
   type TransactionListQueryDto,
   type TransactionPageDto
 } from '../../shared/dtos'
-import type { ImportBatch } from '../domain/schemas'
+import type { AiClassificationSuggestion, ImportBatch } from '../domain/schemas'
 import { aiModelConfig } from '../ai/config'
 import { isDevelopmentRuntime, probeOpenAiModelsEndpoint } from '../ai/diagnostics'
 import { AiNotConfiguredError } from '../ai/errors'
@@ -70,6 +74,7 @@ import {
   type AiClassificationProvider
 } from '../ai/provider'
 import { SmartClassificationService } from '../ai/smart-classification-service'
+import type { AiSuggestionReviewComponentStatus } from '../ai/smart-classification-service'
 import { MemorySecretStore, type SecretStore } from '../ai/secret-store'
 import { ClassificationService } from '../categorisation/classification-service'
 import { ImportService } from '../services/import-service'
@@ -234,8 +239,10 @@ export class ApplicationWorkflow {
         return transactionToRowDto(transaction, account, {
           merchantId: proposal.merchantId,
           merchantName: proposal.merchantName,
+          merchantDisplay: this.merchantDisplay(transaction.id, proposal),
           categoryId: proposal.categoryId,
           categoryPath: proposal.categoryPath,
+          categoryDisplay: this.categoryDisplay(transaction.id, proposal),
           usageType: proposal.usageType,
           costBehaviour: proposal.costBehaviour,
           necessity: proposal.necessity,
@@ -365,9 +372,12 @@ export class ApplicationWorkflow {
   }
 
   getClassification(transactionId: string): ClassificationProposalDto {
-    return classificationProposalDtoSchema.parse(
-      proposalToDto(this.classification.evaluateTransaction(transactionId))
-    )
+    const proposal = this.classification.evaluateTransaction(transactionId)
+    return classificationProposalDtoSchema.parse({
+      ...proposalToDto(proposal),
+      merchantDisplay: this.merchantDisplay(transactionId, proposal),
+      categoryDisplay: this.categoryDisplay(transactionId, proposal)
+    })
   }
 
   saveManualClassification(input: unknown): ClassificationProposalDto {
@@ -452,12 +462,18 @@ export class ApplicationWorkflow {
 
   async smartClassify(input: unknown): Promise<SmartClassifySummaryDto> {
     const parsed = smartClassifyInputDtoSchema.parse(input)
+    logAiManualClassifyDiagnostic('manual classify received', {
+      count: parsed.transactionIds.length
+    })
     const previousSettings = this.aiSettings.get()
     if (typeof parsed.allowWebLookup === 'boolean') {
       this.aiSettings.update({ allowWebLookup: parsed.allowWebLookup })
     }
 
     try {
+      logAiManualClassifyDiagnostic('manual classification started', {
+        count: parsed.transactionIds.length
+      })
       const summary = await this.smartClassification.classifyTransactions(parsed.transactionIds)
       return smartClassifySummaryDtoSchema.parse(summary)
     } finally {
@@ -475,44 +491,48 @@ export class ApplicationWorkflow {
     )
   }
 
-  listAiSuggestions(): AiSuggestionDto[] {
-    return this.aiSuggestions.listPending().map((suggestion) =>
+  listAiSuggestions(input?: unknown): AiSuggestionDto[] {
+    const parsed = listAiSuggestionsInputDtoSchema.parse(input ?? {})
+    const suggestions = parsed.transactionQuery
+      ? this.aiSuggestions.listPendingForTransactions(
+          this.transactions.listFilteredIds({
+            sortBy: 'transactionDate',
+            sortDirection: 'desc',
+            ...parsed.transactionQuery
+          })
+        )
+      : this.aiSuggestions.listPending()
+
+    return suggestions.map((suggestion) =>
       aiSuggestionDtoSchema.parse(
         aiSuggestionToDto({
           suggestion,
-          categoryPath: this.categoryPath(suggestion.suggestedCategoryId)
+          categoryPath: this.categoryPath(suggestion.suggestedCategoryId),
+          ...this.aiSuggestionActionability(suggestion.transactionId, suggestion)
         })
       )
     )
   }
 
-  acceptAiSuggestion(input: unknown): AiSuggestionDto {
+  acceptAiSuggestion(input: unknown): AiSuggestionReviewDto {
     const parsed = acceptAiSuggestionInputDtoSchema.parse(input)
-    logAiReviewDiagnostic('IPC received', {
-      mode: aiAcceptanceMode(parsed),
-      suggestionIdPresent: Boolean(parsed.suggestionId)
+    logAiReviewDiagnostic('review received', {
+      action: aiAcceptanceMode(parsed)
     })
-    const suggestion = this.smartClassification.acceptSuggestion(parsed)
-    return aiSuggestionDtoSchema.parse(
-      aiSuggestionToDto({
-        suggestion,
-        categoryPath: this.categoryPath(suggestion.suggestedCategoryId)
-      })
-    )
+    return this.aiSuggestionReviewToDto(this.smartClassification.acceptSuggestion(parsed))
   }
 
-  rejectAiSuggestion(input: unknown): AiSuggestionDto {
+  rejectAiSuggestion(input: unknown): AiSuggestionReviewDto {
     const parsed = rejectAiSuggestionInputDtoSchema.parse(input)
-    logAiReviewDiagnostic('reject IPC received', {
-      suggestionIdPresent: Boolean(parsed.suggestionId)
+    logAiReviewDiagnostic('review received', {
+      action: 'reject'
     })
     const suggestion = this.smartClassification.rejectSuggestion(parsed.suggestionId)
-    return aiSuggestionDtoSchema.parse(
-      aiSuggestionToDto({
-        suggestion,
-        categoryPath: this.categoryPath(suggestion.suggestedCategoryId)
-      })
-    )
+    return this.aiSuggestionReviewToDto({
+      suggestion,
+      category: 'not_suggested',
+      merchant: 'not_suggested'
+    })
   }
 
   listRules(): CategorisationRuleDto[] {
@@ -547,6 +567,87 @@ export class ApplicationWorkflow {
     return parent ? [parent.name, category.name] : [category.name]
   }
 
+  private merchantDisplay(
+    transactionId: string,
+    proposal: ClassificationProposalDto
+  ): NonNullable<ClassificationSummaryDto['merchantDisplay']> {
+    const authoritativeId = this.classifications.findByTransactionId(transactionId)?.merchantId
+    const authoritativeName = authoritativeId
+      ? this.merchants.findById(authoritativeId).name
+      : undefined
+    const detectedName =
+      proposal.merchantName && proposal.merchantId !== authoritativeId
+        ? proposal.merchantName
+        : undefined
+    const displayName = authoritativeName ?? proposal.merchantName
+
+    return {
+      authoritativeId,
+      authoritativeName,
+      detectedName,
+      displayName,
+      source: authoritativeName ? 'authoritative' : displayName ? 'detected' : 'unknown'
+    }
+  }
+
+  private categoryDisplay(
+    transactionId: string,
+    proposal: ClassificationProposalDto
+  ): NonNullable<ClassificationSummaryDto['categoryDisplay']> {
+    const authoritativeId = this.classifications.findByTransactionId(transactionId)?.categoryId
+    const authoritativePath = this.categoryPath(authoritativeId)
+    const detectedPath =
+      proposal.categoryPath && proposal.categoryId !== authoritativeId
+        ? proposal.categoryPath
+        : undefined
+    const displayPath = authoritativePath ?? proposal.categoryPath
+
+    return {
+      authoritativeId,
+      authoritativePath,
+      detectedId: detectedPath ? proposal.categoryId : undefined,
+      detectedPath,
+      displayPath,
+      source: authoritativePath ? 'authoritative' : displayPath ? 'detected' : 'unknown'
+    }
+  }
+
+  private aiSuggestionReviewToDto(input: {
+    suggestion: AiClassificationSuggestion
+    category: AiSuggestionReviewComponentStatus
+    merchant: AiSuggestionReviewComponentStatus
+  }): AiSuggestionReviewDto {
+    const suggestion = aiSuggestionToDto({
+      suggestion: input.suggestion,
+      categoryPath: this.categoryPath(input.suggestion.suggestedCategoryId),
+      ...this.aiSuggestionActionability(input.suggestion.transactionId, input.suggestion)
+    })
+
+    return aiSuggestionReviewDtoSchema.parse({
+      suggestion,
+      category: input.category,
+      merchant: input.merchant,
+      suggestionStatus: input.suggestion.status
+    })
+  }
+
+  private aiSuggestionActionability(
+    transactionId: string,
+    suggestion: AiClassificationSuggestion
+  ): { canAcceptCategory: boolean; canAcceptMerchant: boolean } {
+    const classification = this.classifications.findByTransactionId(transactionId)
+    return {
+      canAcceptCategory: Boolean(
+        suggestion.suggestedCategoryId &&
+        !(classification?.categoryId && classification.categorySource === 'manual')
+      ),
+      canAcceptMerchant: Boolean(
+        suggestion.suggestedMerchantName &&
+        !(classification?.merchantId && classification.merchantSource === 'manual')
+      )
+    }
+  }
+
   private mapAiConnectionError(error: unknown): AiConnectionTestDto['status'] {
     if (error instanceof AiNotConfiguredError) return 'invalid_key'
     const code = (error as { code?: string }).code
@@ -571,7 +672,12 @@ function aiAcceptanceMode(input: { acceptCategory: boolean; acceptMerchant: bool
 
 function logAiReviewDiagnostic(label: string, metadata: Record<string, unknown>): void {
   if (process.env['NODE_ENV'] === 'production' && !process.env['ELECTRON_RENDERER_URL']) return
-  console.warn(`[sampo-ai-review] ${label}`, metadata)
+  console.warn(`[sampo-ai-ipc] ${label}`, metadata)
+}
+
+function logAiManualClassifyDiagnostic(label: string, metadata: Record<string, unknown>): void {
+  if (process.env['NODE_ENV'] === 'production' && !process.env['ELECTRON_RENDERER_URL']) return
+  console.warn(`[sampo-ai-ipc] ${label}`, metadata)
 }
 
 export function ensureAccountSourceCompatibilityForTransaction(

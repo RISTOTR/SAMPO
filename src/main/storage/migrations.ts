@@ -403,6 +403,35 @@ export const migrations: Migration[] = [
           ON transaction_classifications(classification_status, classification_source);
       `)
     }
+  },
+  {
+    version: 7,
+    name: 'add_field_level_classification_sources',
+    up: (database) => {
+      database.exec(`
+        ALTER TABLE transaction_classifications
+          ADD COLUMN merchant_source TEXT CHECK (
+            merchant_source IS NULL OR merchant_source IN ('manual', 'rule', 'ai')
+          );
+
+        ALTER TABLE transaction_classifications
+          ADD COLUMN category_source TEXT CHECK (
+            category_source IS NULL OR category_source IN ('manual', 'rule', 'ai')
+          );
+
+        UPDATE transaction_classifications
+        SET merchant_source = CASE
+              WHEN merchant_id IS NOT NULL AND classification_source IN ('manual', 'rule', 'ai')
+                THEN classification_source
+              ELSE NULL
+            END,
+            category_source = CASE
+              WHEN category_id IS NOT NULL AND classification_source IN ('manual', 'rule', 'ai')
+                THEN classification_source
+              ELSE NULL
+            END;
+      `)
+    }
   }
 ]
 

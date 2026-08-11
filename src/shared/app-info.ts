@@ -4,6 +4,7 @@ import type {
   AiConnectionTestDto,
   AiSettingsDto,
   AiSuggestionDto,
+  AiSuggestionReviewDto,
   ApiResult,
   ApplyRuleInputDto,
   BulkClassificationInputDto,
@@ -19,6 +20,7 @@ import type {
   CreateMerchantInputDto,
   ImportBatchSummaryDto,
   ImportPreviewSessionDto,
+  ListAiSuggestionsInputDto,
   MerchantAliasDto,
   MerchantDto,
   MerchantListQueryDto,
@@ -132,8 +134,10 @@ export type SampoApi = {
     smartClassifyImportBatch: (
       input: SmartClassifyBatchInputDto
     ) => Promise<ApiResult<SmartClassifySummaryDto>>
-    listSuggestions: () => Promise<ApiResult<AiSuggestionDto[]>>
-    acceptSuggestion: (input: AcceptAiSuggestionInputDto) => Promise<ApiResult<AiSuggestionDto>>
-    rejectSuggestion: (input: { suggestionId: string }) => Promise<ApiResult<AiSuggestionDto>>
+    listSuggestions: (input?: ListAiSuggestionsInputDto) => Promise<ApiResult<AiSuggestionDto[]>>
+    acceptSuggestion: (
+      input: AcceptAiSuggestionInputDto
+    ) => Promise<ApiResult<AiSuggestionReviewDto>>
+    rejectSuggestion: (input: { suggestionId: string }) => Promise<ApiResult<AiSuggestionReviewDto>>
   }
 }

@@ -86,7 +86,7 @@ const sampo: SampoApi = {
     smartClassify: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiSmartClassify, input),
     smartClassifyImportBatch: (input) =>
       ipcRenderer.invoke(IPC_CHANNELS.aiSmartClassifyImportBatch, input),
-    listSuggestions: () => ipcRenderer.invoke(IPC_CHANNELS.aiListSuggestions),
+    listSuggestions: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiListSuggestions, input),
     acceptSuggestion: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiAcceptSuggestion, input),
     rejectSuggestion: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiRejectSuggestion, input)
   }

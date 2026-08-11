@@ -106,6 +106,21 @@ export class AiSuggestionRepository {
       .map((row) => mapSuggestion(row as Row))
   }
 
+  listPendingForTransactions(transactionIds: string[]): AiClassificationSuggestion[] {
+    if (transactionIds.length === 0) return []
+    const placeholders = transactionIds.map(() => '?').join(', ')
+    return this.database
+      .prepare(
+        `
+          SELECT * FROM ai_classification_suggestions
+          WHERE status = 'pending' AND transaction_id IN (${placeholders})
+          ORDER BY category_confidence DESC, merchant_confidence DESC, created_at DESC
+        `
+      )
+      .all(...transactionIds)
+      .map((row) => mapSuggestion(row as Row))
+  }
+
   findById(id: string): AiClassificationSuggestion {
     const row = this.database
       .prepare('SELECT * FROM ai_classification_suggestions WHERE id = ?')

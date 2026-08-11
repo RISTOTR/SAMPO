@@ -76,7 +76,11 @@ export class ClassificationService {
     const transaction = this.transactions.findById(transactionId)
     const existing = this.classifications.findByTransactionId(transactionId)
 
-    if (existing?.classificationSource === 'manual') {
+    if (
+      existing?.classificationSource === 'manual' &&
+      existing.merchantSource === 'manual' &&
+      existing.categorySource === 'manual'
+    ) {
       return this.classificationToProposal(transaction, existing)
     }
 
@@ -93,6 +97,8 @@ export class ClassificationService {
     return this.classifications.save({
       ...input,
       transactionId: transaction.id,
+      merchantSource: input.merchantId ? 'manual' : undefined,
+      categorySource: input.categoryId ? 'manual' : undefined,
       usageType: input.usageType ?? 'unspecified',
       costBehaviour: input.costBehaviour ?? 'unspecified',
       necessity: input.necessity ?? 'unspecified',
@@ -130,7 +136,9 @@ export class ClassificationService {
         this.classifications.save({
           transactionId: proposal.transactionId,
           merchantId: proposal.merchantId,
+          merchantSource: proposal.merchantId ? 'rule' : undefined,
           categoryId: proposal.categoryId,
+          categorySource: proposal.categoryId ? 'rule' : undefined,
           usageType: proposal.usageType,
           costBehaviour: proposal.costBehaviour,
           necessity: proposal.necessity,
@@ -153,7 +161,9 @@ export class ClassificationService {
         this.classifications.save({
           transactionId: proposal.transactionId,
           merchantId: proposal.merchantId,
+          merchantSource: proposal.merchantId ? 'rule' : undefined,
           categoryId: proposal.categoryId,
+          categorySource: proposal.categoryId ? 'rule' : undefined,
           usageType: proposal.usageType,
           costBehaviour: proposal.costBehaviour,
           necessity: proposal.necessity,
@@ -190,7 +200,9 @@ export class ClassificationService {
         this.classifications.save({
           transactionId,
           merchantId: input.merchantId ?? existing?.merchantId,
+          merchantSource: input.merchantId ? 'manual' : existing?.merchantSource,
           categoryId: input.categoryId ?? existing?.categoryId,
+          categorySource: input.categoryId ? 'manual' : existing?.categorySource,
           usageType: input.usageType ?? existing?.usageType ?? 'unspecified',
           costBehaviour: input.costBehaviour ?? existing?.costBehaviour ?? 'unspecified',
           necessity: input.necessity ?? existing?.necessity ?? 'unspecified',
@@ -215,7 +227,10 @@ export class ClassificationService {
     const aliasResult = this.resolveAlias(transaction)
     const ruleResult = this.resolveRule(transaction, aliasResult.merchantId)
     const conflicts = [...aliasResult.conflicts, ...ruleResult.conflicts]
-    const merchantId = ruleResult.merchantId ?? aliasResult.merchantId ?? existing?.merchantId
+    const merchantId =
+      existing?.merchantSource === 'manual'
+        ? existing.merchantId
+        : (ruleResult.merchantId ?? aliasResult.merchantId ?? existing?.merchantId)
     const ruleStatus = ruleResult.status
     const status: ClassificationStatus =
       conflicts.length > 0
@@ -233,7 +248,7 @@ export class ClassificationService {
         costBehaviour: existing?.costBehaviour ?? 'unspecified',
         necessity: existing?.necessity ?? 'unspecified',
         status: conflicts.length > 0 ? 'ambiguous' : 'needs_review',
-        source: 'unclassified',
+        source: existing?.classificationSource === 'manual' ? 'manual' : 'unclassified',
         conflicts
       }
     }
@@ -241,14 +256,22 @@ export class ClassificationService {
     return this.decorateProposal({
       transactionId: transaction.id,
       merchantId,
-      categoryId: ruleResult.categoryId ?? existing?.categoryId,
+      categoryId:
+        existing?.categorySource === 'manual'
+          ? existing.categoryId
+          : (ruleResult.categoryId ?? existing?.categoryId),
       usageType: ruleResult.usageType ?? existing?.usageType ?? 'unspecified',
       costBehaviour: ruleResult.costBehaviour ?? existing?.costBehaviour ?? 'unspecified',
       necessity: ruleResult.necessity ?? existing?.necessity ?? 'unspecified',
       matchedRuleId: ruleResult.matchedRule?.id,
       matchedRuleName: ruleResult.matchedRule?.name,
       status,
-      source: status === 'ambiguous' ? 'unclassified' : 'rule',
+      source:
+        existing?.merchantSource === 'manual' || existing?.categorySource === 'manual'
+          ? 'manual'
+          : status === 'ambiguous'
+            ? 'unclassified'
+            : 'rule',
       conflicts
     })
   }

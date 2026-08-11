@@ -16,6 +16,7 @@ import {
   TransactionClassificationRepository
 } from '../storage/categorisation'
 import { SmartClassificationService } from '../ai/smart-classification-service'
+import { ApplicationWorkflow } from '../workflows/application-workflow'
 import { openAiErrorMetadata } from '../ai/diagnostics'
 import {
   mapProviderError,
@@ -30,7 +31,7 @@ import {
   AiPartialResponseError,
   AiSuggestionNotFoundError
 } from '../ai/errors'
-import { AliasConflictError, ManualClassificationPreservedError } from '../categorisation/errors'
+import { AliasConflictError } from '../categorisation/errors'
 import type { AiClassificationSuggestion, NewTransaction, PreparedImport } from '../domain/schemas'
 
 const syntheticHash = 'c'.repeat(64)
@@ -496,6 +497,49 @@ describe('smart classification service', () => {
     expect(suggestions.every((suggestion) => suggestion.status === 'pending')).toBe(true)
   })
 
+  it('manually classifies selected transactions when automatic import classification is disabled', async () => {
+    const { transactionIds, categoryId } = seedTransactions(connection, [
+      'Synthetic Manual AI Classify'
+    ])
+    new AiSettingsRepository(connection).update({
+      aiEnabled: true,
+      classifyNewImports: false
+    })
+    let providerReached = false
+    const service = new SmartClassificationService(connection, {
+      classify: async (items) => {
+        providerReached = true
+        expect(items.map((item) => item.inputId)).toEqual(['item-1'])
+        return [
+          {
+            inputId: 'item-1',
+            merchant: undefined,
+            category: { categoryId, confidence: 0.93, categoryUnknown: false },
+            merchantType: undefined,
+            needsWebLookup: false,
+            reasonCode: 'category_signal_only'
+          }
+        ]
+      }
+    })
+
+    const summary = await service.classifyTransactions(transactionIds)
+    const suggestions = new AiSuggestionRepository(connection).listPending()
+
+    expect(providerReached).toBe(true)
+    expect(summary).toMatchObject({
+      eligibleTransactionCount: 1,
+      suggestionsCreated: 1,
+      skippedDeterministicOrManual: 0
+    })
+    expect(suggestions).toHaveLength(1)
+    expect(suggestions[0]).toMatchObject({
+      transactionId: transactionIds[0],
+      suggestedCategoryId: categoryId,
+      status: 'pending'
+    })
+  })
+
   it('preserves manual classifications and rejects partial provider responses', async () => {
     const { transactionIds, categoryId } = seedTransactions(connection, [
       'Synthetic Manual Store',
@@ -535,7 +579,7 @@ describe('smart classification service', () => {
       transactionIds[0]
     )
 
-    expect(accepted.status).toBe('accepted')
+    expect(accepted.suggestion.status).toBe('accepted')
     expect(classification).toMatchObject({
       categoryId,
       merchantId: undefined,
@@ -562,7 +606,7 @@ describe('smart classification service', () => {
       transactionIds[0]
     )
 
-    expect(accepted.status).toBe('accepted')
+    expect(accepted.suggestion.status).toBe('accepted')
     expect(classification?.merchantId).toBeTruthy()
     expect(classification?.categoryId).toBeUndefined()
     expect(classification?.classificationSource).toBe('ai')
@@ -586,10 +630,224 @@ describe('smart classification service', () => {
       transactionIds[0]
     )
 
-    expect(accepted.status).toBe('accepted')
+    expect(accepted.suggestion.status).toBe('accepted')
     expect(classification?.categoryId).toBe(categoryId)
     expect(classification?.merchantId).toBeTruthy()
     expect(classification?.classificationSource).toBe('ai')
+  })
+
+  it('accepts the second same-merchant suggestion by its own suggestion id', () => {
+    const { transactionIds, categoryId } = seedTransactions(connection, [
+      'Synthetic Same Merchant One',
+      'Synthetic Same Merchant Two'
+    ])
+    const first = createSuggestion(connection, {
+      transactionId: transactionIds[0],
+      suggestedCategoryId: categoryId,
+      suggestedMerchantName: 'Synthetic Shared Merchant'
+    })
+    const second = createSuggestion(connection, {
+      transactionId: transactionIds[1],
+      suggestedCategoryId: categoryId,
+      suggestedMerchantName: 'Synthetic Shared Merchant'
+    })
+    const service = new SmartClassificationService(connection, { classify: async () => [] })
+
+    const accepted = service.acceptSuggestion({
+      suggestionId: second.id,
+      acceptCategory: true,
+      acceptMerchant: false
+    })
+
+    expect(accepted.suggestion.id).toBe(second.id)
+    expect(new AiSuggestionRepository(connection).findById(first.id).status).toBe('pending')
+    expect(
+      new TransactionClassificationRepository(connection).findByTransactionId(transactionIds[0])
+    ).toBeUndefined()
+    expect(
+      new TransactionClassificationRepository(connection).findByTransactionId(transactionIds[1])
+    ).toMatchObject({ categoryId, classificationSource: 'ai' })
+  })
+
+  it('filters pending suggestions by matching transaction ids without current-page pagination', () => {
+    const { transactionIds, categoryId } = seedTransactions(connection, [
+      'Synthetic Filtered One',
+      'Synthetic Filtered Two'
+    ])
+    createSuggestion(connection, {
+      transactionId: transactionIds[0],
+      suggestedCategoryId: categoryId
+    })
+    createSuggestion(connection, {
+      transactionId: transactionIds[1],
+      suggestedCategoryId: categoryId
+    })
+    new TransactionClassificationRepository(connection).save({
+      transactionId: transactionIds[0],
+      categoryId,
+      classificationSource: 'ai',
+      classificationStatus: 'confirmed'
+    })
+    const transactions = new TransactionRepository(connection)
+    const filteredIds = transactions.listFilteredIds({
+      categoryId,
+      sortBy: 'transactionDate',
+      sortDirection: 'desc'
+    })
+    const firstPage = transactions.listPage({
+      sortBy: 'transactionDate',
+      sortDirection: 'desc',
+      limit: 1,
+      offset: 0
+    })
+
+    expect(firstPage.items).toHaveLength(1)
+    expect(filteredIds).toEqual([transactionIds[0]])
+    expect(new AiSuggestionRepository(connection).listPendingForTransactions(filteredIds)).toEqual([
+      expect.objectContaining({ transactionId: transactionIds[0] })
+    ])
+  })
+
+  it('reviews a filtered suggestion through the workflow using the persisted suggestion id', () => {
+    const { transactionIds, categoryId } = seedTransactions(connection, [
+      'Synthetic Workflow Filtered'
+    ])
+    const suggestion = createSuggestion(connection, {
+      transactionId: transactionIds[0],
+      suggestedCategoryId: categoryId
+    })
+    const workflow = createWorkflow(connection)
+    const [visibleSuggestion] = workflow.listAiSuggestions({
+      transactionQuery: { unclassifiedOnly: true, sortBy: 'transactionDate', sortDirection: 'desc' }
+    })
+
+    expect(visibleSuggestion?.id).toBe(suggestion.id)
+
+    workflow.acceptAiSuggestion({
+      suggestionId: visibleSuggestion!.id,
+      acceptCategory: true,
+      acceptMerchant: false
+    })
+
+    expect(
+      new TransactionClassificationRepository(connection).findByTransactionId(transactionIds[0])
+    ).toMatchObject({ categoryId, classificationSource: 'ai' })
+    expect(new AiSuggestionRepository(connection).findById(suggestion.id).status).toBe('accepted')
+  })
+
+  it('rejects a filtered suggestion through the workflow using the persisted suggestion id', () => {
+    const { transactionIds, categoryId } = seedTransactions(connection, [
+      'Synthetic Workflow Reject'
+    ])
+    const suggestion = createSuggestion(connection, {
+      transactionId: transactionIds[0],
+      suggestedCategoryId: categoryId
+    })
+    const workflow = createWorkflow(connection)
+    const [visibleSuggestion] = workflow.listAiSuggestions({
+      transactionQuery: { unclassifiedOnly: true, sortBy: 'transactionDate', sortDirection: 'desc' }
+    })
+
+    expect(visibleSuggestion?.id).toBe(suggestion.id)
+
+    workflow.rejectAiSuggestion({ suggestionId: visibleSuggestion!.id })
+
+    expect(new AiSuggestionRepository(connection).findById(suggestion.id).status).toBe('rejected')
+  })
+
+  it('exposes detected merchant without treating it as authoritative in the editor payload', () => {
+    const { transactionIds } = seedTransactions(connection, ['Synthetic Alias Display'])
+    const merchant = new MerchantRepository(connection).create({ name: 'Synthetic Alias Merchant' })
+    new MerchantAliasRepository(connection).create({
+      merchantId: merchant.id,
+      matchKind: 'exact',
+      pattern: 'Synthetic Alias Display'
+    })
+    const workflow = createWorkflow(connection)
+    const row = workflow.listTransactions({
+      sortBy: 'transactionDate',
+      sortDirection: 'desc',
+      limit: 50,
+      offset: 0
+    }).items[0]!
+    const editor = workflow.getClassification(transactionIds[0])
+
+    expect(row.classification?.merchantDisplay).toMatchObject({
+      source: 'detected',
+      displayName: 'Synthetic Alias Merchant'
+    })
+    expect(row.classification?.merchantDisplay?.authoritativeId).toBeUndefined()
+    expect(editor.merchantDisplay).toMatchObject({
+      source: 'detected',
+      displayName: 'Synthetic Alias Merchant'
+    })
+    expect(editor.merchantDisplay?.authoritativeId).toBeUndefined()
+    expect(
+      new TransactionClassificationRepository(connection).findByTransactionId(transactionIds[0])
+    ).toBeUndefined()
+  })
+
+  it('keeps authoritative merchant consistent between table and editor after manual save', () => {
+    const { transactionIds } = seedTransactions(connection, ['Synthetic Manual Display'])
+    const merchant = new MerchantRepository(connection).create({
+      name: 'Synthetic Authoritative Merchant'
+    })
+    const workflow = createWorkflow(connection)
+
+    workflow.saveManualClassification({
+      transactionId: transactionIds[0],
+      merchantId: merchant.id
+    })
+
+    const row = workflow.listTransactions({
+      sortBy: 'transactionDate',
+      sortDirection: 'desc',
+      limit: 50,
+      offset: 0
+    }).items[0]!
+    const editor = workflow.getClassification(transactionIds[0])
+
+    expect(row.classification?.merchantDisplay).toMatchObject({
+      source: 'authoritative',
+      authoritativeId: merchant.id,
+      authoritativeName: 'Synthetic Authoritative Merchant',
+      displayName: 'Synthetic Authoritative Merchant'
+    })
+    expect(editor.merchantDisplay).toMatchObject({
+      source: 'authoritative',
+      authoritativeId: merchant.id,
+      authoritativeName: 'Synthetic Authoritative Merchant',
+      displayName: 'Synthetic Authoritative Merchant'
+    })
+  })
+
+  it('exposes detected category without treating it as authoritative', () => {
+    const { transactionIds, categoryId } = seedTransactions(connection, ['Synthetic Rule Display'])
+    const workflow = createWorkflow(connection)
+    workflow.createRule({
+      name: 'Synthetic rule display',
+      descriptionMatchKind: 'exact',
+      descriptionPattern: 'Synthetic Rule Display',
+      categoryId
+    })
+    const row = workflow.listTransactions({
+      sortBy: 'transactionDate',
+      sortDirection: 'desc',
+      limit: 50,
+      offset: 0
+    }).items[0]!
+    const editor = workflow.getClassification(transactionIds[0])
+
+    expect(row.classification?.categoryDisplay).toMatchObject({
+      source: 'detected',
+      detectedId: categoryId
+    })
+    expect(row.classification?.categoryDisplay?.authoritativeId).toBeUndefined()
+    expect(editor.categoryDisplay).toMatchObject({
+      source: 'detected',
+      detectedId: categoryId
+    })
+    expect(editor.categoryDisplay?.authoritativeId).toBeUndefined()
   })
 
   it('preserves existing merchant when accepting only category', () => {
@@ -661,31 +919,190 @@ describe('smart classification service', () => {
     ).toThrow(AiSuggestionNotFoundError)
   })
 
-  it('does not overwrite existing manual classifications', () => {
-    const { transactionIds, categoryId } = seedTransactions(connection, ['Synthetic Manual'])
+  it('accepts AI category while preserving an existing manual merchant', () => {
+    const { transactionIds, categoryId } = seedTransactions(connection, [
+      'Synthetic Manual Merchant'
+    ])
+    const merchant = new MerchantRepository(connection).create({
+      name: 'Synthetic Manual Merchant'
+    })
     new TransactionClassificationRepository(connection).save({
       transactionId: transactionIds[0],
-      categoryId,
+      merchantId: merchant.id,
+      merchantSource: 'manual',
       classificationSource: 'manual',
       classificationStatus: 'confirmed'
     })
     const suggestion = createSuggestion(connection, {
       transactionId: transactionIds[0],
-      suggestedMerchantName: 'Synthetic Manual Merchant'
+      suggestedCategoryId: categoryId
     })
     const service = new SmartClassificationService(connection, { classify: async () => [] })
 
-    expect(() =>
-      service.acceptSuggestion({
-        suggestionId: suggestion.id,
-        acceptCategory: false,
-        acceptMerchant: true
-      })
-    ).toThrow(ManualClassificationPreservedError)
+    const review = service.acceptSuggestion({
+      suggestionId: suggestion.id,
+      acceptCategory: true,
+      acceptMerchant: false
+    })
+
+    expect(review).toMatchObject({ category: 'accepted', merchant: 'not_suggested' })
     expect(
       new TransactionClassificationRepository(connection).findByTransactionId(transactionIds[0])
-    ).toMatchObject({ categoryId, classificationSource: 'manual' })
-    expect(new AiSuggestionRepository(connection).findById(suggestion.id).status).toBe('pending')
+    ).toMatchObject({
+      merchantId: merchant.id,
+      merchantSource: 'manual',
+      categoryId,
+      categorySource: 'ai',
+      classificationSource: 'manual'
+    })
+  })
+
+  it('accepts AI merchant while preserving an existing manual category', () => {
+    const { transactionIds, categoryId } = seedTransactions(connection, [
+      'Synthetic Manual Category'
+    ])
+    new TransactionClassificationRepository(connection).save({
+      transactionId: transactionIds[0],
+      categoryId,
+      categorySource: 'manual',
+      classificationSource: 'manual',
+      classificationStatus: 'confirmed'
+    })
+    const suggestion = createSuggestion(connection, {
+      transactionId: transactionIds[0],
+      suggestedMerchantName: 'Synthetic Suggested Merchant'
+    })
+    const service = new SmartClassificationService(connection, { classify: async () => [] })
+
+    const review = service.acceptSuggestion({
+      suggestionId: suggestion.id,
+      acceptCategory: false,
+      acceptMerchant: true
+    })
+    const classification = new TransactionClassificationRepository(connection).findByTransactionId(
+      transactionIds[0]
+    )
+
+    expect(review).toMatchObject({ category: 'not_suggested', merchant: 'accepted' })
+    expect(classification?.categoryId).toBe(categoryId)
+    expect(classification?.categorySource).toBe('manual')
+    expect(classification?.merchantId).toBeTruthy()
+    expect(classification?.merchantSource).toBe('ai')
+    expect(classification?.classificationSource).toBe('manual')
+  })
+
+  it('accepts the eligible category from Accept Both while preserving manual merchant', () => {
+    const { transactionIds, categoryId } = seedTransactions(connection, [
+      'Synthetic Both Manual Merchant'
+    ])
+    const merchant = new MerchantRepository(connection).create({
+      name: 'Synthetic Preserved Merchant'
+    })
+    new TransactionClassificationRepository(connection).save({
+      transactionId: transactionIds[0],
+      merchantId: merchant.id,
+      merchantSource: 'manual',
+      classificationSource: 'manual',
+      classificationStatus: 'confirmed'
+    })
+    const suggestion = createSuggestion(connection, {
+      transactionId: transactionIds[0],
+      suggestedCategoryId: categoryId,
+      suggestedMerchantName: 'Synthetic Suggested Merchant'
+    })
+    const service = new SmartClassificationService(connection, { classify: async () => [] })
+
+    const review = service.acceptSuggestion({
+      suggestionId: suggestion.id,
+      acceptCategory: true,
+      acceptMerchant: true
+    })
+
+    expect(review).toMatchObject({ category: 'accepted', merchant: 'preserved_manual' })
+    expect(
+      new TransactionClassificationRepository(connection).findByTransactionId(transactionIds[0])
+    ).toMatchObject({
+      merchantId: merchant.id,
+      merchantSource: 'manual',
+      categoryId,
+      categorySource: 'ai'
+    })
+  })
+
+  it('accepts the eligible merchant from Accept Both while preserving manual category', () => {
+    const { transactionIds, categoryId } = seedTransactions(connection, [
+      'Synthetic Both Manual Category'
+    ])
+    new TransactionClassificationRepository(connection).save({
+      transactionId: transactionIds[0],
+      categoryId,
+      categorySource: 'manual',
+      classificationSource: 'manual',
+      classificationStatus: 'confirmed'
+    })
+    const suggestion = createSuggestion(connection, {
+      transactionId: transactionIds[0],
+      suggestedCategoryId: categoryId,
+      suggestedMerchantName: 'Synthetic Suggested Both Merchant'
+    })
+    const service = new SmartClassificationService(connection, { classify: async () => [] })
+
+    const review = service.acceptSuggestion({
+      suggestionId: suggestion.id,
+      acceptCategory: true,
+      acceptMerchant: true
+    })
+    const classification = new TransactionClassificationRepository(connection).findByTransactionId(
+      transactionIds[0]
+    )
+
+    expect(review).toMatchObject({ category: 'preserved_manual', merchant: 'accepted' })
+    expect(classification?.categoryId).toBe(categoryId)
+    expect(classification?.categorySource).toBe('manual')
+    expect(classification?.merchantId).toBeTruthy()
+    expect(classification?.merchantSource).toBe('ai')
+  })
+
+  it('returns a deliberate no-change result when both suggested fields are already manual', () => {
+    const { transactionIds, categoryId } = seedTransactions(connection, ['Synthetic Both Manual'])
+    const merchant = new MerchantRepository(connection).create({
+      name: 'Synthetic Fully Manual Merchant'
+    })
+    new TransactionClassificationRepository(connection).save({
+      transactionId: transactionIds[0],
+      merchantId: merchant.id,
+      merchantSource: 'manual',
+      categoryId,
+      categorySource: 'manual',
+      classificationSource: 'manual',
+      classificationStatus: 'confirmed'
+    })
+    const suggestion = createSuggestion(connection, {
+      transactionId: transactionIds[0],
+      suggestedCategoryId: categoryId,
+      suggestedMerchantName: 'Synthetic Suggested Merchant'
+    })
+    const service = new SmartClassificationService(connection, { classify: async () => [] })
+
+    const review = service.acceptSuggestion({
+      suggestionId: suggestion.id,
+      acceptCategory: true,
+      acceptMerchant: true
+    })
+
+    expect(review).toMatchObject({
+      category: 'preserved_manual',
+      merchant: 'preserved_manual',
+      suggestion: expect.objectContaining({ status: 'pending' })
+    })
+    expect(
+      new TransactionClassificationRepository(connection).findByTransactionId(transactionIds[0])
+    ).toMatchObject({
+      merchantId: merchant.id,
+      merchantSource: 'manual',
+      categoryId,
+      categorySource: 'manual'
+    })
   })
 
   it('treats repeated accept of an accepted suggestion as idempotent', () => {
@@ -707,11 +1124,26 @@ describe('smart classification service', () => {
       acceptMerchant: false
     })
 
-    expect(acceptedAgain.status).toBe('accepted')
+    expect(acceptedAgain.suggestion.status).toBe('accepted')
     expect(
       new TransactionClassificationRepository(connection).findByTransactionId(transactionIds[0])
         ?.categoryId
     ).toBe(categoryId)
+  })
+
+  it('treats repeated reject of a processed suggestion as idempotent', () => {
+    const { transactionIds, categoryId } = seedTransactions(connection, ['Synthetic Rejected'])
+    const suggestion = createSuggestion(connection, {
+      transactionId: transactionIds[0],
+      suggestedCategoryId: categoryId
+    })
+    const service = new SmartClassificationService(connection, { classify: async () => [] })
+
+    const rejected = service.rejectSuggestion(suggestion.id)
+    const rejectedAgain = service.rejectSuggestion(suggestion.id)
+
+    expect(rejected.status).toBe('rejected')
+    expect(rejectedAgain.status).toBe('rejected')
   })
 
   it('rolls back classification and suggestion status when alias creation fails', () => {
@@ -794,6 +1226,15 @@ function createSuggestion(
     usedWebSearch: false,
     reasonCode: input.suggestedMerchantName ? 'merchant_name_signal' : 'category_signal_only'
   })
+}
+
+function createWorkflow(database: Database): ApplicationWorkflow {
+  return new ApplicationWorkflow(
+    database,
+    { selectImportFile: async () => undefined },
+    new MemorySecretStore(),
+    { classify: async () => [] }
+  )
 }
 
 function countRows(database: Database, table: string): number {

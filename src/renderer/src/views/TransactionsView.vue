@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { formatCents, formatDate } from '../formatters'
 import { useAccountsStore } from '../stores/accounts'
 import { useAiStore } from '../stores/ai'
@@ -31,6 +31,7 @@ const filters = reactive({
 })
 const selectedTransactionIds = ref<string[]>([])
 const editorTransactionId = ref<string | null>(null)
+const editorPanel = ref<HTMLElement | null>(null)
 const manualForm = reactive({
   merchantId: '',
   categoryId: '',
@@ -53,21 +54,16 @@ const totalPages = computed(() =>
 )
 
 onMounted(async () => {
-  await Promise.all([
-    accounts.load(),
-    classification.loadReference(),
-    ai.loadSettings(),
-    ai.loadSuggestions(),
-    loadTransactions()
-  ])
+  await Promise.all([accounts.load(), classification.loadReference(), ai.loadSettings()])
+  await loadTransactions()
 })
 
-async function loadTransactions(): Promise<void> {
+function currentTransactionQuery(): TransactionListQueryDto {
   const transactionType = filters.transactionType
     ? (filters.transactionType as NonNullable<TransactionListQueryDto['transactionType']>)
     : undefined
 
-  await transactions.load({
+  return {
     accountId: filters.accountId || undefined,
     dateFrom: filters.dateFrom || undefined,
     dateTo: filters.dateTo || undefined,
@@ -96,7 +92,25 @@ async function loadTransactions(): Promise<void> {
     sortDirection: filters.sortDirection,
     limit: 50,
     offset: filters.offset
-  })
+  }
+}
+
+function currentSuggestionTransactionQuery(): NonNullable<
+  Parameters<typeof ai.loadSuggestions>[0]
+>['transactionQuery'] {
+  const query = { ...currentTransactionQuery() }
+  delete query.limit
+  delete query.offset
+  return query
+}
+
+async function loadTransactions(): Promise<void> {
+  await transactions.load(currentTransactionQuery())
+  await ai.loadSuggestions(currentSuggestionListInput())
+}
+
+async function loadAiSuggestions(): Promise<void> {
+  await ai.loadSuggestions(currentSuggestionListInput())
 }
 
 async function applyFilters(): Promise<void> {
@@ -116,13 +130,24 @@ async function previousPage(): Promise<void> {
 }
 
 async function openEditor(transactionId: string): Promise<void> {
-  editorTransactionId.value = transactionId
-  await classification.loadClassification(transactionId)
-  manualForm.merchantId = classification.current?.merchantId ?? ''
-  manualForm.categoryId = classification.current?.categoryId ?? ''
-  manualForm.usageType = classification.current?.usageType ?? 'unspecified'
-  manualForm.costBehaviour = classification.current?.costBehaviour ?? 'unspecified'
-  manualForm.necessity = classification.current?.necessity ?? 'unspecified'
+  logTransactionsDiagnostic('edit clicked', { transactionIdPresent: Boolean(transactionId) })
+  try {
+    await classification.loadClassification(transactionId)
+    editorTransactionId.value = transactionId
+    manualForm.merchantId = classification.current?.merchantDisplay?.authoritativeId ?? ''
+    manualForm.categoryId = classification.current?.categoryDisplay?.authoritativeId ?? ''
+    manualForm.usageType = classification.current?.usageType ?? 'unspecified'
+    manualForm.costBehaviour = classification.current?.costBehaviour ?? 'unspecified'
+    manualForm.necessity = classification.current?.necessity ?? 'unspecified'
+    logTransactionsDiagnostic('editor state set', {
+      transactionLoaded: Boolean(classification.current)
+    })
+    await nextTick()
+    editorPanel.value?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  } catch {
+    editorTransactionId.value = null
+    classification.error = 'Transaction could not be loaded.'
+  }
 }
 
 async function saveManual(): Promise<void> {
@@ -135,6 +160,8 @@ async function saveManual(): Promise<void> {
     costBehaviour: manualForm.costBehaviour as never,
     necessity: manualForm.necessity as never
   })
+  editorTransactionId.value = null
+  await classification.loadReference()
   await loadTransactions()
 }
 
@@ -161,18 +188,47 @@ async function acceptAiSuggestion(
   suggestionId: string,
   options: { acceptCategory: boolean; acceptMerchant: boolean }
 ): Promise<void> {
-  await ai.acceptSuggestion(suggestionId, options)
+  logAiSuggestionDiagnostic('button clicked', {
+    action: acceptAction(options),
+    suggestionIdPresent: Boolean(suggestionId)
+  })
+  await ai.acceptSuggestion(suggestionId, options, currentSuggestionListInput())
   await Promise.all([classification.loadReference(), loadTransactions()])
 }
 
 async function rejectAiSuggestion(suggestionId: string): Promise<void> {
-  await ai.rejectSuggestion(suggestionId)
+  logAiSuggestionDiagnostic('button clicked', {
+    action: 'reject',
+    suggestionIdPresent: Boolean(suggestionId)
+  })
+  await ai.rejectSuggestion(suggestionId, currentSuggestionListInput())
   await loadTransactions()
 }
 
 async function acceptHighConfidenceCategories(): Promise<void> {
-  await ai.acceptHighConfidenceCategories()
+  await ai.acceptHighConfidenceCategories(currentSuggestionListInput())
   await loadTransactions()
+}
+
+function currentSuggestionListInput(): NonNullable<Parameters<typeof ai.loadSuggestions>[0]> {
+  return { transactionQuery: currentSuggestionTransactionQuery() }
+}
+
+function logTransactionsDiagnostic(label: string, metadata: Record<string, unknown>): void {
+  if (import.meta.env.PROD) return
+  console.warn(`[sampo-transactions] ${label}`, metadata)
+}
+
+function logAiSuggestionDiagnostic(label: string, metadata: Record<string, unknown>): void {
+  if (import.meta.env.PROD) return
+  console.warn(`[sampo-ai-suggestions] ${label}`, metadata)
+}
+
+function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolean }): string {
+  if (options.acceptCategory && options.acceptMerchant) return 'accept_both'
+  if (options.acceptCategory) return 'accept_category'
+  if (options.acceptMerchant) return 'accept_merchant'
+  return 'accept'
 }
 </script>
 
@@ -351,12 +407,8 @@ async function acceptHighConfidenceCategories(): Promise<void> {
         <button type="submit" :disabled="classification.submitting">Apply to selected</button>
       </form>
       <div class="button-row">
-        <button
-          type="button"
-          :disabled="ai.submitting || !ai.settings?.aiEnabled || !selectedTransactionIds.length"
-          @click="classifySelectedWithAi"
-        >
-          Smart classify selected
+        <button type="button" :disabled="ai.submitting" @click="classifySelectedWithAi">
+          {{ ai.submitting ? 'Classifying...' : 'Classify' }}
         </button>
       </div>
     </div>
@@ -364,7 +416,7 @@ async function acceptHighConfidenceCategories(): Promise<void> {
     <div class="panel">
       <h3>AI suggestions</h3>
       <div class="button-row">
-        <button type="button" :disabled="ai.loading" @click="ai.loadSuggestions">Refresh</button>
+        <button type="button" :disabled="ai.loading" @click="loadAiSuggestions">Refresh</button>
         <button
           type="button"
           :disabled="ai.submitting || ai.highConfidenceSuggestions.length === 0"
@@ -399,7 +451,7 @@ async function acceptHighConfidenceCategories(): Promise<void> {
                 <div class="button-row">
                   <button
                     type="button"
-                    :disabled="ai.submitting || !suggestion.suggestedCategoryId"
+                    :disabled="ai.submitting || !suggestion.canAcceptCategory"
                     @click="
                       acceptAiSuggestion(suggestion.id, {
                         acceptCategory: true,
@@ -411,7 +463,7 @@ async function acceptHighConfidenceCategories(): Promise<void> {
                   </button>
                   <button
                     type="button"
-                    :disabled="ai.submitting || !suggestion.suggestedMerchantName"
+                    :disabled="ai.submitting || !suggestion.canAcceptMerchant"
                     @click="
                       acceptAiSuggestion(suggestion.id, {
                         acceptCategory: false,
@@ -425,7 +477,7 @@ async function acceptHighConfidenceCategories(): Promise<void> {
                     type="button"
                     :disabled="
                       ai.submitting ||
-                      (!suggestion.suggestedCategoryId && !suggestion.suggestedMerchantName)
+                      (!suggestion.canAcceptCategory && !suggestion.canAcceptMerchant)
                     "
                     @click="
                       acceptAiSuggestion(suggestion.id, {
@@ -454,6 +506,12 @@ async function acceptHighConfidenceCategories(): Promise<void> {
 
     <div class="panel">
       <h3>Transactions</h3>
+      <div class="button-row">
+        <button type="button" :disabled="ai.submitting" @click="classifySelectedWithAi">
+          {{ ai.submitting ? 'Classifying...' : 'Classify' }}
+        </button>
+        <span>{{ selectedTransactionIds.length }} selected</span>
+      </div>
       <p v-if="transactions.page.items.length === 0">No transactions match the selected filters.</p>
       <div v-else class="table-wrap">
         <table>
@@ -507,14 +565,33 @@ async function acceptHighConfidenceCategories(): Promise<void> {
               <td>{{ transaction.isPending ? 'Pending' : 'Completed' }}</td>
               <td>{{ transaction.excludedFromSpending ? 'Excluded' : 'Included' }}</td>
               <td>{{ transaction.reviewStatus }}</td>
-              <td>{{ transaction.classification?.merchantName ?? '' }}</td>
-              <td>{{ transaction.classification?.categoryPath?.join(' / ') ?? '' }}</td>
+              <td>
+                {{ transaction.classification?.merchantDisplay?.displayName ?? 'Unidentified' }}
+                <span
+                  v-if="transaction.classification?.merchantDisplay?.source === 'detected'"
+                  class="classification-note"
+                >
+                  Detected
+                </span>
+              </td>
+              <td>
+                {{
+                  transaction.classification?.categoryDisplay?.displayPath?.join(' / ') ??
+                  'Unclassified'
+                }}
+                <span
+                  v-if="transaction.classification?.categoryDisplay?.source === 'detected'"
+                  class="classification-note"
+                >
+                  Detected
+                </span>
+              </td>
               <td>{{ transaction.classification?.classificationStatus ?? 'needs_review' }}</td>
               <td>{{ transaction.classification?.usageType ?? 'unspecified' }}</td>
               <td>{{ transaction.classification?.costBehaviour ?? 'unspecified' }}</td>
               <td>{{ transaction.classification?.necessity ?? 'unspecified' }}</td>
               <td>
-                <button type="button" @click="openEditor(transaction.id)">Classify</button>
+                <button type="button" @click="openEditor(transaction.id)">Edit</button>
               </td>
             </tr>
           </tbody>
@@ -538,7 +615,7 @@ async function acceptHighConfidenceCategories(): Promise<void> {
       </div>
     </div>
 
-    <div v-if="editorTransactionId" class="panel">
+    <div v-if="editorTransactionId" ref="editorPanel" class="panel">
       <h3>Classification editor</h3>
       <p v-if="classification.current">
         Source {{ classification.current.source }}, status {{ classification.current.status }}.
@@ -547,7 +624,7 @@ async function acceptHighConfidenceCategories(): Promise<void> {
         <div class="form-field">
           <label for="manual-merchant">Merchant</label>
           <select id="manual-merchant" v-model="manualForm.merchantId">
-            <option value="">Unspecified</option>
+            <option value="">Unidentified</option>
             <option
               v-for="merchant in classification.merchants"
               :key="merchant.id"
@@ -556,11 +633,20 @@ async function acceptHighConfidenceCategories(): Promise<void> {
               {{ merchant.name }}
             </option>
           </select>
+          <p
+            v-if="
+              classification.current?.merchantDisplay?.source === 'detected' &&
+              classification.current.merchantDisplay.displayName
+            "
+            class="classification-note"
+          >
+            Detected: {{ classification.current.merchantDisplay.displayName }}
+          </p>
         </div>
         <div class="form-field">
           <label for="manual-category">Category</label>
           <select id="manual-category" v-model="manualForm.categoryId">
-            <option value="">Unspecified</option>
+            <option value="">Unclassified</option>
             <option
               v-for="category in classification.categories.filter((item) => item.isActive)"
               :key="category.id"
@@ -569,6 +655,15 @@ async function acceptHighConfidenceCategories(): Promise<void> {
               {{ category.name }}
             </option>
           </select>
+          <p
+            v-if="
+              classification.current?.categoryDisplay?.source === 'detected' &&
+              classification.current.categoryDisplay.displayPath
+            "
+            class="classification-note"
+          >
+            Detected: {{ classification.current.categoryDisplay.displayPath.join(' / ') }}
+          </p>
         </div>
         <div class="form-field">
           <label for="manual-usage">Usage</label>

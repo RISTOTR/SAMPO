@@ -17,8 +17,11 @@ import {
   TransactionClassificationRepository
 } from '../storage/categorisation'
 import { TransactionRepository } from '../storage/transactions'
-import type { AiClassificationSuggestion, Transaction } from '../domain/schemas'
-import { ManualClassificationPreservedError } from '../categorisation/errors'
+import type {
+  AiClassificationSuggestion,
+  Transaction,
+  TransactionClassification
+} from '../domain/schemas'
 
 export type SmartClassifySummary = {
   eligibleTransactionCount: number
@@ -31,6 +34,14 @@ export type SmartClassifySummary = {
   canonicalMerchantsSuggested: number
   webLookupsPerformed: number
   skippedDeterministicOrManual: number
+}
+
+export type AiSuggestionReviewComponentStatus = 'accepted' | 'preserved_manual' | 'not_suggested'
+
+export type AiSuggestionReviewResult = {
+  suggestion: AiClassificationSuggestion
+  category: AiSuggestionReviewComponentStatus
+  merchant: AiSuggestionReviewComponentStatus
 }
 
 export class SmartClassificationService {
@@ -113,6 +124,7 @@ export class SmartClassificationService {
     try {
       for (let index = 0; index < groups.length; index += aiModelConfig.batchSize) {
         const batch = groups.slice(index, index + aiModelConfig.batchSize)
+        logProviderDiagnostic('classify request started', { uniqueCount: batch.length })
         const results = await this.provider.classify(
           batch.map((group) => group.input),
           {
@@ -176,31 +188,33 @@ export class SmartClassificationService {
     suggestionId: string
     acceptCategory: boolean
     acceptMerchant: boolean
-  }): AiClassificationSuggestion {
+  }): AiSuggestionReviewResult {
     const mode = acceptanceMode(input)
     logReviewDiagnostic('workflow started', {
       mode,
       suggestionIdPresent: Boolean(input.suggestionId)
     })
-    const accept = this.database.transaction(() => {
+    const accept = this.database.transaction((): AiSuggestionReviewResult => {
       logReviewDiagnostic('transaction started', { mode })
       const suggestion = this.suggestions.findById(input.suggestionId)
       if (suggestion.status === 'accepted') {
         logReviewDiagnostic('suggestion already accepted', { mode })
-        return suggestion
+        return { suggestion, category: 'not_suggested', merchant: 'not_suggested' }
       }
       if (suggestion.status !== 'pending') {
         throw new InvalidAiSuggestionAcceptanceError('AI suggestion is not pending')
       }
 
       const existing = this.classifications.findByTransactionId(suggestion.transactionId)
-      if (existing?.classificationSource === 'manual') {
-        throw new ManualClassificationPreservedError()
-      }
-
-      const shouldApplyCategory = input.acceptCategory && Boolean(suggestion.suggestedCategoryId)
-      const shouldApplyMerchant = input.acceptMerchant && Boolean(suggestion.suggestedMerchantName)
-      if (!shouldApplyCategory && !shouldApplyMerchant) {
+      const category = reviewCategoryStatus(input, suggestion, existing)
+      const merchant = reviewMerchantStatus(input, suggestion, existing)
+      const shouldApplyCategory = category === 'accepted'
+      const shouldApplyMerchant = merchant === 'accepted'
+      if (
+        category === 'not_suggested' &&
+        merchant === 'not_suggested' &&
+        (input.acceptCategory || input.acceptMerchant)
+      ) {
         throw new InvalidAiSuggestionAcceptanceError()
       }
 
@@ -208,19 +222,26 @@ export class SmartClassificationService {
       const merchantId = shouldApplyMerchant
         ? this.findOrCreateMerchant(suggestion.suggestedMerchantName!)
         : existing?.merchantId
+      const categoryId = shouldApplyCategory ? suggestion.suggestedCategoryId : existing?.categoryId
+      const merchantSource = shouldApplyMerchant ? 'ai' : existing?.merchantSource
+      const categorySource = shouldApplyCategory ? 'ai' : existing?.categorySource
 
-      this.classifications.save({
-        transactionId: suggestion.transactionId,
-        merchantId,
-        categoryId: shouldApplyCategory ? suggestion.suggestedCategoryId : existing?.categoryId,
-        usageType: existing?.usageType ?? 'unspecified',
-        costBehaviour: existing?.costBehaviour ?? 'unspecified',
-        necessity: existing?.necessity ?? 'unspecified',
-        classificationSource: 'ai',
-        classificationStatus: 'confirmed',
-        appliedRuleId: undefined
-      })
-      logReviewDiagnostic('classification persisted', { mode })
+      if (shouldApplyCategory || shouldApplyMerchant) {
+        this.classifications.save({
+          transactionId: suggestion.transactionId,
+          merchantId,
+          merchantSource,
+          categoryId,
+          categorySource,
+          usageType: existing?.usageType ?? 'unspecified',
+          costBehaviour: existing?.costBehaviour ?? 'unspecified',
+          necessity: existing?.necessity ?? 'unspecified',
+          classificationSource: mergedClassificationSource({ merchantSource, categorySource }),
+          classificationStatus: 'confirmed',
+          appliedRuleId: undefined
+        })
+        logReviewDiagnostic('classification persisted', { mode })
+      }
 
       if (shouldApplyMerchant && merchantId) {
         const transaction = this.transactions.findById(suggestion.transactionId)
@@ -232,9 +253,14 @@ export class SmartClassificationService {
         })
         logReviewDiagnostic('merchant alias persisted', { mode })
       }
-      const accepted = this.suggestions.mark(suggestion.id, 'accepted')
-      logReviewDiagnostic('suggestion status updated', { mode })
-      return accepted
+      const reviewedSuggestion =
+        shouldApplyCategory || shouldApplyMerchant
+          ? this.suggestions.mark(suggestion.id, 'accepted')
+          : suggestion
+      if (shouldApplyCategory || shouldApplyMerchant) {
+        logReviewDiagnostic('suggestion status updated', { mode })
+      }
+      return { suggestion: reviewedSuggestion, category, merchant }
     })
     try {
       return accept()
@@ -251,7 +277,12 @@ export class SmartClassificationService {
   }
 
   rejectSuggestion(id: string): AiClassificationSuggestion {
-    return this.suggestions.mark(id, 'rejected')
+    const reject = this.database.transaction(() => {
+      const suggestion = this.suggestions.findById(id)
+      if (suggestion.status !== 'pending') return suggestion
+      return this.suggestions.mark(id, 'rejected')
+    })
+    return reject()
   }
 
   private isEligible(transaction: Transaction): boolean {
@@ -312,9 +343,44 @@ function acceptanceMode(input: { acceptCategory: boolean; acceptMerchant: boolea
   return 'none'
 }
 
+function reviewCategoryStatus(
+  input: { acceptCategory: boolean },
+  suggestion: AiClassificationSuggestion,
+  existing: TransactionClassification | undefined
+): AiSuggestionReviewComponentStatus {
+  if (!input.acceptCategory || !suggestion.suggestedCategoryId) return 'not_suggested'
+  if (existing?.categoryId && existing.categorySource === 'manual') return 'preserved_manual'
+  return 'accepted'
+}
+
+function reviewMerchantStatus(
+  input: { acceptMerchant: boolean },
+  suggestion: AiClassificationSuggestion,
+  existing: TransactionClassification | undefined
+): AiSuggestionReviewComponentStatus {
+  if (!input.acceptMerchant || !suggestion.suggestedMerchantName) return 'not_suggested'
+  if (existing?.merchantId && existing.merchantSource === 'manual') return 'preserved_manual'
+  return 'accepted'
+}
+
+function mergedClassificationSource(input: {
+  merchantSource?: 'manual' | 'rule' | 'ai'
+  categorySource?: 'manual' | 'rule' | 'ai'
+}): 'manual' | 'rule' | 'ai' | 'unclassified' {
+  if (input.merchantSource === 'manual' || input.categorySource === 'manual') return 'manual'
+  if (input.merchantSource === 'ai' || input.categorySource === 'ai') return 'ai'
+  if (input.merchantSource === 'rule' || input.categorySource === 'rule') return 'rule'
+  return 'unclassified'
+}
+
 function logReviewDiagnostic(label: string, metadata: Record<string, unknown>): void {
   if (!isDevelopmentRuntime()) return
   console.warn(`[sampo-ai-review] ${label}`, metadata)
+}
+
+function logProviderDiagnostic(label: string, metadata: Record<string, unknown>): void {
+  if (!isDevelopmentRuntime()) return
+  console.warn(`[sampo-ai-provider] ${label}`, metadata)
 }
 
 function errorName(error: unknown): string | undefined {

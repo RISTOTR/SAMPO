@@ -90,7 +90,14 @@ describe('financial core migrations', () => {
     const phase6 = createDatabase({ path, useWal: false })
 
     phase6.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(6)
+    phase6.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(7)
     phase6.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(5)
+    phase6.connection
+      .prepare('ALTER TABLE transaction_classifications DROP COLUMN merchant_source')
+      .run()
+    phase6.connection
+      .prepare('ALTER TABLE transaction_classifications DROP COLUMN category_source')
+      .run()
     phase6.connection.prepare('DROP TABLE ai_suggestion_sources').run()
     phase6.connection.prepare('DROP TABLE ai_classification_suggestions').run()
     phase6.connection.prepare('DROP TABLE ai_settings').run()

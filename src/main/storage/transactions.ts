@@ -10,6 +10,24 @@ import {
 } from '../domain/schemas'
 import { mapTransaction } from './row-mappers'
 
+type TransactionListQuery = {
+  accountId?: string
+  dateFrom?: string
+  dateTo?: string
+  transactionType?: TransactionType
+  pending?: boolean
+  excludedFromSpending?: boolean
+  categoryId?: string
+  merchantId?: string
+  usageType?: string
+  costBehaviour?: string
+  necessity?: string
+  classificationStatus?: string
+  unclassifiedOnly?: boolean
+  sortBy: 'transactionDate' | 'amount'
+  sortDirection: 'asc' | 'desc'
+}
+
 export class TransactionRepository {
   constructor(private readonly database: Database) {}
 
@@ -149,103 +167,16 @@ export class TransactionRepository {
       .map((row) => transactionSchema.parse(mapTransaction(row as never)))
   }
 
-  listPage(query: {
-    accountId?: string
-    dateFrom?: string
-    dateTo?: string
-    transactionType?: TransactionType
-    pending?: boolean
-    excludedFromSpending?: boolean
-    categoryId?: string
-    merchantId?: string
-    usageType?: string
-    costBehaviour?: string
-    necessity?: string
-    classificationStatus?: string
-    unclassifiedOnly?: boolean
-    sortBy: 'transactionDate' | 'amount'
-    sortDirection: 'asc' | 'desc'
-    limit: number
-    offset: number
-  }): { items: Transaction[]; total: number } {
-    const where: string[] = []
-    const params: Record<string, string | number> = {}
-
-    if (query.accountId) {
-      where.push('transactions.account_id = @accountId')
-      params['accountId'] = query.accountId
+  listPage(
+    query: TransactionListQuery & {
+      limit: number
+      offset: number
     }
-
-    if (query.dateFrom) {
-      where.push('transactions.transaction_date >= @dateFrom')
-      params['dateFrom'] = query.dateFrom
-    }
-
-    if (query.dateTo) {
-      where.push('transactions.transaction_date <= @dateTo')
-      params['dateTo'] = query.dateTo
-    }
-
-    if (query.transactionType) {
-      where.push('transactions.transaction_type = @transactionType')
-      params['transactionType'] = query.transactionType
-    }
-
-    if (query.pending !== undefined) {
-      where.push('transactions.is_pending = @isPending')
-      params['isPending'] = query.pending ? 1 : 0
-    }
-
-    if (query.excludedFromSpending !== undefined) {
-      where.push('transactions.excluded_from_spending = @excludedFromSpending')
-      params['excludedFromSpending'] = query.excludedFromSpending ? 1 : 0
-    }
-
-    if (query.categoryId) {
-      where.push('classification.category_id = @categoryId')
-      params['categoryId'] = query.categoryId
-    }
-
-    if (query.merchantId) {
-      where.push('classification.merchant_id = @merchantId')
-      params['merchantId'] = query.merchantId
-    }
-
-    if (query.usageType) {
-      where.push('classification.usage_type = @usageType')
-      params['usageType'] = query.usageType
-    }
-
-    if (query.costBehaviour) {
-      where.push('classification.cost_behaviour = @costBehaviour')
-      params['costBehaviour'] = query.costBehaviour
-    }
-
-    if (query.necessity) {
-      where.push('classification.necessity = @necessity')
-      params['necessity'] = query.necessity
-    }
-
-    if (query.classificationStatus) {
-      where.push('classification.classification_status = @classificationStatus')
-      params['classificationStatus'] = query.classificationStatus
-    }
-
-    if (query.unclassifiedOnly) {
-      where.push(
-        "(classification.transaction_id IS NULL OR classification.classification_source = 'unclassified')"
-      )
-    }
-
-    const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''
+  ): { items: Transaction[]; total: number } {
+    const { whereSql, params, fromSql } = buildTransactionListSql(query)
     const orderColumn =
       query.sortBy === 'amount' ? 'transactions.amount_cents' : 'transactions.transaction_date'
     const direction = query.sortDirection === 'asc' ? 'ASC' : 'DESC'
-    const fromSql = `
-      FROM transactions transactions
-      LEFT JOIN transaction_classifications classification
-        ON classification.transaction_id = transactions.id
-    `
     const total = this.database
       .prepare(`SELECT COUNT(*) AS count ${fromSql} ${whereSql}`)
       .get(params) as { count: number }
@@ -268,6 +199,14 @@ export class TransactionRepository {
       items,
       total: total.count
     }
+  }
+
+  listFilteredIds(query: TransactionListQuery): string[] {
+    const { whereSql, params, fromSql } = buildTransactionListSql(query)
+    return this.database
+      .prepare(`SELECT transactions.id AS id ${fromSql} ${whereSql}`)
+      .all(params)
+      .map((row) => (row as { id: string }).id)
   }
 
   listCommittedForClassification(): Transaction[] {
@@ -399,5 +338,90 @@ export class TransactionRepository {
       })
 
     return this.findById(id)
+  }
+}
+
+function buildTransactionListSql(query: TransactionListQuery): {
+  whereSql: string
+  params: Record<string, string | number>
+  fromSql: string
+} {
+  const where: string[] = []
+  const params: Record<string, string | number> = {}
+
+  if (query.accountId) {
+    where.push('transactions.account_id = @accountId')
+    params['accountId'] = query.accountId
+  }
+
+  if (query.dateFrom) {
+    where.push('transactions.transaction_date >= @dateFrom')
+    params['dateFrom'] = query.dateFrom
+  }
+
+  if (query.dateTo) {
+    where.push('transactions.transaction_date <= @dateTo')
+    params['dateTo'] = query.dateTo
+  }
+
+  if (query.transactionType) {
+    where.push('transactions.transaction_type = @transactionType')
+    params['transactionType'] = query.transactionType
+  }
+
+  if (query.pending !== undefined) {
+    where.push('transactions.is_pending = @isPending')
+    params['isPending'] = query.pending ? 1 : 0
+  }
+
+  if (query.excludedFromSpending !== undefined) {
+    where.push('transactions.excluded_from_spending = @excludedFromSpending')
+    params['excludedFromSpending'] = query.excludedFromSpending ? 1 : 0
+  }
+
+  if (query.categoryId) {
+    where.push('classification.category_id = @categoryId')
+    params['categoryId'] = query.categoryId
+  }
+
+  if (query.merchantId) {
+    where.push('classification.merchant_id = @merchantId')
+    params['merchantId'] = query.merchantId
+  }
+
+  if (query.usageType) {
+    where.push('classification.usage_type = @usageType')
+    params['usageType'] = query.usageType
+  }
+
+  if (query.costBehaviour) {
+    where.push('classification.cost_behaviour = @costBehaviour')
+    params['costBehaviour'] = query.costBehaviour
+  }
+
+  if (query.necessity) {
+    where.push('classification.necessity = @necessity')
+    params['necessity'] = query.necessity
+  }
+
+  if (query.classificationStatus) {
+    where.push('classification.classification_status = @classificationStatus')
+    params['classificationStatus'] = query.classificationStatus
+  }
+
+  if (query.unclassifiedOnly) {
+    where.push(
+      "(classification.transaction_id IS NULL OR classification.classification_source = 'unclassified')"
+    )
+  }
+
+  return {
+    whereSql: where.length > 0 ? `WHERE ${where.join(' AND ')}` : '',
+    params,
+    fromSql: `
+      FROM transactions transactions
+      LEFT JOIN transaction_classifications classification
+        ON classification.transaction_id = transactions.id
+    `
   }
 }

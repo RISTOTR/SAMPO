@@ -240,8 +240,27 @@ export const transactionListQueryDtoSchema = z.object({
 export const classificationSummaryDtoSchema = z.object({
   merchantId: uuidDtoSchema.optional(),
   merchantName: z.string().min(1).optional(),
+  merchantDisplay: z
+    .object({
+      authoritativeId: uuidDtoSchema.optional(),
+      authoritativeName: z.string().min(1).optional(),
+      detectedName: z.string().min(1).optional(),
+      displayName: z.string().min(1).optional(),
+      source: z.enum(['authoritative', 'detected', 'unknown'])
+    })
+    .optional(),
   categoryId: uuidDtoSchema.optional(),
   categoryPath: z.array(z.string().min(1)).optional(),
+  categoryDisplay: z
+    .object({
+      authoritativeId: uuidDtoSchema.optional(),
+      authoritativePath: z.array(z.string().min(1)).optional(),
+      detectedId: uuidDtoSchema.optional(),
+      detectedPath: z.array(z.string().min(1)).optional(),
+      displayPath: z.array(z.string().min(1)).optional(),
+      source: z.enum(['authoritative', 'detected', 'unknown'])
+    })
+    .optional(),
   usageType: usageTypeDtoSchema,
   costBehaviour: costBehaviourDtoSchema,
   necessity: necessityDtoSchema,
@@ -423,8 +442,27 @@ export const classificationProposalDtoSchema = z.object({
   transactionId: uuidDtoSchema,
   merchantId: uuidDtoSchema.optional(),
   merchantName: z.string().min(1).optional(),
+  merchantDisplay: z
+    .object({
+      authoritativeId: uuidDtoSchema.optional(),
+      authoritativeName: z.string().min(1).optional(),
+      detectedName: z.string().min(1).optional(),
+      displayName: z.string().min(1).optional(),
+      source: z.enum(['authoritative', 'detected', 'unknown'])
+    })
+    .optional(),
   categoryId: uuidDtoSchema.optional(),
   categoryPath: z.array(z.string().min(1)).optional(),
+  categoryDisplay: z
+    .object({
+      authoritativeId: uuidDtoSchema.optional(),
+      authoritativePath: z.array(z.string().min(1)).optional(),
+      detectedId: uuidDtoSchema.optional(),
+      detectedPath: z.array(z.string().min(1)).optional(),
+      displayPath: z.array(z.string().min(1)).optional(),
+      source: z.enum(['authoritative', 'detected', 'unknown'])
+    })
+    .optional(),
   usageType: usageTypeDtoSchema,
   costBehaviour: costBehaviourDtoSchema,
   necessity: necessityDtoSchema,
@@ -548,8 +586,23 @@ export const aiSuggestionDtoSchema = z.object({
     'ambiguous',
     'unknown'
   ]),
+  canAcceptCategory: z.boolean().optional(),
+  canAcceptMerchant: z.boolean().optional(),
   createdAt: utcTimestampDtoSchema,
   reviewedAt: utcTimestampDtoSchema.optional()
+})
+
+export const aiSuggestionReviewComponentStatusDtoSchema = z.enum([
+  'accepted',
+  'preserved_manual',
+  'not_suggested'
+])
+
+export const aiSuggestionReviewDtoSchema = z.object({
+  suggestion: aiSuggestionDtoSchema,
+  category: aiSuggestionReviewComponentStatusDtoSchema,
+  merchant: aiSuggestionReviewComponentStatusDtoSchema,
+  suggestionStatus: aiSuggestionStatusDtoSchema
 })
 
 export const smartClassifyInputDtoSchema = z.object({
@@ -583,6 +636,12 @@ export const acceptAiSuggestionInputDtoSchema = z.object({
 export const rejectAiSuggestionInputDtoSchema = z.object({
   suggestionId: uuidDtoSchema
 })
+
+export const listAiSuggestionsInputDtoSchema = z
+  .object({
+    transactionQuery: transactionListQueryDtoSchema.omit({ limit: true, offset: true }).partial()
+  })
+  .partial()
 
 export type AccountSummaryDto = z.infer<typeof accountSummaryDtoSchema>
 export type CreateAccountInputDto = z.input<typeof createAccountInputDtoSchema>
@@ -628,9 +687,11 @@ export type UpdateAiSettingsInputDto = z.input<typeof updateAiSettingsInputDtoSc
 export type SaveOpenAiApiKeyInputDto = z.input<typeof saveOpenAiApiKeyInputDtoSchema>
 export type AiConnectionTestDto = z.infer<typeof aiConnectionTestDtoSchema>
 export type AiSuggestionDto = z.infer<typeof aiSuggestionDtoSchema>
+export type AiSuggestionReviewDto = z.infer<typeof aiSuggestionReviewDtoSchema>
 export type SmartClassifyInputDto = z.input<typeof smartClassifyInputDtoSchema>
 export type SmartClassifyBatchInputDto = z.input<typeof smartClassifyBatchInputDtoSchema>
 export type SmartClassifySummaryDto = z.infer<typeof smartClassifySummaryDtoSchema>
 export type AcceptAiSuggestionInputDto = z.input<typeof acceptAiSuggestionInputDtoSchema>
 export type RejectAiSuggestionInputDto = z.input<typeof rejectAiSuggestionInputDtoSchema>
+export type ListAiSuggestionsInputDto = z.input<typeof listAiSuggestionsInputDtoSchema>
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: OperationErrorDto }

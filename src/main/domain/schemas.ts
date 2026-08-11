@@ -243,7 +243,9 @@ export const categorisationRuleSchema = z.object({
 export const transactionClassificationSchema = z.object({
   transactionId: uuidSchema,
   merchantId: uuidSchema.optional(),
+  merchantSource: z.enum(['manual', 'rule', 'ai']).optional(),
   categoryId: uuidSchema.optional(),
+  categorySource: z.enum(['manual', 'rule', 'ai']).optional(),
   usageType: z.enum(usageTypes),
   costBehaviour: z.enum(costBehaviours),
   necessity: z.enum(necessities),

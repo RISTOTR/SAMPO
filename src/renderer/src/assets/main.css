@@ -198,6 +198,14 @@ select {
   font-weight: 600;
 }
 
+.classification-note {
+  display: block;
+  margin: 4px 0 0;
+  color: #5c6a61;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 input,
 select {
   min-height: 38px;

@@ -4,6 +4,8 @@ import type {
   AiConnectionTestDto,
   AiSettingsDto,
   AiSuggestionDto,
+  AiSuggestionReviewDto,
+  ListAiSuggestionsInputDto,
   SmartClassifySummaryDto,
   UpdateAiSettingsInputDto
 } from '../../../shared/dtos'
@@ -38,11 +40,11 @@ export const useAiStore = defineStore('ai', () => {
     }
   }
 
-  async function loadSuggestions(): Promise<void> {
+  async function loadSuggestions(input?: ListAiSuggestionsInputDto): Promise<void> {
     loading.value = true
     error.value = null
     try {
-      suggestions.value = unwrapResult(await window.sampo.ai.listSuggestions())
+      suggestions.value = unwrapResult(await window.sampo.ai.listSuggestions(input))
     } catch (caught) {
       error.value = errorMessage(caught)
     } finally {
@@ -79,10 +81,28 @@ export const useAiStore = defineStore('ai', () => {
   }
 
   async function classifyTransactions(transactionIds: string[]): Promise<void> {
+    logTransactionsDiagnostic('classify clicked', { selectedCount: transactionIds.length })
+    if (transactionIds.length === 0) {
+      message.value = 'No eligible transactions selected.'
+      error.value = null
+      return
+    }
+    if (settings.value && !settings.value.aiEnabled) {
+      message.value = null
+      error.value = 'Enable AI categorisation in Settings first.'
+      return
+    }
+    if (settings.value && !settings.value.keyConfigured) {
+      message.value = null
+      error.value = 'Configure an OpenAI API key in Settings first.'
+      return
+    }
+    logTransactionsDiagnostic('selected ids prepared', { count: transactionIds.length })
     await submit(async () => {
+      message.value = `Classifying ${transactionIds.length} transactions...`
       lastSummary.value = unwrapResult(await window.sampo.ai.smartClassify({ transactionIds }))
       await loadSuggestions()
-      message.value = `${lastSummary.value.suggestionsCreated} AI suggestions created.`
+      message.value = classifySummaryMessage(lastSummary.value)
     })
   }
 
@@ -98,26 +118,49 @@ export const useAiStore = defineStore('ai', () => {
 
   async function acceptSuggestion(
     suggestionId: string,
-    options: { acceptCategory: boolean; acceptMerchant: boolean }
+    options: { acceptCategory: boolean; acceptMerchant: boolean },
+    listInput?: ListAiSuggestionsInputDto
   ): Promise<void> {
+    logAiStoreDiagnostic('review action started', {
+      suggestionIdPresent: Boolean(suggestionId),
+      action: acceptAction(options)
+    })
     await submit(async () => {
-      unwrapResult(await window.sampo.ai.acceptSuggestion({ suggestionId, ...options }))
-      await loadSuggestions()
-      message.value = acceptedSuggestionMessage(options)
+      const review = unwrapResult(
+        await window.sampo.ai.acceptSuggestion({ suggestionId, ...options })
+      )
+      await loadSuggestions(listInput)
+      message.value = suggestionReviewMessage(review)
     })
   }
 
-  async function rejectSuggestion(suggestionId: string): Promise<void> {
+  async function rejectSuggestion(
+    suggestionId: string,
+    listInput?: ListAiSuggestionsInputDto
+  ): Promise<void> {
+    logAiStoreDiagnostic('review action started', {
+      suggestionIdPresent: Boolean(suggestionId),
+      action: 'reject'
+    })
     await submit(async () => {
-      unwrapResult(await window.sampo.ai.rejectSuggestion({ suggestionId }))
-      await loadSuggestions()
-      message.value = 'AI suggestion rejected.'
+      const review = unwrapResult(await window.sampo.ai.rejectSuggestion({ suggestionId }))
+      await loadSuggestions(listInput)
+      message.value =
+        review.suggestionStatus === 'rejected'
+          ? 'AI suggestion rejected.'
+          : 'AI suggestion unchanged.'
     })
   }
 
-  async function acceptHighConfidenceCategories(): Promise<void> {
+  async function acceptHighConfidenceCategories(
+    listInput?: ListAiSuggestionsInputDto
+  ): Promise<void> {
     for (const suggestion of highConfidenceSuggestions.value) {
-      await acceptSuggestion(suggestion.id, { acceptCategory: true, acceptMerchant: false })
+      await acceptSuggestion(
+        suggestion.id,
+        { acceptCategory: true, acceptMerchant: false },
+        listInput
+      )
     }
   }
 
@@ -159,12 +202,39 @@ export const useAiStore = defineStore('ai', () => {
   }
 })
 
-function acceptedSuggestionMessage(options: {
-  acceptCategory: boolean
-  acceptMerchant: boolean
-}): string {
-  if (options.acceptCategory && options.acceptMerchant) return 'AI suggestion accepted.'
-  if (options.acceptCategory) return 'Category accepted.'
-  if (options.acceptMerchant) return 'Merchant accepted.'
-  return 'AI suggestion accepted.'
+function suggestionReviewMessage(review: AiSuggestionReviewDto): string {
+  const parts: string[] = []
+  if (review.category === 'accepted') parts.push('Category accepted')
+  if (review.category === 'preserved_manual') parts.push('Manual category preserved')
+  if (review.merchant === 'accepted') parts.push('Merchant accepted')
+  if (review.merchant === 'preserved_manual') parts.push('Manual merchant preserved')
+  return parts.length > 0 ? parts.join(' - ') : 'AI suggestion unchanged.'
+}
+
+function classifySummaryMessage(summary: SmartClassifySummaryDto): string {
+  if (summary.eligibleTransactionCount === 0) return 'No eligible transactions selected.'
+  if (summary.suggestionsCreated === 0) {
+    return `${summary.eligibleTransactionCount} transactions processed - no new AI suggestions.`
+  }
+  if (summary.suggestionsCreated === summary.eligibleTransactionCount) {
+    return `${summary.suggestionsCreated} AI suggestions ready for review.`
+  }
+  return `${summary.eligibleTransactionCount} transactions processed - ${summary.suggestionsCreated} suggestions created - ${summary.skippedDeterministicOrManual} skipped.`
+}
+
+function logTransactionsDiagnostic(label: string, metadata: Record<string, unknown>): void {
+  if (import.meta.env.PROD) return
+  console.warn(`[sampo-transactions] ${label}`, metadata)
+}
+
+function logAiStoreDiagnostic(label: string, metadata: Record<string, unknown>): void {
+  if (import.meta.env.PROD) return
+  console.warn(`[sampo-ai-store] ${label}`, metadata)
+}
+
+function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolean }): string {
+  if (options.acceptCategory && options.acceptMerchant) return 'accept_both'
+  if (options.acceptCategory) return 'accept_category'
+  if (options.acceptMerchant) return 'accept_merchant'
+  return 'accept'
 }

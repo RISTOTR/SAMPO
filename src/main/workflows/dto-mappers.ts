@@ -202,6 +202,8 @@ export function classificationToSummaryDto(input: {
 export function aiSuggestionToDto(input: {
   suggestion: AiClassificationSuggestion
   categoryPath?: string[]
+  canAcceptCategory?: boolean
+  canAcceptMerchant?: boolean
 }): AiSuggestionDto {
   return {
     id: input.suggestion.id,
@@ -217,6 +219,8 @@ export function aiSuggestionToDto(input: {
     status: input.suggestion.status,
     usedWebSearch: input.suggestion.usedWebSearch,
     reasonCode: input.suggestion.reasonCode,
+    canAcceptCategory: input.canAcceptCategory,
+    canAcceptMerchant: input.canAcceptMerchant,
     createdAt: input.suggestion.createdAt,
     reviewedAt: input.suggestion.reviewedAt
   }
