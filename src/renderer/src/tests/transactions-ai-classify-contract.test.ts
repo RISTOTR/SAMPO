@@ -24,7 +24,8 @@ describe('transactions manual AI classify contract', () => {
 
   it('opens the manual editor visibly for the persisted transaction id', () => {
     expect(transactionsView).toContain('async function openEditor(transactionId: string)')
-    expect(transactionsView).toContain('await classification.loadClassification(transactionId)')
+    expect(transactionsView).toContain('classification.loadClassification(transactionId)')
+    expect(transactionsView).toContain('classification.loadReference()')
     expect(transactionsView).toContain('editorTransactionId.value = transactionId')
     expect(transactionsView).toContain('ref="editorPanel"')
     expect(transactionsView).toContain('editorPanel.value?.scrollIntoView')
@@ -75,11 +76,17 @@ describe('transactions manual AI classify contract', () => {
     expect(aiStore).toContain('AI suggestion unchanged.')
   })
 
-  it('distinguishes detected display values from authoritative editor selections', () => {
+  it('preselects detected classification values in the manual editor without persisting them until save', () => {
     expect(transactionsView).toContain("merchantDisplay?.displayName ?? 'Unidentified'")
     expect(transactionsView).toContain("categoryDisplay?.displayPath?.join(' / ')")
-    expect(transactionsView).toContain('merchantDisplay?.authoritativeId ??')
-    expect(transactionsView).toContain('categoryDisplay?.authoritativeId ??')
+    expect(transactionsView).toContain(
+      'classification.current?.merchantDisplay?.authoritativeId ??'
+    )
+    expect(transactionsView).toContain('classification.current?.merchantId ??')
+    expect(transactionsView).toContain(
+      'classification.current?.categoryDisplay?.authoritativeId ??'
+    )
+    expect(transactionsView).toContain('classification.current?.categoryId ??')
     expect(transactionsView).toContain('Detected:')
     expect(transactionsView).toContain('classification-note')
   })

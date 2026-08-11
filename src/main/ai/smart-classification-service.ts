@@ -12,7 +12,6 @@ import { ClassificationService } from '../categorisation/classification-service'
 import { AiSettingsRepository, AiSuggestionRepository } from '../storage/ai'
 import {
   CategoryRepository,
-  MerchantAliasRepository,
   MerchantRepository,
   TransactionClassificationRepository
 } from '../storage/categorisation'
@@ -49,7 +48,6 @@ export class SmartClassificationService {
   private readonly classifications: TransactionClassificationRepository
   private readonly categories: CategoryRepository
   private readonly merchants: MerchantRepository
-  private readonly aliases: MerchantAliasRepository
   private readonly settings: AiSettingsRepository
   private readonly suggestions: AiSuggestionRepository
   private readonly deterministic: ClassificationService
@@ -63,7 +61,6 @@ export class SmartClassificationService {
     this.classifications = new TransactionClassificationRepository(database)
     this.categories = new CategoryRepository(database)
     this.merchants = new MerchantRepository(database)
-    this.aliases = new MerchantAliasRepository(database)
     this.settings = new AiSettingsRepository(database)
     this.suggestions = new AiSuggestionRepository(database)
     this.deterministic = new ClassificationService(database)
@@ -83,10 +80,7 @@ export class SmartClassificationService {
         continue
       }
       const proposal = this.deterministic.evaluateTransaction(transaction.id)
-      if (
-        proposal.source === 'manual' ||
-        (proposal.source === 'rule' && proposal.status === 'confirmed')
-      ) {
+      if (proposal.status === 'confirmed' && proposal.source !== 'unclassified') {
         skippedDeterministicOrManual += 1
         continue
       }
@@ -243,16 +237,6 @@ export class SmartClassificationService {
         logReviewDiagnostic('classification persisted', { mode })
       }
 
-      if (shouldApplyMerchant && merchantId) {
-        const transaction = this.transactions.findById(suggestion.transactionId)
-        this.aliases.create({
-          merchantId,
-          matchKind: 'exact',
-          pattern: transaction.originalDescription,
-          priority: 0
-        })
-        logReviewDiagnostic('merchant alias persisted', { mode })
-      }
       const reviewedSuggestion =
         shouldApplyCategory || shouldApplyMerchant
           ? this.suggestions.mark(suggestion.id, 'accepted')

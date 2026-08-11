@@ -77,9 +77,8 @@ export class ClassificationService {
     const existing = this.classifications.findByTransactionId(transactionId)
 
     if (
-      existing?.classificationSource === 'manual' &&
-      existing.merchantSource === 'manual' &&
-      existing.categorySource === 'manual'
+      existing?.classificationStatus === 'confirmed' &&
+      existing.classificationSource !== 'unclassified'
     ) {
       return this.classificationToProposal(transaction, existing)
     }
@@ -224,13 +223,32 @@ export class ClassificationService {
     transaction: Transaction,
     existing: TransactionClassification | undefined
   ): ClassificationProposal {
+    const learnedManualMerchantResult = this.resolveLearnedManualMerchant(transaction)
+    const learnedManualCategoryResult = this.resolveLearnedManualCategory(transaction)
     const aliasResult = this.resolveAlias(transaction)
-    const ruleResult = this.resolveRule(transaction, aliasResult.merchantId)
-    const conflicts = [...aliasResult.conflicts, ...ruleResult.conflicts]
+    const learnedMerchantIds = new Set(
+      [learnedManualMerchantResult.merchantId, aliasResult.merchantId].filter(
+        (merchantId): merchantId is string => Boolean(merchantId)
+      )
+    )
+    const learnedMerchantConflict: ClassificationConflict[] =
+      learnedMerchantIds.size > 1
+        ? [{ field: 'merchant', reason: 'manual_example_alias_conflict' }]
+        : []
+    const learnedMerchantId =
+      learnedMerchantIds.size === 1 ? [...learnedMerchantIds][0] : undefined
+    const ruleResult = this.resolveRule(transaction, learnedMerchantId)
+    const conflicts = [
+      ...learnedManualMerchantResult.conflicts,
+      ...learnedManualCategoryResult.conflicts,
+      ...aliasResult.conflicts,
+      ...learnedMerchantConflict,
+      ...ruleResult.conflicts
+    ]
     const merchantId =
       existing?.merchantSource === 'manual'
         ? existing.merchantId
-        : (ruleResult.merchantId ?? aliasResult.merchantId ?? existing?.merchantId)
+        : (ruleResult.merchantId ?? learnedMerchantId ?? existing?.merchantId)
     const ruleStatus = ruleResult.status
     const status: ClassificationStatus =
       conflicts.length > 0
@@ -241,7 +259,12 @@ export class ClassificationService {
             ? ruleStatus
             : 'needs_review'
 
-    if (!merchantId && !ruleResult.categoryId && !ruleResult.matchedRule) {
+    const categoryId =
+      existing?.categorySource === 'manual'
+        ? existing.categoryId
+        : (ruleResult.categoryId ?? learnedManualCategoryResult.categoryId ?? existing?.categoryId)
+
+    if (!merchantId && !categoryId && !ruleResult.matchedRule) {
       return {
         transactionId: transaction.id,
         usageType: existing?.usageType ?? 'unspecified',
@@ -256,10 +279,7 @@ export class ClassificationService {
     return this.decorateProposal({
       transactionId: transaction.id,
       merchantId,
-      categoryId:
-        existing?.categorySource === 'manual'
-          ? existing.categoryId
-          : (ruleResult.categoryId ?? existing?.categoryId),
+      categoryId,
       usageType: ruleResult.usageType ?? existing?.usageType ?? 'unspecified',
       costBehaviour: ruleResult.costBehaviour ?? existing?.costBehaviour ?? 'unspecified',
       necessity: ruleResult.necessity ?? existing?.necessity ?? 'unspecified',
@@ -274,6 +294,50 @@ export class ClassificationService {
             : 'rule',
       conflicts
     })
+  }
+
+  private resolveLearnedManualMerchant(transaction: Transaction): {
+    merchantId?: string
+    conflicts: ClassificationConflict[]
+  } {
+    const text = normaliseMatchText(transaction.originalDescription)
+    const matchingMerchantIds = new Set(
+      this.classifications
+        .listConfirmedManualMerchantExamples()
+        .filter(
+          (example) => normaliseMatchText(example.originalDescription) === text
+        )
+        .map((example) => example.merchantId)
+    )
+
+    if (matchingMerchantIds.size > 1) {
+      return {
+        conflicts: [{ field: 'merchant', reason: 'conflicting_manual_examples' }]
+      }
+    }
+
+    return { merchantId: [...matchingMerchantIds][0], conflicts: [] }
+  }
+
+  private resolveLearnedManualCategory(transaction: Transaction): {
+    categoryId?: string
+    conflicts: ClassificationConflict[]
+  } {
+    const text = normaliseMatchText(transaction.originalDescription)
+    const matchingCategoryIds = new Set(
+      this.classifications
+        .listConfirmedManualCategoryExamples()
+        .filter((example) => normaliseMatchText(example.originalDescription) === text)
+        .map((example) => example.categoryId)
+    )
+
+    if (matchingCategoryIds.size > 1) {
+      return {
+        conflicts: [{ field: 'category', reason: 'conflicting_manual_examples' }]
+      }
+    }
+
+    return { categoryId: [...matchingCategoryIds][0], conflicts: [] }
   }
 
   private resolveAlias(transaction: Transaction): {

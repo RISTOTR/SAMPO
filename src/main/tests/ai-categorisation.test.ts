@@ -31,7 +31,6 @@ import {
   AiPartialResponseError,
   AiSuggestionNotFoundError
 } from '../ai/errors'
-import { AliasConflictError } from '../categorisation/errors'
 import type { AiClassificationSuggestion, NewTransaction, PreparedImport } from '../domain/schemas'
 
 const syntheticHash = 'c'.repeat(64)
@@ -1146,35 +1145,107 @@ describe('smart classification service', () => {
     expect(rejectedAgain.status).toBe('rejected')
   })
 
-  it('rolls back classification and suggestion status when alias creation fails', () => {
-    const { transactionIds } = seedTransactions(connection, ['Synthetic Alias Conflict'])
-    const merchants = new MerchantRepository(connection)
-    const existingMerchant = merchants.create({ name: 'Existing Alias Merchant' })
-    new MerchantAliasRepository(connection).create({
-      merchantId: existingMerchant.id,
-      matchKind: 'exact',
-      pattern: 'Synthetic Alias Conflict',
-      priority: 0
-    })
+  it('accepts an AI merchant without creating a deterministic merchant alias', () => {
+    const { transactionIds } = seedTransactions(connection, ['Synthetic Accepted Merchant'])
     const suggestion = createSuggestion(connection, {
       transactionId: transactionIds[0],
-      suggestedMerchantName: 'New Alias Merchant'
+      suggestedMerchantName: 'Synthetic Accepted Merchant Name'
     })
     const service = new SmartClassificationService(connection, { classify: async () => [] })
 
-    expect(() =>
-      service.acceptSuggestion({
-        suggestionId: suggestion.id,
-        acceptCategory: false,
-        acceptMerchant: true
-      })
-    ).toThrow(AliasConflictError)
+    const review = service.acceptSuggestion({
+      suggestionId: suggestion.id,
+      acceptCategory: false,
+      acceptMerchant: true
+    })
 
+    expect(review).toMatchObject({ merchant: 'accepted' })
     expect(
       new TransactionClassificationRepository(connection).findByTransactionId(transactionIds[0])
-    ).toBeUndefined()
-    expect(new AiSuggestionRepository(connection).findById(suggestion.id).status).toBe('pending')
-    expect(merchants.list({ search: 'New Alias Merchant' })).toHaveLength(0)
+    ).toMatchObject({ merchantSource: 'ai', classificationStatus: 'confirmed' })
+    expect(new MerchantAliasRepository(connection).list()).toHaveLength(0)
+    expect(new AiSuggestionRepository(connection).findById(suggestion.id).status).toBe('accepted')
+  })
+
+  it('keeps accepted AI classifications confirmed in the transaction read model', () => {
+    const { transactionIds, categoryId } = seedTransactions(connection, [
+      'Synthetic Confirmed AI Read Model'
+    ])
+    const suggestion = createSuggestion(connection, {
+      transactionId: transactionIds[0],
+      suggestedCategoryId: categoryId,
+      suggestedMerchantName: 'Synthetic Confirmed Merchant'
+    })
+    const service = new SmartClassificationService(connection, { classify: async () => [] })
+
+    service.acceptSuggestion({
+      suggestionId: suggestion.id,
+      acceptCategory: true,
+      acceptMerchant: true
+    })
+
+    const row = createWorkflow(connection).listTransactions({
+      sortBy: 'transactionDate',
+      sortDirection: 'desc',
+      limit: 50,
+      offset: 0
+    }).items[0]!
+
+    expect(row.classification).toMatchObject({
+      classificationSource: 'ai',
+      classificationStatus: 'confirmed',
+      merchantDisplay: { source: 'authoritative' },
+      categoryDisplay: { source: 'authoritative' }
+    })
+  })
+
+  it('does not generate another AI suggestion for an already confirmed AI classification', async () => {
+    const { transactionIds, categoryId } = seedTransactions(connection, [
+      'Synthetic Already Confirmed AI'
+    ])
+    const suggestion = createSuggestion(connection, {
+      transactionId: transactionIds[0],
+      suggestedCategoryId: categoryId
+    })
+    new SmartClassificationService(connection, { classify: async () => [] }).acceptSuggestion({
+      suggestionId: suggestion.id,
+      acceptCategory: true,
+      acceptMerchant: false
+    })
+    new AiSettingsRepository(connection).update({ aiEnabled: true })
+    let providerReached = false
+    const service = new SmartClassificationService(connection, {
+      classify: async () => {
+        providerReached = true
+        return []
+      }
+    })
+
+    const summary = await service.classifyTransactions(transactionIds)
+
+    expect(providerReached).toBe(false)
+    expect(summary.suggestionsCreated).toBe(0)
+    expect(summary.skippedDeterministicOrManual).toBe(1)
+    expect(new AiSuggestionRepository(connection).listPending()).toHaveLength(0)
+  })
+
+  it('treats creating the same active merchant alias for the same merchant as idempotent', () => {
+    const merchant = new MerchantRepository(connection).create({ name: 'Synthetic Alias Merchant' })
+    const aliases = new MerchantAliasRepository(connection)
+
+    const first = aliases.create({
+      merchantId: merchant.id,
+      matchKind: 'exact',
+      pattern: 'Synthetic Alias Pattern'
+    })
+    const second = aliases.create({
+      merchantId: merchant.id,
+      matchKind: 'exact',
+      pattern: 'Synthetic Alias Pattern'
+    })
+
+    expect(second.id).toBe(first.id)
+    expect(aliases.list()).toHaveLength(1)
   })
 })
 

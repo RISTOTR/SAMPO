@@ -53,6 +53,21 @@ const totalPages = computed(() =>
   Math.max(1, Math.ceil(transactions.page.total / transactions.page.limit))
 )
 
+const editorMerchantOptions = computed(() => {
+  const options = classification.merchants.map((merchant) => ({
+    id: merchant.id,
+    name: merchant.name
+  }))
+  const currentId = classification.current?.merchantId
+  const currentName = classification.current?.merchantName
+
+  if (currentId && currentName && !options.some((merchant) => merchant.id === currentId)) {
+    options.push({ id: currentId, name: currentName })
+  }
+
+  return options
+})
+
 onMounted(async () => {
   await Promise.all([accounts.load(), classification.loadReference(), ai.loadSettings()])
   await loadTransactions()
@@ -131,16 +146,50 @@ async function previousPage(): Promise<void> {
 
 async function openEditor(transactionId: string): Promise<void> {
   logTransactionsDiagnostic('edit clicked', { transactionIdPresent: Boolean(transactionId) })
+  const row = transactions.page.items.find((item) => item.id === transactionId)
+
+  logTransactionsDiagnostic('editor row snapshot', {
+    rowFound: Boolean(row),
+    rowMerchantIdPresent: Boolean(row?.classification?.merchantId),
+    rowMerchantDisplayNamePresent: Boolean(row?.classification?.merchantDisplay?.displayName),
+    rowMerchantSource: row?.classification?.merchantDisplay?.source ?? 'missing',
+    rowAuthoritativeMerchantIdPresent: Boolean(
+      row?.classification?.merchantDisplay?.authoritativeId
+    )
+  })
   try {
-    await classification.loadClassification(transactionId)
+    await Promise.all([
+      classification.loadClassification(transactionId),
+      classification.loadReference()
+    ])
     editorTransactionId.value = transactionId
-    manualForm.merchantId = classification.current?.merchantDisplay?.authoritativeId ?? ''
-    manualForm.categoryId = classification.current?.categoryDisplay?.authoritativeId ?? ''
+    manualForm.merchantId =
+      classification.current?.merchantDisplay?.authoritativeId ??
+      classification.current?.merchantId ??
+      ''
+    manualForm.categoryId =
+      classification.current?.categoryDisplay?.authoritativeId ??
+      classification.current?.categoryId ??
+      ''
     manualForm.usageType = classification.current?.usageType ?? 'unspecified'
     manualForm.costBehaviour = classification.current?.costBehaviour ?? 'unspecified'
     manualForm.necessity = classification.current?.necessity ?? 'unspecified'
     logTransactionsDiagnostic('editor state set', {
-      transactionLoaded: Boolean(classification.current)
+      transactionLoaded: Boolean(classification.current),
+
+      merchantIdPresent: Boolean(manualForm.merchantId),
+      merchantNamePresent: Boolean(classification.current?.merchantName),
+      merchantDisplayNamePresent: Boolean(classification.current?.merchantDisplay?.displayName),
+      merchantDisplaySource: classification.current?.merchantDisplay?.source ?? 'missing',
+      authoritativeMerchantIdPresent: Boolean(
+        classification.current?.merchantDisplay?.authoritativeId
+      ),
+
+      merchantOptionPresent:
+        !manualForm.merchantId ||
+        editorMerchantOptions.value.some((merchant) => merchant.id === manualForm.merchantId),
+
+      merchantOptionCount: editorMerchantOptions.value.length
     })
     await nextTick()
     editorPanel.value?.scrollIntoView({ block: 'start', behavior: 'smooth' })
@@ -626,7 +675,7 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
           <select id="manual-merchant" v-model="manualForm.merchantId">
             <option value="">Unidentified</option>
             <option
-              v-for="merchant in classification.merchants"
+              v-for="merchant in editorMerchantOptions"
               :key="merchant.id"
               :value="merchant.id"
             >

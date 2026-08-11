@@ -383,6 +383,7 @@ export class ApplicationWorkflow {
   saveManualClassification(input: unknown): ClassificationProposalDto {
     const parsed = saveManualClassificationInputDtoSchema.parse(input)
     this.classification.saveManual(parsed)
+    this.learnExactMerchantAliasFromManualClassification(parsed.transactionId, parsed.merchantId)
     return this.getClassification(parsed.transactionId)
   }
 
@@ -554,6 +555,30 @@ export class ApplicationWorkflow {
       this.links.importBatchParticipatesInCardSettlementLinks(batch.id)
 
     return importBatchToDto(batch, account, rollbackBlockedByReconciliation)
+  }
+
+  private learnExactMerchantAliasFromManualClassification(
+    transactionId: string,
+    merchantId: string | undefined
+  ): void {
+    if (!merchantId) return
+
+    try {
+      const transaction = this.transactions.findById(transactionId)
+      this.merchantAliases.create({
+        merchantId,
+        matchKind: 'exact',
+        pattern: transaction.originalDescription,
+        priority: 0
+      })
+    } catch (error) {
+      if (!isDevelopmentRuntime()) return
+      console.warn('[sampo-manual-learning] exact merchant alias learning skipped', {
+        transactionIdPresent: Boolean(transactionId),
+        merchantIdPresent: Boolean(merchantId),
+        errorName: error instanceof Error ? error.name : 'UnknownError'
+      })
+    }
   }
 
   private categoryPath(categoryId: string | undefined): string[] | undefined {
