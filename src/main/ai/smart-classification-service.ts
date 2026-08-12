@@ -6,7 +6,11 @@ import {
   AiPartialResponseError,
   InvalidAiSuggestionAcceptanceError
 } from './errors'
-import type { AiClassificationInput, AiClassificationProvider } from './provider'
+import type {
+  AiClassificationInput,
+  AiClassificationProvider,
+  AiClassificationResult
+} from './provider'
 import { normaliseMatchText } from '../categorisation/normalisation'
 import { ClassificationService } from '../categorisation/classification-service'
 import { AiSettingsRepository, AiSuggestionRepository } from '../storage/ai'
@@ -125,38 +129,72 @@ export class SmartClassificationService {
             categories: this.activeCategoryChoices(),
             country: settings.country,
             city: settings.city,
-            allowWebLookup: settings.allowWebLookup
+            allowWebLookup: false
           }
         )
-        const expectedInputIds = new Set(batch.map((group) => group.input.inputId))
-        const resultMap = new Map(results.map((result) => [result.inputId, result]))
-        if (
-          resultMap.size !== results.length ||
-          resultMap.size !== batch.length ||
-          results.some((result) => !expectedInputIds.has(result.inputId))
-        ) {
-          throw new AiPartialResponseError()
-        }
+        const resultMap = this.validateProviderResults(
+          batch.map((group) => group.input),
+          results
+        )
 
         for (const group of batch) {
-          const result = resultMap.get(group.input.inputId)
-          if (!result) throw new AiPartialResponseError()
-          if (result.category.categoryId)
-            this.categories.assertAssignable(result.category.categoryId)
+          const initialResult = resultMap.get(group.input.inputId)
+          if (!initialResult) throw new AiPartialResponseError()
+          if (initialResult.category.categoryId)
+            this.categories.assertAssignable(initialResult.category.categoryId)
+
+          let result = initialResult
+          let model = aiModelConfig.bulkClassificationModel
+          let usedWebSearch = false
+          let webLookupFailed = false
+
+          if (settings.allowWebLookup && !initialResult.merchant?.canonicalName) {
+            logProviderDiagnostic('targeted web lookup started', {
+              inputId: group.input.inputId
+            })
+            try {
+              const webResults = await this.provider.classify([group.input], {
+                categories: this.activeCategoryChoices(),
+                country: settings.country,
+                city: settings.city,
+                allowWebLookup: true,
+                requireWebLookup: true
+              })
+              const webResult = this.validateProviderResults([group.input], webResults).get(
+                group.input.inputId
+              )
+              if (!webResult) throw new AiPartialResponseError()
+              if (webResult.category.categoryId)
+                this.categories.assertAssignable(webResult.category.categoryId)
+
+              result = mergeTargetedWebResult(initialResult, webResult)
+              model = aiModelConfig.webLookupModel
+              usedWebSearch = true
+            } catch (error) {
+              webLookupFailed = true
+              logProviderDiagnostic('targeted web lookup failed; keeping initial result', {
+                inputId: group.input.inputId,
+                errorName: errorName(error),
+                message: safeErrorMessage(error)
+              })
+            }
+          }
 
           for (const transaction of group.transactions) {
             const suggestion = this.suggestions.create({
               transactionId: transaction.id,
               provider: 'openai',
-              model: settings.allowWebLookup
-                ? aiModelConfig.webLookupModel
-                : aiModelConfig.bulkClassificationModel,
+              model,
               suggestedMerchantName: result.merchant?.canonicalName,
               suggestedCategoryId: result.category.categoryId,
               merchantConfidence: Math.round((result.merchant?.confidence ?? 0) * 1000),
               categoryConfidence: Math.round(result.category.confidence * 1000),
-              needsWebLookup: result.needsWebLookup,
-              usedWebSearch: Boolean(result.sources?.length),
+              needsWebLookup: webLookupFailed
+                ? true
+                : usedWebSearch
+                  ? false
+                  : result.needsWebLookup,
+              usedWebSearch,
               reasonCode: result.reasonCode
             })
             for (const source of result.sources ?? [])
@@ -269,6 +307,22 @@ export class SmartClassificationService {
     return reject()
   }
 
+  private validateProviderResults(
+    inputs: AiClassificationInput[],
+    results: AiClassificationResult[]
+  ): Map<string, AiClassificationResult> {
+    const expectedInputIds = new Set(inputs.map((input) => input.inputId))
+    const resultMap = new Map(results.map((result) => [result.inputId, result]))
+    if (
+      resultMap.size !== results.length ||
+      resultMap.size !== inputs.length ||
+      results.some((result) => !expectedInputIds.has(result.inputId))
+    ) {
+      throw new AiPartialResponseError()
+    }
+    return resultMap
+  }
+
   private isEligible(transaction: Transaction): boolean {
     return ['expense', 'refund', 'income', 'fee', 'tax'].includes(transaction.transactionType)
   }
@@ -317,6 +371,23 @@ export class SmartClassificationService {
         (merchant) => merchant.name.toLocaleLowerCase('es-ES') === name.toLocaleLowerCase('es-ES')
       )
     return existing?.id ?? this.merchants.create({ name }).id
+  }
+}
+
+function mergeTargetedWebResult(
+  initial: AiClassificationResult,
+  web: AiClassificationResult
+): AiClassificationResult {
+  const webMerchant = web.merchant?.canonicalName ? web.merchant : undefined
+  const webCategory = web.category.categoryId ? web.category : undefined
+  return {
+    inputId: initial.inputId,
+    merchant: webMerchant ?? initial.merchant,
+    category: webCategory ?? initial.category,
+    merchantType: web.merchantType ?? initial.merchantType,
+    needsWebLookup: false,
+    reasonCode: web.reasonCode,
+    sources: web.sources
   }
 }
 

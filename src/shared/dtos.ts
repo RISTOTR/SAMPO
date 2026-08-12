@@ -476,6 +476,7 @@ export const classificationProposalDtoSchema = z.object({
 export const saveManualClassificationInputDtoSchema = z.object({
   transactionId: uuidDtoSchema,
   merchantId: uuidDtoSchema.optional(),
+  merchantName: z.string().trim().min(1).optional(),
   categoryId: uuidDtoSchema.optional(),
   usageType: usageTypeDtoSchema.default('unspecified'),
   costBehaviour: costBehaviourDtoSchema.default('unspecified'),

@@ -339,6 +339,47 @@ describe('OpenAI classification provider', () => {
     })
   })
 
+  it('requires web search for targeted merchant enrichment', async () => {
+    const secretStore = new MemorySecretStore()
+    await secretStore.setOpenAiApiKey('test-api-key')
+    let request: unknown
+    const provider = new OpenAiClassificationProvider(
+      secretStore,
+      () =>
+        ({
+          responses: {
+            create: async (input: unknown) => {
+              request = input
+              return {
+                output_text: JSON.stringify({
+                  results: [
+                    wireResult({
+                      merchant: { canonicalName: 'Synthetic Web Merchant', confidence: 0.91 },
+                      needsWebLookup: false,
+                      reasonCode: 'local_business_signal',
+                      sources: [
+                        { title: 'Synthetic merchant source', url: 'https://example.test/merchant' }
+                      ]
+                    })
+                  ]
+                })
+              }
+            }
+          }
+        }) as never
+    )
+
+    await provider.classify(
+      [{ inputId: 'input-1', descriptor: 'synthetic local shop', sourceContext: 'card_purchase' }],
+      { categories: [], allowWebLookup: true, requireWebLookup: true }
+    )
+
+    expect(request).toMatchObject({
+      tools: [{ type: 'web_search_preview', search_context_size: 'medium' }],
+      tool_choice: 'required'
+    })
+  })
+
   it('rejects malformed structured output', async () => {
     const secretStore = new MemorySecretStore()
     await secretStore.setOpenAiApiKey('test-api-key')
@@ -494,6 +535,69 @@ describe('smart classification service', () => {
     })
     expect(suggestions).toHaveLength(2)
     expect(suggestions.every((suggestion) => suggestion.status === 'pending')).toBe(true)
+  })
+
+  it('runs targeted required web enrichment for unresolved merchants and preserves the first-pass category', async () => {
+    const { transactionIds, categoryId } = seedTransactions(connection, ['EXPJUANDEAUSTRIA'])
+    new AiSettingsRepository(connection).update({
+      aiEnabled: true,
+      allowWebLookup: true,
+      country: 'Spain',
+      city: 'Madrid'
+    })
+    const contexts: Parameters<AiClassificationProvider['classify']>[1][] = []
+    const service = new SmartClassificationService(connection, {
+      classify: async (items, context) => {
+        contexts.push(context)
+        if (!context.allowWebLookup) {
+          return [
+            {
+              inputId: items[0]!.inputId,
+              merchant: undefined,
+              category: { categoryId, confidence: 0.78, categoryUnknown: false },
+              merchantType: undefined,
+              needsWebLookup: true,
+              reasonCode: 'category_signal_only'
+            }
+          ]
+        }
+
+        expect(context.requireWebLookup).toBe(true)
+        return [
+          {
+            inputId: items[0]!.inputId,
+            merchant: { canonicalName: 'Carrefour Express', confidence: 0.89 },
+            category: { categoryId: undefined, confidence: 0.2, categoryUnknown: true },
+            merchantType: 'supermarket',
+            needsWebLookup: false,
+            reasonCode: 'local_business_signal',
+            sources: [
+              { title: 'Carrefour Express result', url: 'https://example.test/carrefour-express' }
+            ]
+          }
+        ]
+      }
+    })
+
+    const summary = await service.classifyTransactions(transactionIds)
+    const [suggestion] = new AiSuggestionRepository(connection).listPending()
+
+    expect(contexts).toHaveLength(2)
+    expect(contexts[0]).toMatchObject({ allowWebLookup: false })
+    expect(contexts[1]).toMatchObject({ allowWebLookup: true, requireWebLookup: true })
+    expect(suggestion).toMatchObject({
+      transactionId: transactionIds[0],
+      suggestedMerchantName: 'Carrefour Express',
+      suggestedCategoryId: categoryId,
+      usedWebSearch: true,
+      needsWebLookup: false,
+      reasonCode: 'local_business_signal'
+    })
+    expect(summary).toMatchObject({
+      suggestionsCreated: 1,
+      canonicalMerchantsSuggested: 1,
+      webLookupsPerformed: 1
+    })
   })
 
   it('manually classifies selected transactions when automatic import classification is disabled', async () => {

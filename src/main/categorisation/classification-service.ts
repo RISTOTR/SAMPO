@@ -235,8 +235,7 @@ export class ClassificationService {
       learnedMerchantIds.size > 1
         ? [{ field: 'merchant', reason: 'manual_example_alias_conflict' }]
         : []
-    const learnedMerchantId =
-      learnedMerchantIds.size === 1 ? [...learnedMerchantIds][0] : undefined
+    const learnedMerchantId = learnedMerchantIds.size === 1 ? [...learnedMerchantIds][0] : undefined
     const ruleResult = this.resolveRule(transaction, learnedMerchantId)
     const conflicts = [
       ...learnedManualMerchantResult.conflicts,
@@ -304,9 +303,7 @@ export class ClassificationService {
     const matchingMerchantIds = new Set(
       this.classifications
         .listConfirmedManualMerchantExamples()
-        .filter(
-          (example) => normaliseMatchText(example.originalDescription) === text
-        )
+        .filter((example) => normaliseMatchText(example.originalDescription) === text)
         .map((example) => example.merchantId)
     )
 

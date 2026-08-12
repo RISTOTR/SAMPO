@@ -131,7 +131,7 @@ export class ApplicationWorkflow {
   readonly previews: ImportPreviewWorkflow
 
   constructor(
-    database: Database,
+    private readonly database: Database,
     dialogAdapter: FileDialogAdapter,
     secretStore: SecretStore = new MemorySecretStore(),
     aiProvider?: AiClassificationProvider
@@ -382,9 +382,24 @@ export class ApplicationWorkflow {
 
   saveManualClassification(input: unknown): ClassificationProposalDto {
     const parsed = saveManualClassificationInputDtoSchema.parse(input)
-    this.classification.saveManual(parsed)
-    this.learnExactMerchantAliasFromManualClassification(parsed.transactionId, parsed.merchantId)
-    return this.getClassification(parsed.transactionId)
+    const save = this.database.transaction(() => {
+      const merchantId =
+        parsed.merchantId ??
+        (parsed.merchantName ? this.findOrCreateMerchant(parsed.merchantName) : undefined)
+
+      this.classification.saveManual({
+        transactionId: parsed.transactionId,
+        merchantId,
+        categoryId: parsed.categoryId,
+        usageType: parsed.usageType,
+        costBehaviour: parsed.costBehaviour,
+        necessity: parsed.necessity
+      })
+      this.learnExactMerchantAliasFromManualClassification(parsed.transactionId, merchantId)
+      return this.getClassification(parsed.transactionId)
+    })
+
+    return save()
   }
 
   previewRule(input: unknown): RuleApplicationPreviewDto {
@@ -555,6 +570,16 @@ export class ApplicationWorkflow {
       this.links.importBatchParticipatesInCardSettlementLinks(batch.id)
 
     return importBatchToDto(batch, account, rollbackBlockedByReconciliation)
+  }
+
+  private findOrCreateMerchant(name: string): string {
+    const existing = this.merchants
+      .list({ search: name })
+      .find(
+        (merchant) => merchant.name.toLocaleLowerCase('es-ES') === name.toLocaleLowerCase('es-ES')
+      )
+
+    return existing?.id ?? this.merchants.create({ name }).id
   }
 
   private learnExactMerchantAliasFromManualClassification(

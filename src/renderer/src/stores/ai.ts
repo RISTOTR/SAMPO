@@ -81,26 +81,43 @@ export const useAiStore = defineStore('ai', () => {
   }
 
   async function classifyTransactions(transactionIds: string[]): Promise<void> {
-    logTransactionsDiagnostic('classify clicked', { selectedCount: transactionIds.length })
-    if (transactionIds.length === 0) {
+    const requestTransactionIds = Array.from(transactionIds)
+
+    logTransactionsDiagnostic('classify clicked', {
+      selectedCount: requestTransactionIds.length
+    })
+
+    if (requestTransactionIds.length === 0) {
       message.value = 'No eligible transactions selected.'
       error.value = null
       return
     }
+
     if (settings.value && !settings.value.aiEnabled) {
       message.value = null
       error.value = 'Enable AI categorisation in Settings first.'
       return
     }
+
     if (settings.value && !settings.value.keyConfigured) {
       message.value = null
       error.value = 'Configure an OpenAI API key in Settings first.'
       return
     }
-    logTransactionsDiagnostic('selected ids prepared', { count: transactionIds.length })
+
+    logTransactionsDiagnostic('selected ids prepared', {
+      count: requestTransactionIds.length
+    })
+
     await submit(async () => {
-      message.value = `Classifying ${transactionIds.length} transactions...`
-      lastSummary.value = unwrapResult(await window.sampo.ai.smartClassify({ transactionIds }))
+      message.value = `Classifying ${requestTransactionIds.length} transactions...`
+
+      lastSummary.value = unwrapResult(
+        await window.sampo.ai.smartClassify({
+          transactionIds: requestTransactionIds
+        })
+      )
+
       await loadSuggestions()
       message.value = classifySummaryMessage(lastSummary.value)
     })
@@ -172,7 +189,8 @@ export const useAiStore = defineStore('ai', () => {
     try {
       await action()
     } catch (caught) {
-      error.value = errorMessage(caught)
+      error.value = caught instanceof Error ? caught.message : errorMessage(caught)
+      message.value = null
     } finally {
       submitting.value = false
     }

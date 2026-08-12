@@ -5,7 +5,7 @@ import { useAccountsStore } from '../stores/accounts'
 import { useAiStore } from '../stores/ai'
 import { useClassificationStore } from '../stores/classification'
 import { useTransactionsStore } from '../stores/transactions'
-import type { TransactionListQueryDto } from '../../../shared/dtos'
+import type { AiSuggestionDto, TransactionListQueryDto } from '../../../shared/dtos'
 
 const accounts = useAccountsStore()
 const ai = useAiStore()
@@ -32,6 +32,7 @@ const filters = reactive({
 const selectedTransactionIds = ref<string[]>([])
 const editorTransactionId = ref<string | null>(null)
 const editorPanel = ref<HTMLElement | null>(null)
+const newMerchantName = ref('')
 const manualForm = reactive({
   merchantId: '',
   categoryId: '',
@@ -67,6 +68,16 @@ const editorMerchantOptions = computed(() => {
 
   return options
 })
+
+const editorTransaction = computed(() =>
+  editorTransactionId.value
+    ? transactions.page.items.find((transaction) => transaction.id === editorTransactionId.value)
+    : undefined
+)
+
+const editorSuggestion = computed(() =>
+  editorTransactionId.value ? aiSuggestionFor(editorTransactionId.value) : undefined
+)
 
 onMounted(async () => {
   await Promise.all([accounts.load(), classification.loadReference(), ai.loadSettings()])
@@ -119,6 +130,10 @@ function currentSuggestionTransactionQuery(): NonNullable<
   return query
 }
 
+function aiSuggestionFor(transactionId: string): AiSuggestionDto | undefined {
+  return ai.suggestions.find((suggestion) => suggestion.transactionId === transactionId)
+}
+
 async function loadTransactions(): Promise<void> {
   await transactions.load(currentTransactionQuery())
   await ai.loadSuggestions(currentSuggestionListInput())
@@ -167,13 +182,17 @@ async function openEditor(transactionId: string): Promise<void> {
       classification.current?.merchantDisplay?.authoritativeId ??
       classification.current?.merchantId ??
       ''
+    const suggestion = aiSuggestionFor(transactionId)
     manualForm.categoryId =
       classification.current?.categoryDisplay?.authoritativeId ??
+      classification.current?.categoryDisplay?.detectedId ??
       classification.current?.categoryId ??
+      suggestion?.suggestedCategoryId ??
       ''
     manualForm.usageType = classification.current?.usageType ?? 'unspecified'
     manualForm.costBehaviour = classification.current?.costBehaviour ?? 'unspecified'
     manualForm.necessity = classification.current?.necessity ?? 'unspecified'
+    newMerchantName.value = ''
     logTransactionsDiagnostic('editor state set', {
       transactionLoaded: Boolean(classification.current),
 
@@ -204,14 +223,41 @@ async function saveManual(): Promise<void> {
   await classification.saveManual({
     transactionId: editorTransactionId.value,
     merchantId: manualForm.merchantId || undefined,
+    merchantName:
+      manualForm.merchantId || !newMerchantName.value.trim()
+        ? undefined
+        : newMerchantName.value.trim(),
     categoryId: manualForm.categoryId || undefined,
     usageType: manualForm.usageType as never,
     costBehaviour: manualForm.costBehaviour as never,
     necessity: manualForm.necessity as never
   })
+  if (classification.error) return
+
   editorTransactionId.value = null
+  newMerchantName.value = ''
   await classification.loadReference()
   await loadTransactions()
+}
+
+function useTransactionDescriptionAsMerchant(): void {
+  const description = editorTransaction.value?.description
+  if (!description) return
+  manualForm.merchantId = ''
+  newMerchantName.value = description
+}
+
+function useAiMerchantSuggestion(): void {
+  const merchantName = editorSuggestion.value?.suggestedMerchantName
+  if (!merchantName) return
+  manualForm.merchantId = ''
+  newMerchantName.value = merchantName
+}
+
+function useAiCategorySuggestion(): void {
+  const categoryId = editorSuggestion.value?.suggestedCategoryId
+  if (!categoryId) return
+  manualForm.categoryId = categoryId
 }
 
 async function bulkUpdate(): Promise<void> {
@@ -229,8 +275,15 @@ async function bulkUpdate(): Promise<void> {
 }
 
 async function classifySelectedWithAi(): Promise<void> {
+  const selectedIds = [...selectedTransactionIds.value]
   await ai.classifyTransactions(selectedTransactionIds.value)
+  if (ai.error) return
+
   await loadTransactions()
+
+  if (selectedIds.length === 1) {
+    await openEditor(selectedIds[0]!)
+  }
 }
 
 async function acceptAiSuggestion(
@@ -615,12 +668,21 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
               <td>{{ transaction.excludedFromSpending ? 'Excluded' : 'Included' }}</td>
               <td>{{ transaction.reviewStatus }}</td>
               <td>
-                {{ transaction.classification?.merchantDisplay?.displayName ?? 'Unidentified' }}
+                {{ transaction.classification?.merchantDisplay?.displayName ?? 'Not assigned' }}
                 <span
                   v-if="transaction.classification?.merchantDisplay?.source === 'detected'"
                   class="classification-note"
                 >
                   Detected
+                </span>
+                <span
+                  v-if="
+                    !transaction.classification?.merchantDisplay?.displayName &&
+                    aiSuggestionFor(transaction.id)?.suggestedMerchantName
+                  "
+                  class="classification-note"
+                >
+                  Suggested: {{ aiSuggestionFor(transaction.id)?.suggestedMerchantName }}
                 </span>
               </td>
               <td>
@@ -633,6 +695,16 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
                   class="classification-note"
                 >
                   Detected
+                </span>
+                <span
+                  v-if="
+                    !transaction.classification?.categoryDisplay?.displayPath &&
+                    aiSuggestionFor(transaction.id)?.suggestedCategoryPath
+                  "
+                  class="classification-note"
+                >
+                  Suggested:
+                  {{ aiSuggestionFor(transaction.id)?.suggestedCategoryPath?.join(' / ') }}
                 </span>
               </td>
               <td>{{ transaction.classification?.classificationStatus ?? 'needs_review' }}</td>
@@ -666,14 +738,57 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
 
     <div v-if="editorTransactionId" ref="editorPanel" class="panel">
       <h3>Classification editor</h3>
+      <p v-if="editorTransaction">
+        <strong>Transaction description:</strong> {{ editorTransaction.description }}
+      </p>
       <p v-if="classification.current">
         Source {{ classification.current.source }}, status {{ classification.current.status }}.
       </p>
+
+      <div v-if="editorSuggestion" class="panel">
+        <h4>AI suggestion</h4>
+        <p>
+          Merchant:
+          <strong>{{ editorSuggestion.suggestedMerchantName ?? 'No merchant identified' }}</strong>
+          <span class="classification-note">
+            {{ editorSuggestion.usedWebSearch ? 'Web lookup' : 'AI' }} ·
+            {{ editorSuggestion.merchantConfidenceBand }} confidence
+          </span>
+        </p>
+        <div class="button-row">
+          <button
+            v-if="editorSuggestion.suggestedMerchantName"
+            type="button"
+            @click="useAiMerchantSuggestion"
+          >
+            Use AI merchant
+          </button>
+          <button
+            v-if="editorSuggestion.suggestedCategoryId"
+            type="button"
+            @click="useAiCategorySuggestion"
+          >
+            Use AI category
+          </button>
+        </div>
+        <p v-if="editorSuggestion.suggestedCategoryPath">
+          Category:
+          <strong>{{ editorSuggestion.suggestedCategoryPath.join(' / ') }}</strong>
+          <span class="classification-note">
+            {{ editorSuggestion.categoryConfidenceBand }} confidence
+          </span>
+        </p>
+      </div>
+
       <form class="form-grid" @submit.prevent="saveManual">
         <div class="form-field">
-          <label for="manual-merchant">Merchant</label>
-          <select id="manual-merchant" v-model="manualForm.merchantId">
-            <option value="">Unidentified</option>
+          <label for="manual-merchant">Existing merchant</label>
+          <select
+            id="manual-merchant"
+            v-model="manualForm.merchantId"
+            @change="newMerchantName = ''"
+          >
+            <option value="">No existing merchant selected</option>
             <option
               v-for="merchant in editorMerchantOptions"
               :key="merchant.id"
@@ -692,6 +807,33 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
             Detected: {{ classification.current.merchantDisplay.displayName }}
           </p>
         </div>
+
+        <div class="form-field">
+          <label for="manual-new-merchant">Or create a merchant</label>
+          <input
+            id="manual-new-merchant"
+            v-model="newMerchantName"
+            type="text"
+            placeholder="Merchant name"
+            @input="manualForm.merchantId = ''"
+          />
+          <div class="button-row">
+            <button type="button" @click="useTransactionDescriptionAsMerchant">
+              Use transaction description
+            </button>
+            <button
+              v-if="editorSuggestion?.suggestedMerchantName"
+              type="button"
+              @click="useAiMerchantSuggestion"
+            >
+              Use AI merchant
+            </button>
+          </div>
+          <p v-if="newMerchantName.trim()" class="classification-note">
+            This merchant will be created or reused when you save.
+          </p>
+        </div>
+
         <div class="form-field">
           <label for="manual-category">Category</label>
           <select id="manual-category" v-model="manualForm.categoryId">
@@ -704,6 +846,23 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
               {{ category.name }}
             </option>
           </select>
+          <button
+            v-if="editorSuggestion?.suggestedCategoryId"
+            type="button"
+            @click="useAiCategorySuggestion"
+          >
+            Use AI category
+          </button>
+          <p
+            v-if="
+              editorSuggestion?.suggestedCategoryId &&
+              manualForm.categoryId === editorSuggestion.suggestedCategoryId &&
+              classification.current?.categoryDisplay?.authoritativeId !== manualForm.categoryId
+            "
+            class="classification-note"
+          >
+            AI suggestion selected as a draft. Save classification to confirm it.
+          </p>
           <p
             v-if="
               classification.current?.categoryDisplay?.source === 'detected' &&
