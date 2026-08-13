@@ -200,7 +200,6 @@ export class MerchantRepository {
           SELECT * FROM merchants
           ${search ? 'WHERE lower(name) LIKE @search' : ''}
           ORDER BY lower(name)
-          LIMIT 100
         `
       )
       .all(search ? { search: `%${search.toLocaleLowerCase('es-ES')}%` } : {})
@@ -280,15 +279,18 @@ export class MerchantAliasRepository {
     const existing = this.database
       .prepare(
         `
-          SELECT merchant_id AS merchantId FROM merchant_aliases
+          SELECT id, merchant_id AS merchantId FROM merchant_aliases
           WHERE is_active = 1 AND match_kind = ? AND normalised_pattern = ?
         `
       )
-      .all(input.matchKind, normalisedPattern) as { merchantId: string }[]
+      .all(input.matchKind, normalisedPattern) as { id: string; merchantId: string }[]
 
     if (existing.some((row) => row.merchantId !== input.merchantId)) {
       throw new AliasConflictError()
     }
+
+    const existingForMerchant = existing.find((row) => row.merchantId === input.merchantId)
+    if (existingForMerchant) return this.findById(existingForMerchant.id)
 
     const id = randomUUID()
     const now = new Date().toISOString()
@@ -452,6 +454,40 @@ export class TransactionClassificationRepository {
       .get(transactionId)
 
     return row ? mapClassification(row as Row) : undefined
+  }
+
+  listConfirmedManualMerchantExamples(): { merchantId: string; originalDescription: string }[] {
+    return this.database
+      .prepare(
+        `
+          SELECT
+            c.merchant_id AS merchantId,
+            t.original_description AS originalDescription
+          FROM transaction_classifications c
+          JOIN transactions t ON t.id = c.transaction_id
+          WHERE c.classification_status = 'confirmed'
+            AND c.merchant_source = 'manual'
+            AND c.merchant_id IS NOT NULL
+        `
+      )
+      .all() as { merchantId: string; originalDescription: string }[]
+  }
+
+  listConfirmedManualCategoryExamples(): { categoryId: string; originalDescription: string }[] {
+    return this.database
+      .prepare(
+        `
+          SELECT
+            c.category_id AS categoryId,
+            t.original_description AS originalDescription
+          FROM transaction_classifications c
+          JOIN transactions t ON t.id = c.transaction_id
+          WHERE c.classification_status = 'confirmed'
+            AND c.category_source = 'manual'
+            AND c.category_id IS NOT NULL
+        `
+      )
+      .all() as { categoryId: string; originalDescription: string }[]
   }
 
   listForTransactions(transactionIds: string[]): Map<string, TransactionClassification> {

@@ -19,6 +19,8 @@ import {
   createMerchantInputDtoSchema,
   importBatchSummaryDtoSchema,
   listAiSuggestionsInputDtoSchema,
+  matchingClassificationSummaryDtoSchema,
+  matchingClassificationSummaryInputDtoSchema,
   merchantAliasDtoSchema,
   merchantDtoSchema,
   merchantListQueryDtoSchema,
@@ -27,6 +29,7 @@ import {
   ruleApplicationPreviewDtoSchema,
   ruleInputDtoSchema,
   saveManualClassificationInputDtoSchema,
+  saveManualAndConfirmMatchesResultDtoSchema,
   saveOpenAiApiKeyInputDtoSchema,
   smartClassifyBatchInputDtoSchema,
   smartClassifyInputDtoSchema,
@@ -52,6 +55,7 @@ import {
   type CommittedReconciliationDto,
   type ImportBatchSummaryDto,
   type ImportPreviewSessionDto,
+  type MatchingClassificationSummaryDto,
   type MerchantAliasDto,
   type MerchantDto,
   type OverviewStatsDto,
@@ -59,12 +63,18 @@ import {
   type ReconciliationPreviewDto,
   type ReversedReconciliationDto,
   type RuleApplicationPreviewDto,
+  type SaveManualAndConfirmMatchesResultDto,
   type SmartClassifySummaryDto,
   type SettlementSummaryDto,
   type TransactionListQueryDto,
   type TransactionPageDto
 } from '../../shared/dtos'
-import type { AiClassificationSuggestion, ImportBatch } from '../domain/schemas'
+import type {
+  AiClassificationSuggestion,
+  ImportBatch,
+  Transaction,
+  TransactionClassification
+} from '../domain/schemas'
 import { aiModelConfig } from '../ai/config'
 import { isDevelopmentRuntime, probeOpenAiModelsEndpoint } from '../ai/diagnostics'
 import { AiNotConfiguredError } from '../ai/errors'
@@ -77,6 +87,7 @@ import { SmartClassificationService } from '../ai/smart-classification-service'
 import type { AiSuggestionReviewComponentStatus } from '../ai/smart-classification-service'
 import { MemorySecretStore, type SecretStore } from '../ai/secret-store'
 import { ClassificationService } from '../categorisation/classification-service'
+import { normaliseMatchText } from '../categorisation/normalisation'
 import { ImportService } from '../services/import-service'
 import { VisaSettlementReconciliationService } from '../reconciliation/visa-settlement-reconciliation-service'
 import { AccountRepository } from '../storage/accounts'
@@ -131,7 +142,7 @@ export class ApplicationWorkflow {
   readonly previews: ImportPreviewWorkflow
 
   constructor(
-    database: Database,
+    private readonly database: Database,
     dialogAdapter: FileDialogAdapter,
     secretStore: SecretStore = new MemorySecretStore(),
     aiProvider?: AiClassificationProvider
@@ -382,8 +393,102 @@ export class ApplicationWorkflow {
 
   saveManualClassification(input: unknown): ClassificationProposalDto {
     const parsed = saveManualClassificationInputDtoSchema.parse(input)
-    this.classification.saveManual(parsed)
-    return this.getClassification(parsed.transactionId)
+    const save = this.database.transaction(() => {
+      const merchantId =
+        parsed.merchantId ??
+        (parsed.merchantName ? this.findOrCreateMerchant(parsed.merchantName) : undefined)
+
+      this.classification.saveManual({
+        transactionId: parsed.transactionId,
+        merchantId,
+        categoryId: parsed.categoryId,
+        usageType: parsed.usageType,
+        costBehaviour: parsed.costBehaviour,
+        necessity: parsed.necessity
+      })
+      this.learnExactMerchantAliasFromManualClassification(parsed.transactionId, merchantId)
+      return this.getClassification(parsed.transactionId)
+    })
+
+    return save()
+  }
+
+  matchingClassificationSummary(input: unknown): MatchingClassificationSummaryDto {
+    const parsed = matchingClassificationSummaryInputDtoSchema.parse(input)
+    const merchantId =
+      parsed.merchantId ??
+      (parsed.merchantName
+        ? (this.findExistingMerchantId(parsed.merchantName) ?? 'new')
+        : undefined)
+    return matchingClassificationSummaryDtoSchema.parse(
+      this.matchingClassificationSummaryForInput({
+        transactionId: parsed.transactionId,
+        merchantId,
+        categoryId: parsed.categoryId
+      })
+    )
+  }
+
+  saveManualClassificationAndConfirmMatches(input: unknown): SaveManualAndConfirmMatchesResultDto {
+    const parsed = saveManualClassificationInputDtoSchema.parse(input)
+    const save = this.database.transaction(() => {
+      const merchantId =
+        parsed.merchantId ??
+        (parsed.merchantName ? this.findOrCreateMerchant(parsed.merchantName) : undefined)
+
+      this.classification.saveManual({
+        transactionId: parsed.transactionId,
+        merchantId,
+        categoryId: parsed.categoryId,
+        usageType: parsed.usageType,
+        costBehaviour: parsed.costBehaviour,
+        necessity: parsed.necessity
+      })
+      this.learnExactMerchantAliasFromManualClassification(parsed.transactionId, merchantId)
+
+      const matching = this.matchingTransactionsFor(parsed.transactionId).filter(
+        (transaction) => transaction.id !== parsed.transactionId
+      )
+      let confirmedMatchingTransactionCount = 0
+
+      for (const transaction of matching) {
+        const existing = this.classifications.findByTransactionId(transaction.id)
+        const merchantApplies = canApplyMerchant(existing, merchantId)
+        const categoryApplies = canApplyCategory(existing, parsed.categoryId)
+
+        if (!merchantApplies && !categoryApplies) continue
+
+        this.classifications.save({
+          transactionId: transaction.id,
+          merchantId: merchantApplies ? merchantId : existing?.merchantId,
+          merchantSource: merchantApplies ? 'manual' : existing?.merchantSource,
+          categoryId: categoryApplies ? parsed.categoryId : existing?.categoryId,
+          categorySource: categoryApplies ? 'manual' : existing?.categorySource,
+          usageType: existing?.usageType ?? 'unspecified',
+          costBehaviour: existing?.costBehaviour ?? 'unspecified',
+          necessity: existing?.necessity ?? 'unspecified',
+          classificationSource: 'manual',
+          classificationStatus: 'confirmed',
+          appliedRuleId: undefined
+        })
+        confirmedMatchingTransactionCount += 1
+      }
+
+      const classification = this.getClassification(parsed.transactionId)
+      const matchingSummary = this.matchingClassificationSummaryForInput({
+        transactionId: parsed.transactionId,
+        merchantId,
+        categoryId: parsed.categoryId
+      })
+
+      return saveManualAndConfirmMatchesResultDtoSchema.parse({
+        classification,
+        confirmedMatchingTransactionCount,
+        matchingSummary
+      })
+    })
+
+    return save()
   }
 
   previewRule(input: unknown): RuleApplicationPreviewDto {
@@ -556,6 +661,91 @@ export class ApplicationWorkflow {
     return importBatchToDto(batch, account, rollbackBlockedByReconciliation)
   }
 
+  private findOrCreateMerchant(name: string): string {
+    return this.findExistingMerchantId(name) ?? this.merchants.create({ name }).id
+  }
+
+  private findExistingMerchantId(name: string): string | undefined {
+    const existing = this.merchants
+      .list({ search: name })
+      .find(
+        (merchant) => merchant.name.toLocaleLowerCase('es-ES') === name.toLocaleLowerCase('es-ES')
+      )
+
+    return existing?.id
+  }
+
+  private learnExactMerchantAliasFromManualClassification(
+    transactionId: string,
+    merchantId: string | undefined
+  ): void {
+    if (!merchantId) return
+
+    try {
+      const transaction = this.transactions.findById(transactionId)
+      this.merchantAliases.create({
+        merchantId,
+        matchKind: 'exact',
+        pattern: transaction.originalDescription,
+        priority: 0
+      })
+    } catch (error) {
+      if (!isDevelopmentRuntime()) return
+      console.warn('[sampo-manual-learning] exact merchant alias learning skipped', {
+        transactionIdPresent: Boolean(transactionId),
+        merchantIdPresent: Boolean(merchantId),
+        errorName: error instanceof Error ? error.name : 'UnknownError'
+      })
+    }
+  }
+
+  private matchingClassificationSummaryForInput(input: {
+    transactionId: string
+    merchantId?: string
+    categoryId?: string
+  }): MatchingClassificationSummaryDto {
+    const matching = this.matchingTransactionsFor(input.transactionId)
+    const otherMatching = matching.filter((transaction) => transaction.id !== input.transactionId)
+    let eligibleCount = 0
+    let manualMerchantPreservedCount = 0
+    let manualCategoryPreservedCount = 0
+
+    for (const transaction of otherMatching) {
+      const existing = this.classifications.findByTransactionId(transaction.id)
+      if (input.merchantId && existing?.merchantId && existing.merchantSource === 'manual') {
+        manualMerchantPreservedCount += 1
+      }
+      if (input.categoryId && existing?.categoryId && existing.categorySource === 'manual') {
+        manualCategoryPreservedCount += 1
+      }
+      if (
+        canApplyMerchant(existing, input.merchantId) ||
+        canApplyCategory(existing, input.categoryId)
+      ) {
+        eligibleCount += 1
+      }
+    }
+
+    return matchingClassificationSummaryDtoSchema.parse({
+      transactionId: input.transactionId,
+      totalMatchingTransactionCount: matching.length,
+      otherMatchingTransactionCount: otherMatching.length,
+      eligibleCount,
+      manualMerchantPreservedCount,
+      manualCategoryPreservedCount
+    })
+  }
+
+  private matchingTransactionsFor(transactionId: string): Transaction[] {
+    const current = this.transactions.findById(transactionId)
+    const currentDescription = normaliseMatchText(current.originalDescription)
+    return this.transactions
+      .listCommittedForClassification()
+      .filter(
+        (transaction) => normaliseMatchText(transaction.originalDescription) === currentDescription
+      )
+  }
+
   private categoryPath(categoryId: string | undefined): string[] | undefined {
     if (!categoryId) return undefined
     const categories = this.categories.list()
@@ -668,6 +858,22 @@ function aiAcceptanceMode(input: { acceptCategory: boolean; acceptMerchant: bool
   if (input.acceptCategory) return 'category'
   if (input.acceptMerchant) return 'merchant'
   return 'none'
+}
+
+function canApplyMerchant(
+  existing: TransactionClassification | undefined,
+  merchantId: string | undefined
+): boolean {
+  if (!merchantId) return false
+  return !(existing?.merchantId && existing.merchantSource === 'manual')
+}
+
+function canApplyCategory(
+  existing: TransactionClassification | undefined,
+  categoryId: string | undefined
+): boolean {
+  if (!categoryId) return false
+  return !(existing?.categoryId && existing.categorySource === 'manual')
 }
 
 function logAiReviewDiagnostic(label: string, metadata: Record<string, unknown>): void {

@@ -5,7 +5,7 @@ import { useAccountsStore } from '../stores/accounts'
 import { useAiStore } from '../stores/ai'
 import { useClassificationStore } from '../stores/classification'
 import { useTransactionsStore } from '../stores/transactions'
-import type { TransactionListQueryDto } from '../../../shared/dtos'
+import type { AiSuggestionDto, TransactionListQueryDto } from '../../../shared/dtos'
 
 const accounts = useAccountsStore()
 const ai = useAiStore()
@@ -32,6 +32,7 @@ const filters = reactive({
 const selectedTransactionIds = ref<string[]>([])
 const editorTransactionId = ref<string | null>(null)
 const editorPanel = ref<HTMLElement | null>(null)
+const newMerchantName = ref('')
 const manualForm = reactive({
   merchantId: '',
   categoryId: '',
@@ -51,6 +52,31 @@ const currentPage = computed(
 )
 const totalPages = computed(() =>
   Math.max(1, Math.ceil(transactions.page.total / transactions.page.limit))
+)
+
+const editorMerchantOptions = computed(() => {
+  const options = classification.merchants.map((merchant) => ({
+    id: merchant.id,
+    name: merchant.name
+  }))
+  const currentId = classification.current?.merchantId
+  const currentName = classification.current?.merchantName
+
+  if (currentId && currentName && !options.some((merchant) => merchant.id === currentId)) {
+    options.push({ id: currentId, name: currentName })
+  }
+
+  return options
+})
+
+const editorTransaction = computed(() =>
+  editorTransactionId.value
+    ? transactions.page.items.find((transaction) => transaction.id === editorTransactionId.value)
+    : undefined
+)
+
+const editorSuggestion = computed(() =>
+  editorTransactionId.value ? aiSuggestionFor(editorTransactionId.value) : undefined
 )
 
 onMounted(async () => {
@@ -104,6 +130,15 @@ function currentSuggestionTransactionQuery(): NonNullable<
   return query
 }
 
+function aiSuggestionFor(transactionId: string): AiSuggestionDto | undefined {
+  return ai.suggestions.find((suggestion) => suggestion.transactionId === transactionId)
+}
+
+async function handleMerchantChange(): Promise<void> {
+  newMerchantName.value = ''
+  await refreshMatchingSummary()
+}
+
 async function loadTransactions(): Promise<void> {
   await transactions.load(currentTransactionQuery())
   await ai.loadSuggestions(currentSuggestionListInput())
@@ -131,16 +166,55 @@ async function previousPage(): Promise<void> {
 
 async function openEditor(transactionId: string): Promise<void> {
   logTransactionsDiagnostic('edit clicked', { transactionIdPresent: Boolean(transactionId) })
+  const row = transactions.page.items.find((item) => item.id === transactionId)
+
+  logTransactionsDiagnostic('editor row snapshot', {
+    rowFound: Boolean(row),
+    rowMerchantIdPresent: Boolean(row?.classification?.merchantId),
+    rowMerchantDisplayNamePresent: Boolean(row?.classification?.merchantDisplay?.displayName),
+    rowMerchantSource: row?.classification?.merchantDisplay?.source ?? 'missing',
+    rowAuthoritativeMerchantIdPresent: Boolean(
+      row?.classification?.merchantDisplay?.authoritativeId
+    )
+  })
   try {
-    await classification.loadClassification(transactionId)
+    await Promise.all([
+      classification.loadClassification(transactionId),
+      classification.loadReference()
+    ])
     editorTransactionId.value = transactionId
-    manualForm.merchantId = classification.current?.merchantDisplay?.authoritativeId ?? ''
-    manualForm.categoryId = classification.current?.categoryDisplay?.authoritativeId ?? ''
+    manualForm.merchantId =
+      classification.current?.merchantDisplay?.authoritativeId ??
+      classification.current?.merchantId ??
+      ''
+    const suggestion = aiSuggestionFor(transactionId)
+    manualForm.categoryId =
+      classification.current?.categoryDisplay?.authoritativeId ??
+      classification.current?.categoryDisplay?.detectedId ??
+      classification.current?.categoryId ??
+      suggestion?.suggestedCategoryId ??
+      ''
     manualForm.usageType = classification.current?.usageType ?? 'unspecified'
     manualForm.costBehaviour = classification.current?.costBehaviour ?? 'unspecified'
     manualForm.necessity = classification.current?.necessity ?? 'unspecified'
+    newMerchantName.value = ''
+    await refreshMatchingSummary()
     logTransactionsDiagnostic('editor state set', {
-      transactionLoaded: Boolean(classification.current)
+      transactionLoaded: Boolean(classification.current),
+
+      merchantIdPresent: Boolean(manualForm.merchantId),
+      merchantNamePresent: Boolean(classification.current?.merchantName),
+      merchantDisplayNamePresent: Boolean(classification.current?.merchantDisplay?.displayName),
+      merchantDisplaySource: classification.current?.merchantDisplay?.source ?? 'missing',
+      authoritativeMerchantIdPresent: Boolean(
+        classification.current?.merchantDisplay?.authoritativeId
+      ),
+
+      merchantOptionPresent:
+        !manualForm.merchantId ||
+        editorMerchantOptions.value.some((merchant) => merchant.id === manualForm.merchantId),
+
+      merchantOptionCount: editorMerchantOptions.value.length
     })
     await nextTick()
     editorPanel.value?.scrollIntoView({ block: 'start', behavior: 'smooth' })
@@ -152,17 +226,72 @@ async function openEditor(transactionId: string): Promise<void> {
 
 async function saveManual(): Promise<void> {
   if (!editorTransactionId.value) return
-  await classification.saveManual({
+  await classification.saveManual(editorClassificationInput())
+  if (classification.error) return
+
+  editorTransactionId.value = null
+  newMerchantName.value = ''
+  await classification.loadReference()
+  await loadTransactions()
+}
+
+async function saveManualAndConfirmMatches(): Promise<void> {
+  if (!editorTransactionId.value) return
+  const result = await classification.saveManualAndConfirmMatches(editorClassificationInput())
+  if (classification.error || !result) return
+
+  editorTransactionId.value = null
+  newMerchantName.value = ''
+  await classification.loadReference()
+  await loadTransactions()
+  await ai.loadSuggestions(currentSuggestionListInput())
+}
+
+async function refreshMatchingSummary(): Promise<void> {
+  if (!editorTransactionId.value) return
+  await classification.loadMatchingSummary(editorClassificationInput())
+}
+
+function editorClassificationInput(): Parameters<typeof classification.saveManual>[0] {
+  if (!editorTransactionId.value) {
+    throw new Error('Classification editor is not open')
+  }
+
+  return {
     transactionId: editorTransactionId.value,
     merchantId: manualForm.merchantId || undefined,
+    merchantName:
+      manualForm.merchantId || !newMerchantName.value.trim()
+        ? undefined
+        : newMerchantName.value.trim(),
     categoryId: manualForm.categoryId || undefined,
     usageType: manualForm.usageType as never,
     costBehaviour: manualForm.costBehaviour as never,
     necessity: manualForm.necessity as never
-  })
-  editorTransactionId.value = null
-  await classification.loadReference()
-  await loadTransactions()
+  }
+}
+
+function useTransactionDescriptionAsMerchant(): void {
+  const description = editorTransaction.value?.description
+  if (!description) return
+  manualForm.merchantId = ''
+  newMerchantName.value = description
+  void refreshMatchingSummary()
+}
+
+function useAiMerchantSuggestion(): void {
+  const merchantName = editorSuggestion.value?.suggestedMerchantName
+  if (!merchantName) return
+  manualForm.merchantId = ''
+  newMerchantName.value = merchantName
+  void refreshMatchingSummary()
+}
+
+function useAiCategorySuggestion(): void {
+  const categoryId = editorSuggestion.value?.suggestedCategoryId
+  if (!categoryId) return
+  manualForm.categoryId = categoryId
+  void refreshMatchingSummary()
 }
 
 async function bulkUpdate(): Promise<void> {
@@ -180,8 +309,15 @@ async function bulkUpdate(): Promise<void> {
 }
 
 async function classifySelectedWithAi(): Promise<void> {
-  await ai.classifyTransactions(selectedTransactionIds.value)
+  const selectedIds = [...selectedTransactionIds.value]
+  await ai.classifyTransactions(selectedIds)
+  if (ai.error) return
+
   await loadTransactions()
+
+  if (selectedIds.length === 1) {
+    await openEditor(selectedIds[0]!)
+  }
 }
 
 async function acceptAiSuggestion(
@@ -566,12 +702,21 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
               <td>{{ transaction.excludedFromSpending ? 'Excluded' : 'Included' }}</td>
               <td>{{ transaction.reviewStatus }}</td>
               <td>
-                {{ transaction.classification?.merchantDisplay?.displayName ?? 'Unidentified' }}
+                {{ transaction.classification?.merchantDisplay?.displayName ?? 'Not assigned' }}
                 <span
                   v-if="transaction.classification?.merchantDisplay?.source === 'detected'"
                   class="classification-note"
                 >
                   Detected
+                </span>
+                <span
+                  v-if="
+                    !transaction.classification?.merchantDisplay?.displayName &&
+                    aiSuggestionFor(transaction.id)?.suggestedMerchantName
+                  "
+                  class="classification-note"
+                >
+                  Suggested: {{ aiSuggestionFor(transaction.id)?.suggestedMerchantName }}
                 </span>
               </td>
               <td>
@@ -584,6 +729,16 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
                   class="classification-note"
                 >
                   Detected
+                </span>
+                <span
+                  v-if="
+                    !transaction.classification?.categoryDisplay?.displayPath &&
+                    aiSuggestionFor(transaction.id)?.suggestedCategoryPath
+                  "
+                  class="classification-note"
+                >
+                  Suggested:
+                  {{ aiSuggestionFor(transaction.id)?.suggestedCategoryPath?.join(' / ') }}
                 </span>
               </td>
               <td>{{ transaction.classification?.classificationStatus ?? 'needs_review' }}</td>
@@ -617,16 +772,59 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
 
     <div v-if="editorTransactionId" ref="editorPanel" class="panel">
       <h3>Classification editor</h3>
+      <p v-if="editorTransaction">
+        <strong>Transaction description:</strong> {{ editorTransaction.description }}
+      </p>
       <p v-if="classification.current">
         Source {{ classification.current.source }}, status {{ classification.current.status }}.
       </p>
+
+      <div v-if="editorSuggestion" class="panel">
+        <h4>AI suggestion</h4>
+        <p>
+          Merchant:
+          <strong>{{ editorSuggestion.suggestedMerchantName ?? 'No merchant identified' }}</strong>
+          <span class="classification-note">
+            {{ editorSuggestion.usedWebSearch ? 'Web lookup' : 'AI' }} ·
+            {{ editorSuggestion.merchantConfidenceBand }} confidence
+          </span>
+        </p>
+        <div class="button-row">
+          <button
+            v-if="editorSuggestion.suggestedMerchantName"
+            type="button"
+            @click="useAiMerchantSuggestion"
+          >
+            Use AI merchant
+          </button>
+          <button
+            v-if="editorSuggestion.suggestedCategoryId"
+            type="button"
+            @click="useAiCategorySuggestion"
+          >
+            Use AI category
+          </button>
+        </div>
+        <p v-if="editorSuggestion.suggestedCategoryPath">
+          Category:
+          <strong>{{ editorSuggestion.suggestedCategoryPath.join(' / ') }}</strong>
+          <span class="classification-note">
+            {{ editorSuggestion.categoryConfidenceBand }} confidence
+          </span>
+        </p>
+      </div>
+
       <form class="form-grid" @submit.prevent="saveManual">
         <div class="form-field">
-          <label for="manual-merchant">Merchant</label>
-          <select id="manual-merchant" v-model="manualForm.merchantId">
-            <option value="">Unidentified</option>
+          <label for="manual-merchant">Existing merchant</label>
+          <select
+            id="manual-merchant"
+            v-model="manualForm.merchantId"
+            @change="handleMerchantChange"
+          >
+            <option value="">No existing merchant selected</option>
             <option
-              v-for="merchant in classification.merchants"
+              v-for="merchant in editorMerchantOptions"
               :key="merchant.id"
               :value="merchant.id"
             >
@@ -643,9 +841,41 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
             Detected: {{ classification.current.merchantDisplay.displayName }}
           </p>
         </div>
+
+        <div class="form-field">
+          <label for="manual-new-merchant">Or create a merchant</label>
+          <input
+            id="manual-new-merchant"
+            v-model="newMerchantName"
+            type="text"
+            placeholder="Merchant name"
+            @input="manualForm.merchantId = ''"
+            @change="refreshMatchingSummary"
+          />
+          <div class="button-row">
+            <button type="button" @click="useTransactionDescriptionAsMerchant">
+              Use transaction description
+            </button>
+            <button
+              v-if="editorSuggestion?.suggestedMerchantName"
+              type="button"
+              @click="useAiMerchantSuggestion"
+            >
+              Use AI merchant
+            </button>
+          </div>
+          <p v-if="newMerchantName.trim()" class="classification-note">
+            This merchant will be created or reused when you save.
+          </p>
+        </div>
+
         <div class="form-field">
           <label for="manual-category">Category</label>
-          <select id="manual-category" v-model="manualForm.categoryId">
+          <select
+            id="manual-category"
+            v-model="manualForm.categoryId"
+            @change="refreshMatchingSummary"
+          >
             <option value="">Unclassified</option>
             <option
               v-for="category in classification.categories.filter((item) => item.isActive)"
@@ -655,6 +885,23 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
               {{ category.name }}
             </option>
           </select>
+          <button
+            v-if="editorSuggestion?.suggestedCategoryId"
+            type="button"
+            @click="useAiCategorySuggestion"
+          >
+            Use AI category
+          </button>
+          <p
+            v-if="
+              editorSuggestion?.suggestedCategoryId &&
+              manualForm.categoryId === editorSuggestion.suggestedCategoryId &&
+              classification.current?.categoryDisplay?.authoritativeId !== manualForm.categoryId
+            "
+            class="classification-note"
+          >
+            AI suggestion selected as a draft. Save classification to confirm it.
+          </p>
           <p
             v-if="
               classification.current?.categoryDisplay?.source === 'detected' &&
@@ -690,7 +937,33 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
             <option value="discretionary">Discretionary</option>
           </select>
         </div>
-        <button type="submit" :disabled="classification.submitting">Save classification</button>
+        <div
+          v-if="
+            classification.matchingSummary &&
+            classification.matchingSummary.otherMatchingTransactionCount > 0
+          "
+          class="form-field form-field-wide"
+        >
+          <p>
+            {{ classification.matchingSummary.otherMatchingTransactionCount }} other transactions
+            have this exact description.
+          </p>
+          <p>They will already be detected automatically after saving.</p>
+        </div>
+        <button type="submit" :disabled="classification.submitting">Save this transaction</button>
+        <button
+          v-if="classification.matchingSummary && classification.matchingSummary.eligibleCount > 0"
+          type="button"
+          :disabled="classification.submitting"
+          @click="saveManualAndConfirmMatches"
+        >
+          Save + confirm {{ classification.matchingSummary.eligibleCount }}
+          {{
+            classification.matchingSummary.eligibleCount === 1
+              ? 'matching transaction'
+              : 'matching transactions'
+          }}
+        </button>
         <button class="secondary-button" type="button" @click="editorTransactionId = null">
           Close
         </button>

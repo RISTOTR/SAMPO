@@ -16,6 +16,7 @@ export type AiClassificationContext = {
   country?: string
   city?: string
   allowWebLookup: boolean
+  requireWebLookup?: boolean
 }
 
 export type AiClassificationResult = {
@@ -120,15 +121,20 @@ export class OpenAiClassificationProvider implements AiClassificationProvider {
           ? aiModelConfig.webLookupModel
           : aiModelConfig.bulkClassificationModel,
         store: false,
-        reasoning: { effort: aiModelConfig.reasoningEffort },
+        reasoning: {
+          effort: context.requireWebLookup
+            ? aiModelConfig.webReasoningEffort
+            : aiModelConfig.reasoningEffort
+        },
         tools: context.allowWebLookup
           ? [
               {
                 type: 'web_search_preview',
-                search_context_size: 'low'
+                search_context_size: context.requireWebLookup ? 'medium' : 'low'
               }
             ]
           : undefined,
+        tool_choice: context.requireWebLookup ? 'required' : undefined,
         text: {
           format: {
             type: 'json_schema',
@@ -140,8 +146,9 @@ export class OpenAiClassificationProvider implements AiClassificationProvider {
         input: [
           {
             role: 'system',
-            content:
-              'Classify local personal-finance transaction descriptors into the provided category IDs. Return concise JSON only. Always return every field in the schema. Use null when merchant identity cannot be determined. Use null when no valid category can be selected. Never invent a merchant merely to avoid null. Category confidence and merchant confidence are independent.'
+            content: context.requireWebLookup
+              ? 'Identify the most likely real merchant behind each local personal-finance transaction descriptor. You must use web search before answering. Search the exact descriptor first and use the supplied city/country as location context when available. If needed, try plausible spacing or abbreviation variants. Return a canonical merchant name only when the web evidence supports it; otherwise return null. Preserve a valid category when one can be selected from the provided category IDs. Include the web sources that support the merchant identification. Never invent a merchant merely to avoid null. Always return every field in the schema.'
+              : 'Classify local personal-finance transaction descriptors into the provided category IDs. Return concise JSON only. Always return every field in the schema. Use null when merchant identity cannot be determined. Use null when no valid category can be selected. Never invent a merchant merely to avoid null. Category confidence and merchant confidence are independent.'
           },
           {
             role: 'user',

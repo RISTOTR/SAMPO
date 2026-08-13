@@ -198,6 +198,10 @@ select {
   font-weight: 600;
 }
 
+.form-field-wide {
+  grid-column: 1 / -1;
+}
+
 .classification-note {
   display: block;
   margin: 4px 0 0;

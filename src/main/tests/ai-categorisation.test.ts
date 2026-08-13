@@ -31,7 +31,6 @@ import {
   AiPartialResponseError,
   AiSuggestionNotFoundError
 } from '../ai/errors'
-import { AliasConflictError } from '../categorisation/errors'
 import type { AiClassificationSuggestion, NewTransaction, PreparedImport } from '../domain/schemas'
 
 const syntheticHash = 'c'.repeat(64)
@@ -340,6 +339,47 @@ describe('OpenAI classification provider', () => {
     })
   })
 
+  it('requires web search for targeted merchant enrichment', async () => {
+    const secretStore = new MemorySecretStore()
+    await secretStore.setOpenAiApiKey('test-api-key')
+    let request: unknown
+    const provider = new OpenAiClassificationProvider(
+      secretStore,
+      () =>
+        ({
+          responses: {
+            create: async (input: unknown) => {
+              request = input
+              return {
+                output_text: JSON.stringify({
+                  results: [
+                    wireResult({
+                      merchant: { canonicalName: 'Synthetic Web Merchant', confidence: 0.91 },
+                      needsWebLookup: false,
+                      reasonCode: 'local_business_signal',
+                      sources: [
+                        { title: 'Synthetic merchant source', url: 'https://example.test/merchant' }
+                      ]
+                    })
+                  ]
+                })
+              }
+            }
+          }
+        }) as never
+    )
+
+    await provider.classify(
+      [{ inputId: 'input-1', descriptor: 'synthetic local shop', sourceContext: 'card_purchase' }],
+      { categories: [], allowWebLookup: true, requireWebLookup: true }
+    )
+
+    expect(request).toMatchObject({
+      tools: [{ type: 'web_search_preview', search_context_size: 'medium' }],
+      tool_choice: 'required'
+    })
+  })
+
   it('rejects malformed structured output', async () => {
     const secretStore = new MemorySecretStore()
     await secretStore.setOpenAiApiKey('test-api-key')
@@ -495,6 +535,69 @@ describe('smart classification service', () => {
     })
     expect(suggestions).toHaveLength(2)
     expect(suggestions.every((suggestion) => suggestion.status === 'pending')).toBe(true)
+  })
+
+  it('runs targeted required web enrichment for unresolved merchants and preserves the first-pass category', async () => {
+    const { transactionIds, categoryId } = seedTransactions(connection, ['EXPJUANDEAUSTRIA'])
+    new AiSettingsRepository(connection).update({
+      aiEnabled: true,
+      allowWebLookup: true,
+      country: 'Spain',
+      city: 'Madrid'
+    })
+    const contexts: Parameters<AiClassificationProvider['classify']>[1][] = []
+    const service = new SmartClassificationService(connection, {
+      classify: async (items, context) => {
+        contexts.push(context)
+        if (!context.allowWebLookup) {
+          return [
+            {
+              inputId: items[0]!.inputId,
+              merchant: undefined,
+              category: { categoryId, confidence: 0.78, categoryUnknown: false },
+              merchantType: undefined,
+              needsWebLookup: true,
+              reasonCode: 'category_signal_only'
+            }
+          ]
+        }
+
+        expect(context.requireWebLookup).toBe(true)
+        return [
+          {
+            inputId: items[0]!.inputId,
+            merchant: { canonicalName: 'Carrefour Express', confidence: 0.89 },
+            category: { categoryId: undefined, confidence: 0.2, categoryUnknown: true },
+            merchantType: 'supermarket',
+            needsWebLookup: false,
+            reasonCode: 'local_business_signal',
+            sources: [
+              { title: 'Carrefour Express result', url: 'https://example.test/carrefour-express' }
+            ]
+          }
+        ]
+      }
+    })
+
+    const summary = await service.classifyTransactions(transactionIds)
+    const [suggestion] = new AiSuggestionRepository(connection).listPending()
+
+    expect(contexts).toHaveLength(2)
+    expect(contexts[0]).toMatchObject({ allowWebLookup: false })
+    expect(contexts[1]).toMatchObject({ allowWebLookup: true, requireWebLookup: true })
+    expect(suggestion).toMatchObject({
+      transactionId: transactionIds[0],
+      suggestedMerchantName: 'Carrefour Express',
+      suggestedCategoryId: categoryId,
+      usedWebSearch: true,
+      needsWebLookup: false,
+      reasonCode: 'local_business_signal'
+    })
+    expect(summary).toMatchObject({
+      suggestionsCreated: 1,
+      canonicalMerchantsSuggested: 1,
+      webLookupsPerformed: 1
+    })
   })
 
   it('manually classifies selected transactions when automatic import classification is disabled', async () => {
@@ -850,6 +953,134 @@ describe('smart classification service', () => {
     expect(editor.categoryDisplay?.authoritativeId).toBeUndefined()
   })
 
+  it('finds exact normalized duplicate descriptions and excludes non-matches', () => {
+    const { transactionIds, categoryId } = seedTransactions(connection, [
+      '  Synthetic   Duplicate  ',
+      'synthetic duplicate',
+      'Synthetic Different'
+    ])
+    const workflow = createWorkflow(connection)
+    const merchant = new MerchantRepository(connection).create({
+      name: 'Synthetic Duplicate Merchant'
+    })
+
+    const summary = workflow.matchingClassificationSummary({
+      transactionId: transactionIds[0],
+      merchantId: merchant.id,
+      categoryId
+    })
+
+    expect(summary.totalMatchingTransactionCount).toBe(2)
+    expect(summary.otherMatchingTransactionCount).toBe(1)
+    expect(summary.eligibleCount).toBe(1)
+  })
+
+  it('confirms matching exact-description transactions while preserving manual fields', () => {
+    const { transactionIds, categoryId } = seedTransactions(connection, [
+      'Synthetic Confirm Match',
+      'Synthetic Confirm Match',
+      'Synthetic Confirm Match',
+      'Synthetic Other Match'
+    ])
+    const merchants = new MerchantRepository(connection)
+    const selectedMerchant = merchants.create({ name: 'Synthetic Selected Merchant' })
+    const preservedMerchant = merchants.create({ name: 'Synthetic Preserved Merchant' })
+    const otherCategoryId = connection
+      .prepare("SELECT id FROM categories WHERE key = 'transport.public'")
+      .pluck()
+      .get() as string
+    const classifications = new TransactionClassificationRepository(connection)
+    classifications.save({
+      transactionId: transactionIds[1],
+      merchantId: preservedMerchant.id,
+      merchantSource: 'manual',
+      classificationSource: 'manual',
+      classificationStatus: 'confirmed'
+    })
+    classifications.save({
+      transactionId: transactionIds[2],
+      categoryId: otherCategoryId,
+      categorySource: 'manual',
+      classificationSource: 'manual',
+      classificationStatus: 'confirmed'
+    })
+    const workflow = createWorkflow(connection)
+
+    const result = workflow.saveManualClassificationAndConfirmMatches({
+      transactionId: transactionIds[0],
+      merchantId: selectedMerchant.id,
+      categoryId
+    })
+
+    expect(result.confirmedMatchingTransactionCount).toBe(2)
+    expect(classifications.findByTransactionId(transactionIds[0])).toMatchObject({
+      merchantId: selectedMerchant.id,
+      merchantSource: 'manual',
+      categoryId,
+      categorySource: 'manual'
+    })
+    expect(classifications.findByTransactionId(transactionIds[1])).toMatchObject({
+      merchantId: preservedMerchant.id,
+      merchantSource: 'manual',
+      categoryId,
+      categorySource: 'manual'
+    })
+    expect(classifications.findByTransactionId(transactionIds[2])).toMatchObject({
+      merchantId: selectedMerchant.id,
+      merchantSource: 'manual',
+      categoryId: otherCategoryId,
+      categorySource: 'manual'
+    })
+    expect(classifications.findByTransactionId(transactionIds[3])).toBeUndefined()
+  })
+
+  it('rolls back save plus matching confirmation when the current save is invalid', () => {
+    const { transactionIds } = seedTransactions(connection, [
+      'Synthetic Transactional Match',
+      'Synthetic Transactional Match'
+    ])
+    const merchant = new MerchantRepository(connection).create({
+      name: 'Synthetic Transactional Merchant'
+    })
+    const workflow = createWorkflow(connection)
+
+    expect(() =>
+      workflow.saveManualClassificationAndConfirmMatches({
+        transactionId: transactionIds[0],
+        merchantId: merchant.id,
+        categoryId: randomUUID()
+      })
+    ).toThrow()
+
+    const classifications = new TransactionClassificationRepository(connection)
+    expect(classifications.findByTransactionId(transactionIds[0])).toBeUndefined()
+    expect(classifications.findByTransactionId(transactionIds[1])).toBeUndefined()
+  })
+
+  it('keeps ordinary manual save limited to the current transaction', () => {
+    const { transactionIds, categoryId } = seedTransactions(connection, [
+      'Synthetic Ordinary Save',
+      'Synthetic Ordinary Save'
+    ])
+    const merchant = new MerchantRepository(connection).create({
+      name: 'Synthetic Ordinary Merchant'
+    })
+    const workflow = createWorkflow(connection)
+
+    workflow.saveManualClassification({
+      transactionId: transactionIds[0],
+      merchantId: merchant.id,
+      categoryId
+    })
+
+    const classifications = new TransactionClassificationRepository(connection)
+    expect(classifications.findByTransactionId(transactionIds[0])).toMatchObject({
+      merchantId: merchant.id,
+      categoryId
+    })
+    expect(classifications.findByTransactionId(transactionIds[1])).toBeUndefined()
+  })
+
   it('preserves existing merchant when accepting only category', () => {
     const { transactionIds, categoryId } = seedTransactions(connection, [
       'Synthetic Existing Merchant'
@@ -1146,35 +1377,107 @@ describe('smart classification service', () => {
     expect(rejectedAgain.status).toBe('rejected')
   })
 
-  it('rolls back classification and suggestion status when alias creation fails', () => {
-    const { transactionIds } = seedTransactions(connection, ['Synthetic Alias Conflict'])
-    const merchants = new MerchantRepository(connection)
-    const existingMerchant = merchants.create({ name: 'Existing Alias Merchant' })
-    new MerchantAliasRepository(connection).create({
-      merchantId: existingMerchant.id,
-      matchKind: 'exact',
-      pattern: 'Synthetic Alias Conflict',
-      priority: 0
-    })
+  it('accepts an AI merchant without creating a deterministic merchant alias', () => {
+    const { transactionIds } = seedTransactions(connection, ['Synthetic Accepted Merchant'])
     const suggestion = createSuggestion(connection, {
       transactionId: transactionIds[0],
-      suggestedMerchantName: 'New Alias Merchant'
+      suggestedMerchantName: 'Synthetic Accepted Merchant Name'
     })
     const service = new SmartClassificationService(connection, { classify: async () => [] })
 
-    expect(() =>
-      service.acceptSuggestion({
-        suggestionId: suggestion.id,
-        acceptCategory: false,
-        acceptMerchant: true
-      })
-    ).toThrow(AliasConflictError)
+    const review = service.acceptSuggestion({
+      suggestionId: suggestion.id,
+      acceptCategory: false,
+      acceptMerchant: true
+    })
 
+    expect(review).toMatchObject({ merchant: 'accepted' })
     expect(
       new TransactionClassificationRepository(connection).findByTransactionId(transactionIds[0])
-    ).toBeUndefined()
-    expect(new AiSuggestionRepository(connection).findById(suggestion.id).status).toBe('pending')
-    expect(merchants.list({ search: 'New Alias Merchant' })).toHaveLength(0)
+    ).toMatchObject({ merchantSource: 'ai', classificationStatus: 'confirmed' })
+    expect(new MerchantAliasRepository(connection).list()).toHaveLength(0)
+    expect(new AiSuggestionRepository(connection).findById(suggestion.id).status).toBe('accepted')
+  })
+
+  it('keeps accepted AI classifications confirmed in the transaction read model', () => {
+    const { transactionIds, categoryId } = seedTransactions(connection, [
+      'Synthetic Confirmed AI Read Model'
+    ])
+    const suggestion = createSuggestion(connection, {
+      transactionId: transactionIds[0],
+      suggestedCategoryId: categoryId,
+      suggestedMerchantName: 'Synthetic Confirmed Merchant'
+    })
+    const service = new SmartClassificationService(connection, { classify: async () => [] })
+
+    service.acceptSuggestion({
+      suggestionId: suggestion.id,
+      acceptCategory: true,
+      acceptMerchant: true
+    })
+
+    const row = createWorkflow(connection).listTransactions({
+      sortBy: 'transactionDate',
+      sortDirection: 'desc',
+      limit: 50,
+      offset: 0
+    }).items[0]!
+
+    expect(row.classification).toMatchObject({
+      classificationSource: 'ai',
+      classificationStatus: 'confirmed',
+      merchantDisplay: { source: 'authoritative' },
+      categoryDisplay: { source: 'authoritative' }
+    })
+  })
+
+  it('does not generate another AI suggestion for an already confirmed AI classification', async () => {
+    const { transactionIds, categoryId } = seedTransactions(connection, [
+      'Synthetic Already Confirmed AI'
+    ])
+    const suggestion = createSuggestion(connection, {
+      transactionId: transactionIds[0],
+      suggestedCategoryId: categoryId
+    })
+    new SmartClassificationService(connection, { classify: async () => [] }).acceptSuggestion({
+      suggestionId: suggestion.id,
+      acceptCategory: true,
+      acceptMerchant: false
+    })
+    new AiSettingsRepository(connection).update({ aiEnabled: true })
+    let providerReached = false
+    const service = new SmartClassificationService(connection, {
+      classify: async () => {
+        providerReached = true
+        return []
+      }
+    })
+
+    const summary = await service.classifyTransactions(transactionIds)
+
+    expect(providerReached).toBe(false)
+    expect(summary.suggestionsCreated).toBe(0)
+    expect(summary.skippedDeterministicOrManual).toBe(1)
+    expect(new AiSuggestionRepository(connection).listPending()).toHaveLength(0)
+  })
+
+  it('treats creating the same active merchant alias for the same merchant as idempotent', () => {
+    const merchant = new MerchantRepository(connection).create({ name: 'Synthetic Alias Merchant' })
+    const aliases = new MerchantAliasRepository(connection)
+
+    const first = aliases.create({
+      merchantId: merchant.id,
+      matchKind: 'exact',
+      pattern: 'Synthetic Alias Pattern'
+    })
+    const second = aliases.create({
+      merchantId: merchant.id,
+      matchKind: 'exact',
+      pattern: 'Synthetic Alias Pattern'
+    })
+
+    expect(second.id).toBe(first.id)
+    expect(aliases.list()).toHaveLength(1)
   })
 })
 

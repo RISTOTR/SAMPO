@@ -21,6 +21,8 @@ import type {
   ImportBatchSummaryDto,
   ImportPreviewSessionDto,
   ListAiSuggestionsInputDto,
+  MatchingClassificationSummaryDto,
+  MatchingClassificationSummaryInputDto,
   MerchantAliasDto,
   MerchantDto,
   MerchantListQueryDto,
@@ -30,6 +32,7 @@ import type {
   ReversedReconciliationDto,
   RuleApplicationPreviewDto,
   RuleInputDto,
+  SaveManualAndConfirmMatchesResultDto,
   SaveManualClassificationInputDto,
   SaveOpenAiApiKeyInputDto,
   SettlementSummaryDto,
@@ -112,6 +115,12 @@ export type SampoApi = {
     saveManual: (
       input: SaveManualClassificationInputDto
     ) => Promise<ApiResult<ClassificationProposalDto>>
+    matchingSummary: (
+      input: MatchingClassificationSummaryInputDto
+    ) => Promise<ApiResult<MatchingClassificationSummaryDto>>
+    saveManualAndConfirmMatches: (
+      input: SaveManualClassificationInputDto
+    ) => Promise<ApiResult<SaveManualAndConfirmMatchesResultDto>>
     previewRule: (input: RuleInputDto) => Promise<ApiResult<RuleApplicationPreviewDto>>
     createRule: (input: RuleInputDto) => Promise<ApiResult<CategorisationRuleDto>>
     applyRule: (input: ApplyRuleInputDto) => Promise<ApiResult<RuleApplicationPreviewDto>>

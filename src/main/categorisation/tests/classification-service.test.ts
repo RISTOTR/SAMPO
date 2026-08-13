@@ -136,6 +136,85 @@ describe('Phase 6 categorisation', () => {
     })
   })
 
+  it('reuses confirmed manual merchant and category for identical descriptions without persisting the inferred row', () => {
+    const merchant = merchants.create({ name: 'Synthetic Grocery Merchant' })
+    const category = categories.create({ name: 'Synthetic Grocery Category' })
+    const committed = imports.commitPreparedImport(
+      makeImport(account.id, [
+        makeTransaction(account.id, { sourceRowIndex: 0 }),
+        makeTransaction(account.id, { sourceRowIndex: 1 })
+      ])
+    )
+
+    service.saveManual({
+      transactionId: committed.transactions[0]!.id,
+      merchantId: merchant.id,
+      categoryId: category.id
+    })
+
+    expect(service.evaluateTransaction(committed.transactions[1]!.id)).toMatchObject({
+      merchantId: merchant.id,
+      merchantName: 'Synthetic Grocery Merchant',
+      categoryId: category.id,
+      categoryPath: ['Synthetic Grocery Category'],
+      status: 'needs_review',
+      source: 'rule'
+    })
+    expect(classifications.findByTransactionId(committed.transactions[1]!.id)).toBeUndefined()
+  })
+
+  it('marks identical descriptions ambiguous when confirmed manual merchant examples conflict', () => {
+    const firstMerchant = merchants.create({ name: 'Synthetic Grocery Merchant A' })
+    const secondMerchant = merchants.create({ name: 'Synthetic Grocery Merchant B' })
+    const committed = imports.commitPreparedImport(
+      makeImport(account.id, [
+        makeTransaction(account.id, { sourceRowIndex: 0 }),
+        makeTransaction(account.id, { sourceRowIndex: 1 }),
+        makeTransaction(account.id, { sourceRowIndex: 2 })
+      ])
+    )
+
+    service.saveManual({
+      transactionId: committed.transactions[0]!.id,
+      merchantId: firstMerchant.id
+    })
+    service.saveManual({
+      transactionId: committed.transactions[1]!.id,
+      merchantId: secondMerchant.id
+    })
+
+    expect(service.evaluateTransaction(committed.transactions[2]!.id)).toMatchObject({
+      status: 'ambiguous',
+      source: 'unclassified'
+    })
+  })
+
+  it('marks identical descriptions ambiguous when confirmed manual category examples conflict', () => {
+    const firstCategory = categories.create({ name: 'Synthetic Grocery Category A' })
+    const secondCategory = categories.create({ name: 'Synthetic Grocery Category B' })
+    const committed = imports.commitPreparedImport(
+      makeImport(account.id, [
+        makeTransaction(account.id, { sourceRowIndex: 0 }),
+        makeTransaction(account.id, { sourceRowIndex: 1 }),
+        makeTransaction(account.id, { sourceRowIndex: 2 })
+      ])
+    )
+
+    service.saveManual({
+      transactionId: committed.transactions[0]!.id,
+      categoryId: firstCategory.id
+    })
+    service.saveManual({
+      transactionId: committed.transactions[1]!.id,
+      categoryId: secondCategory.id
+    })
+
+    expect(service.evaluateTransaction(committed.transactions[2]!.id)).toMatchObject({
+      status: 'ambiguous',
+      source: 'unclassified'
+    })
+  })
+
   it('applies rules after import without changing source facts and keeps pending rows reviewable', () => {
     const category = categories.create({ name: 'Synthetic groceries' })
     rules.create({

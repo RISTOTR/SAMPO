@@ -127,4 +127,4 @@ Manual classifications are authoritative. Rule application fills unclassified or
 
 ## AI Suggestion Enrichment
 
-AI suggestions are not imported transaction facts. They are review records with confidence metadata and do not affect reports until explicitly accepted. Accepting a suggestion may create classification enrichment with source `ai` and may create a canonical merchant or exact merchant alias when the user accepts the merchant suggestion. Manual classifications remain authoritative and are not silently overwritten by AI acceptance.
+AI suggestions are not imported transaction facts. They are review records with confidence metadata and do not affect reports until explicitly accepted. Accepting a suggestion may create classification enrichment with source `ai` and may create or reuse a canonical merchant when the user accepts the merchant suggestion. Merchant aliases remain explicit deterministic enrichment and are not created as a side effect of AI suggestion acceptance. Manual classifications remain authoritative and are not silently overwritten by AI acceptance.

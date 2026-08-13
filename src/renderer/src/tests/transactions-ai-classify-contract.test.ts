@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest'
 
 const transactionsView = readFileSync('src/renderer/src/views/TransactionsView.vue', 'utf8')
 const aiStore = readFileSync('src/renderer/src/stores/ai.ts', 'utf8')
+const applicationWorkflow = readFileSync('src/main/workflows/application-workflow.ts', 'utf8')
+const sharedDtos = readFileSync('src/shared/dtos.ts', 'utf8')
 
 describe('transactions manual AI classify contract', () => {
   it('wires the Transactions Classify button to selected persisted transaction IDs', () => {
@@ -10,9 +12,8 @@ describe('transactions manual AI classify contract', () => {
     expect(transactionsView).toContain('v-model="selectedTransactionIds"')
     expect(transactionsView).toContain(':value="transaction.id"')
     expect(transactionsView).toContain('@click="classifySelectedWithAi"')
-    expect(transactionsView).toContain(
-      'await ai.classifyTransactions(selectedTransactionIds.value)'
-    )
+    expect(transactionsView).toContain('const selectedIds = [...selectedTransactionIds.value]')
+    expect(transactionsView).toContain('await ai.classifyTransactions(selectedIds)')
     expect(transactionsView).toContain("{{ ai.submitting ? 'Classifying...' : 'Classify' }}")
   })
 
@@ -24,7 +25,8 @@ describe('transactions manual AI classify contract', () => {
 
   it('opens the manual editor visibly for the persisted transaction id', () => {
     expect(transactionsView).toContain('async function openEditor(transactionId: string)')
-    expect(transactionsView).toContain('await classification.loadClassification(transactionId)')
+    expect(transactionsView).toContain('classification.loadClassification(transactionId)')
+    expect(transactionsView).toContain('classification.loadReference()')
     expect(transactionsView).toContain('editorTransactionId.value = transactionId')
     expect(transactionsView).toContain('ref="editorPanel"')
     expect(transactionsView).toContain('editorPanel.value?.scrollIntoView')
@@ -37,9 +39,9 @@ describe('transactions manual AI classify contract', () => {
     expect(aiStore).toContain("error.value = 'Enable AI categorisation in Settings first.'")
     expect(aiStore).toContain("error.value = 'Configure an OpenAI API key in Settings first.'")
     expect(aiStore).toContain(
-      'message.value = `Classifying ${transactionIds.length} transactions...`'
+      'message.value = `Classifying ${requestTransactionIds.length} transactions...`'
     )
-    expect(aiStore).toContain('window.sampo.ai.smartClassify({ transactionIds })')
+    expect(aiStore).toContain('transactionIds: requestTransactionIds')
   })
 
   it('filters AI suggestions through the current transaction filters', () => {
@@ -75,12 +77,50 @@ describe('transactions manual AI classify contract', () => {
     expect(aiStore).toContain('AI suggestion unchanged.')
   })
 
-  it('distinguishes detected display values from authoritative editor selections', () => {
-    expect(transactionsView).toContain("merchantDisplay?.displayName ?? 'Unidentified'")
+  it('preselects detected classification values in the manual editor without persisting them until save', () => {
+    expect(transactionsView).toContain("merchantDisplay?.displayName ?? 'Not assigned'")
     expect(transactionsView).toContain("categoryDisplay?.displayPath?.join(' / ')")
-    expect(transactionsView).toContain('merchantDisplay?.authoritativeId ??')
-    expect(transactionsView).toContain('categoryDisplay?.authoritativeId ??')
+    expect(transactionsView).toContain(
+      'classification.current?.merchantDisplay?.authoritativeId ??'
+    )
+    expect(transactionsView).toContain('classification.current?.merchantId ??')
+    expect(transactionsView).toContain(
+      'classification.current?.categoryDisplay?.authoritativeId ??'
+    )
+    expect(transactionsView).toContain('classification.current?.categoryId ??')
     expect(transactionsView).toContain('Detected:')
     expect(transactionsView).toContain('classification-note')
+  })
+
+  it('lets the user create or reuse a merchant directly from the transaction editor', () => {
+    expect(transactionsView).toContain('<strong>Transaction description:</strong>')
+    expect(transactionsView).toContain('Use transaction description')
+    expect(transactionsView).toContain('v-model="newMerchantName"')
+    expect(transactionsView).toContain('merchantName:')
+    expect(sharedDtos).toContain('merchantName: z.string().trim().min(1).optional()')
+    expect(applicationWorkflow).toContain('parsed.merchantName ? this.findOrCreateMerchant')
+    expect(applicationWorkflow).toContain('this.learnExactMerchantAliasFromManualClassification')
+  })
+
+  it('shows exact-description match counts and both manual save actions', () => {
+    expect(transactionsView).toContain('refreshMatchingSummary()')
+    expect(transactionsView).toContain('matchingSummary.otherMatchingTransactionCount')
+    expect(transactionsView).toContain('have this exact description')
+    expect(transactionsView).toContain('They will already be detected automatically after saving.')
+    expect(transactionsView).toContain('Save this transaction')
+    expect(transactionsView).toContain('Save + confirm')
+    expect(transactionsView).toContain('saveManualAndConfirmMatches')
+    expect(applicationWorkflow).toContain('matchingClassificationSummary')
+    expect(applicationWorkflow).toContain('saveManualClassificationAndConfirmMatches')
+  })
+
+  it('shows the pending AI suggestion in the transaction workflow and lets the user use its fields', () => {
+    expect(transactionsView).toContain('const editorSuggestion = computed(() =>')
+    expect(transactionsView).toContain('AI suggestion')
+    expect(transactionsView).toContain('Use AI merchant')
+    expect(transactionsView).toContain('Use AI category')
+    expect(transactionsView).toContain("editorSuggestion.usedWebSearch ? 'Web lookup' : 'AI'")
+    expect(transactionsView).toContain('Suggested:')
+    expect(transactionsView).toContain('aiSuggestionFor(transaction.id)')
   })
 })
