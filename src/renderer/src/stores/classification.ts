@@ -6,10 +6,12 @@ import type {
   CategoryDto,
   ClassificationProposalDto,
   CreateMerchantAliasInputDto,
+  MatchingClassificationSummaryDto,
   MerchantAliasDto,
   MerchantDto,
   RuleApplicationPreviewDto,
   RuleInputDto,
+  SaveManualAndConfirmMatchesResultDto,
   SaveManualClassificationInputDto
 } from '../../../shared/dtos'
 import { errorMessage, unwrapResult } from './api-result'
@@ -20,6 +22,7 @@ export const useClassificationStore = defineStore('classification', () => {
   const aliases = ref<MerchantAliasDto[]>([])
   const rules = ref<CategorisationRuleDto[]>([])
   const current = ref<ClassificationProposalDto | null>(null)
+  const matchingSummary = ref<MatchingClassificationSummaryDto | null>(null)
   const rulePreview = ref<RuleApplicationPreviewDto | null>(null)
   const loading = ref(false)
   const submitting = ref(false)
@@ -97,6 +100,23 @@ export const useClassificationStore = defineStore('classification', () => {
     })
   }
 
+  async function loadMatchingSummary(input: SaveManualClassificationInputDto): Promise<void> {
+    matchingSummary.value = unwrapResult(await window.sampo.classification.matchingSummary(input))
+  }
+
+  async function saveManualAndConfirmMatches(
+    input: SaveManualClassificationInputDto
+  ): Promise<SaveManualAndConfirmMatchesResultDto | null> {
+    let result: SaveManualAndConfirmMatchesResultDto | null = null
+    await submit(async () => {
+      result = unwrapResult(await window.sampo.classification.saveManualAndConfirmMatches(input))
+      current.value = result.classification
+      matchingSummary.value = result.matchingSummary
+      message.value = `Classification saved and ${result.confirmedMatchingTransactionCount} matching transactions confirmed.`
+    })
+    return result
+  }
+
   async function previewRule(input: RuleInputDto): Promise<void> {
     await submit(async () => {
       rulePreview.value = unwrapResult(await window.sampo.classification.previewRule(input))
@@ -156,6 +176,7 @@ export const useClassificationStore = defineStore('classification', () => {
     aliases,
     rules,
     current,
+    matchingSummary,
     rulePreview,
     loading,
     submitting,
@@ -168,6 +189,8 @@ export const useClassificationStore = defineStore('classification', () => {
     createAlias,
     loadClassification,
     saveManual,
+    loadMatchingSummary,
+    saveManualAndConfirmMatches,
     previewRule,
     createRule,
     applyRule,

@@ -12,9 +12,8 @@ describe('transactions manual AI classify contract', () => {
     expect(transactionsView).toContain('v-model="selectedTransactionIds"')
     expect(transactionsView).toContain(':value="transaction.id"')
     expect(transactionsView).toContain('@click="classifySelectedWithAi"')
-    expect(transactionsView).toContain(
-      'await ai.classifyTransactions(selectedTransactionIds.value)'
-    )
+    expect(transactionsView).toContain('const selectedIds = [...selectedTransactionIds.value]')
+    expect(transactionsView).toContain('await ai.classifyTransactions(selectedIds)')
     expect(transactionsView).toContain("{{ ai.submitting ? 'Classifying...' : 'Classify' }}")
   })
 
@@ -101,6 +100,18 @@ describe('transactions manual AI classify contract', () => {
     expect(sharedDtos).toContain('merchantName: z.string().trim().min(1).optional()')
     expect(applicationWorkflow).toContain('parsed.merchantName ? this.findOrCreateMerchant')
     expect(applicationWorkflow).toContain('this.learnExactMerchantAliasFromManualClassification')
+  })
+
+  it('shows exact-description match counts and both manual save actions', () => {
+    expect(transactionsView).toContain('refreshMatchingSummary()')
+    expect(transactionsView).toContain('matchingSummary.otherMatchingTransactionCount')
+    expect(transactionsView).toContain('have this exact description')
+    expect(transactionsView).toContain('They will already be detected automatically after saving.')
+    expect(transactionsView).toContain('Save this transaction')
+    expect(transactionsView).toContain('Save + confirm')
+    expect(transactionsView).toContain('saveManualAndConfirmMatches')
+    expect(applicationWorkflow).toContain('matchingClassificationSummary')
+    expect(applicationWorkflow).toContain('saveManualClassificationAndConfirmMatches')
   })
 
   it('shows the pending AI suggestion in the transaction workflow and lets the user use its fields', () => {

@@ -31,6 +31,8 @@ export const IPC_CHANNELS = {
   merchantAliasesDeactivate: 'sampo:merchant-aliases:deactivate',
   classificationGet: 'sampo:classification:get',
   classificationSaveManual: 'sampo:classification:save-manual',
+  classificationMatchingSummary: 'sampo:classification:matching-summary',
+  classificationSaveManualAndConfirmMatches: 'sampo:classification:save-manual-and-confirm-matches',
   classificationPreviewRule: 'sampo:classification:preview-rule',
   classificationCreateRule: 'sampo:classification:create-rule',
   classificationApplyRule: 'sampo:classification:apply-rule',

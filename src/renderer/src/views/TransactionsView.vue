@@ -134,6 +134,11 @@ function aiSuggestionFor(transactionId: string): AiSuggestionDto | undefined {
   return ai.suggestions.find((suggestion) => suggestion.transactionId === transactionId)
 }
 
+async function handleMerchantChange(): Promise<void> {
+  newMerchantName.value = ''
+  await refreshMatchingSummary()
+}
+
 async function loadTransactions(): Promise<void> {
   await transactions.load(currentTransactionQuery())
   await ai.loadSuggestions(currentSuggestionListInput())
@@ -193,6 +198,7 @@ async function openEditor(transactionId: string): Promise<void> {
     manualForm.costBehaviour = classification.current?.costBehaviour ?? 'unspecified'
     manualForm.necessity = classification.current?.necessity ?? 'unspecified'
     newMerchantName.value = ''
+    await refreshMatchingSummary()
     logTransactionsDiagnostic('editor state set', {
       transactionLoaded: Boolean(classification.current),
 
@@ -220,7 +226,38 @@ async function openEditor(transactionId: string): Promise<void> {
 
 async function saveManual(): Promise<void> {
   if (!editorTransactionId.value) return
-  await classification.saveManual({
+  await classification.saveManual(editorClassificationInput())
+  if (classification.error) return
+
+  editorTransactionId.value = null
+  newMerchantName.value = ''
+  await classification.loadReference()
+  await loadTransactions()
+}
+
+async function saveManualAndConfirmMatches(): Promise<void> {
+  if (!editorTransactionId.value) return
+  const result = await classification.saveManualAndConfirmMatches(editorClassificationInput())
+  if (classification.error || !result) return
+
+  editorTransactionId.value = null
+  newMerchantName.value = ''
+  await classification.loadReference()
+  await loadTransactions()
+  await ai.loadSuggestions(currentSuggestionListInput())
+}
+
+async function refreshMatchingSummary(): Promise<void> {
+  if (!editorTransactionId.value) return
+  await classification.loadMatchingSummary(editorClassificationInput())
+}
+
+function editorClassificationInput(): Parameters<typeof classification.saveManual>[0] {
+  if (!editorTransactionId.value) {
+    throw new Error('Classification editor is not open')
+  }
+
+  return {
     transactionId: editorTransactionId.value,
     merchantId: manualForm.merchantId || undefined,
     merchantName:
@@ -231,13 +268,7 @@ async function saveManual(): Promise<void> {
     usageType: manualForm.usageType as never,
     costBehaviour: manualForm.costBehaviour as never,
     necessity: manualForm.necessity as never
-  })
-  if (classification.error) return
-
-  editorTransactionId.value = null
-  newMerchantName.value = ''
-  await classification.loadReference()
-  await loadTransactions()
+  }
 }
 
 function useTransactionDescriptionAsMerchant(): void {
@@ -245,6 +276,7 @@ function useTransactionDescriptionAsMerchant(): void {
   if (!description) return
   manualForm.merchantId = ''
   newMerchantName.value = description
+  void refreshMatchingSummary()
 }
 
 function useAiMerchantSuggestion(): void {
@@ -252,12 +284,14 @@ function useAiMerchantSuggestion(): void {
   if (!merchantName) return
   manualForm.merchantId = ''
   newMerchantName.value = merchantName
+  void refreshMatchingSummary()
 }
 
 function useAiCategorySuggestion(): void {
   const categoryId = editorSuggestion.value?.suggestedCategoryId
   if (!categoryId) return
   manualForm.categoryId = categoryId
+  void refreshMatchingSummary()
 }
 
 async function bulkUpdate(): Promise<void> {
@@ -276,7 +310,7 @@ async function bulkUpdate(): Promise<void> {
 
 async function classifySelectedWithAi(): Promise<void> {
   const selectedIds = [...selectedTransactionIds.value]
-  await ai.classifyTransactions(selectedTransactionIds.value)
+  await ai.classifyTransactions(selectedIds)
   if (ai.error) return
 
   await loadTransactions()
@@ -786,7 +820,7 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
           <select
             id="manual-merchant"
             v-model="manualForm.merchantId"
-            @change="newMerchantName = ''"
+            @change="handleMerchantChange"
           >
             <option value="">No existing merchant selected</option>
             <option
@@ -816,6 +850,7 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
             type="text"
             placeholder="Merchant name"
             @input="manualForm.merchantId = ''"
+            @change="refreshMatchingSummary"
           />
           <div class="button-row">
             <button type="button" @click="useTransactionDescriptionAsMerchant">
@@ -836,7 +871,11 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
 
         <div class="form-field">
           <label for="manual-category">Category</label>
-          <select id="manual-category" v-model="manualForm.categoryId">
+          <select
+            id="manual-category"
+            v-model="manualForm.categoryId"
+            @change="refreshMatchingSummary"
+          >
             <option value="">Unclassified</option>
             <option
               v-for="category in classification.categories.filter((item) => item.isActive)"
@@ -898,7 +937,33 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
             <option value="discretionary">Discretionary</option>
           </select>
         </div>
-        <button type="submit" :disabled="classification.submitting">Save classification</button>
+        <div
+          v-if="
+            classification.matchingSummary &&
+            classification.matchingSummary.otherMatchingTransactionCount > 0
+          "
+          class="form-field form-field-wide"
+        >
+          <p>
+            {{ classification.matchingSummary.otherMatchingTransactionCount }} other transactions
+            have this exact description.
+          </p>
+          <p>They will already be detected automatically after saving.</p>
+        </div>
+        <button type="submit" :disabled="classification.submitting">Save this transaction</button>
+        <button
+          v-if="classification.matchingSummary && classification.matchingSummary.eligibleCount > 0"
+          type="button"
+          :disabled="classification.submitting"
+          @click="saveManualAndConfirmMatches"
+        >
+          Save + confirm {{ classification.matchingSummary.eligibleCount }}
+          {{
+            classification.matchingSummary.eligibleCount === 1
+              ? 'matching transaction'
+              : 'matching transactions'
+          }}
+        </button>
         <button class="secondary-button" type="button" @click="editorTransactionId = null">
           Close
         </button>

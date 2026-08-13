@@ -483,6 +483,23 @@ export const saveManualClassificationInputDtoSchema = z.object({
   necessity: necessityDtoSchema.default('unspecified')
 })
 
+export const matchingClassificationSummaryInputDtoSchema = saveManualClassificationInputDtoSchema
+
+export const matchingClassificationSummaryDtoSchema = z.object({
+  transactionId: uuidDtoSchema,
+  totalMatchingTransactionCount: z.number().int().min(1),
+  otherMatchingTransactionCount: z.number().int().min(0),
+  eligibleCount: z.number().int().min(0),
+  manualMerchantPreservedCount: z.number().int().min(0),
+  manualCategoryPreservedCount: z.number().int().min(0)
+})
+
+export const saveManualAndConfirmMatchesResultDtoSchema = z.object({
+  classification: classificationProposalDtoSchema,
+  confirmedMatchingTransactionCount: z.number().int().min(0),
+  matchingSummary: matchingClassificationSummaryDtoSchema
+})
+
 export const ruleInputDtoSchema = z.object({
   name: z.string().trim().min(1),
   merchantId: uuidDtoSchema.optional(),
@@ -676,6 +693,15 @@ export type UpdateMerchantAliasInputDto = z.input<typeof updateMerchantAliasInpu
 export type ClassificationProposalDto = z.infer<typeof classificationProposalDtoSchema>
 export type SaveManualClassificationInputDto = z.input<
   typeof saveManualClassificationInputDtoSchema
+>
+export type MatchingClassificationSummaryInputDto = z.input<
+  typeof matchingClassificationSummaryInputDtoSchema
+>
+export type MatchingClassificationSummaryDto = z.infer<
+  typeof matchingClassificationSummaryDtoSchema
+>
+export type SaveManualAndConfirmMatchesResultDto = z.infer<
+  typeof saveManualAndConfirmMatchesResultDtoSchema
 >
 export type RuleInputDto = z.input<typeof ruleInputDtoSchema>
 export type CategorisationRuleDto = z.infer<typeof categorisationRuleDtoSchema>

@@ -93,6 +93,12 @@ export function registerApplicationIpcHandlers(
   handle(IPC_CHANNELS.classificationSaveManual, isTrustedSender, (input) =>
     workflow.saveManualClassification(input)
   )
+  handle(IPC_CHANNELS.classificationMatchingSummary, isTrustedSender, (input) =>
+    workflow.matchingClassificationSummary(input)
+  )
+  handle(IPC_CHANNELS.classificationSaveManualAndConfirmMatches, isTrustedSender, (input) =>
+    workflow.saveManualClassificationAndConfirmMatches(input)
+  )
   handle(IPC_CHANNELS.classificationPreviewRule, isTrustedSender, (input) =>
     workflow.previewRule(input)
   )

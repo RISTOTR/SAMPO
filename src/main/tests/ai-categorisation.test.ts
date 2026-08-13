@@ -953,6 +953,134 @@ describe('smart classification service', () => {
     expect(editor.categoryDisplay?.authoritativeId).toBeUndefined()
   })
 
+  it('finds exact normalized duplicate descriptions and excludes non-matches', () => {
+    const { transactionIds, categoryId } = seedTransactions(connection, [
+      '  Synthetic   Duplicate  ',
+      'synthetic duplicate',
+      'Synthetic Different'
+    ])
+    const workflow = createWorkflow(connection)
+    const merchant = new MerchantRepository(connection).create({
+      name: 'Synthetic Duplicate Merchant'
+    })
+
+    const summary = workflow.matchingClassificationSummary({
+      transactionId: transactionIds[0],
+      merchantId: merchant.id,
+      categoryId
+    })
+
+    expect(summary.totalMatchingTransactionCount).toBe(2)
+    expect(summary.otherMatchingTransactionCount).toBe(1)
+    expect(summary.eligibleCount).toBe(1)
+  })
+
+  it('confirms matching exact-description transactions while preserving manual fields', () => {
+    const { transactionIds, categoryId } = seedTransactions(connection, [
+      'Synthetic Confirm Match',
+      'Synthetic Confirm Match',
+      'Synthetic Confirm Match',
+      'Synthetic Other Match'
+    ])
+    const merchants = new MerchantRepository(connection)
+    const selectedMerchant = merchants.create({ name: 'Synthetic Selected Merchant' })
+    const preservedMerchant = merchants.create({ name: 'Synthetic Preserved Merchant' })
+    const otherCategoryId = connection
+      .prepare("SELECT id FROM categories WHERE key = 'transport.public'")
+      .pluck()
+      .get() as string
+    const classifications = new TransactionClassificationRepository(connection)
+    classifications.save({
+      transactionId: transactionIds[1],
+      merchantId: preservedMerchant.id,
+      merchantSource: 'manual',
+      classificationSource: 'manual',
+      classificationStatus: 'confirmed'
+    })
+    classifications.save({
+      transactionId: transactionIds[2],
+      categoryId: otherCategoryId,
+      categorySource: 'manual',
+      classificationSource: 'manual',
+      classificationStatus: 'confirmed'
+    })
+    const workflow = createWorkflow(connection)
+
+    const result = workflow.saveManualClassificationAndConfirmMatches({
+      transactionId: transactionIds[0],
+      merchantId: selectedMerchant.id,
+      categoryId
+    })
+
+    expect(result.confirmedMatchingTransactionCount).toBe(2)
+    expect(classifications.findByTransactionId(transactionIds[0])).toMatchObject({
+      merchantId: selectedMerchant.id,
+      merchantSource: 'manual',
+      categoryId,
+      categorySource: 'manual'
+    })
+    expect(classifications.findByTransactionId(transactionIds[1])).toMatchObject({
+      merchantId: preservedMerchant.id,
+      merchantSource: 'manual',
+      categoryId,
+      categorySource: 'manual'
+    })
+    expect(classifications.findByTransactionId(transactionIds[2])).toMatchObject({
+      merchantId: selectedMerchant.id,
+      merchantSource: 'manual',
+      categoryId: otherCategoryId,
+      categorySource: 'manual'
+    })
+    expect(classifications.findByTransactionId(transactionIds[3])).toBeUndefined()
+  })
+
+  it('rolls back save plus matching confirmation when the current save is invalid', () => {
+    const { transactionIds } = seedTransactions(connection, [
+      'Synthetic Transactional Match',
+      'Synthetic Transactional Match'
+    ])
+    const merchant = new MerchantRepository(connection).create({
+      name: 'Synthetic Transactional Merchant'
+    })
+    const workflow = createWorkflow(connection)
+
+    expect(() =>
+      workflow.saveManualClassificationAndConfirmMatches({
+        transactionId: transactionIds[0],
+        merchantId: merchant.id,
+        categoryId: randomUUID()
+      })
+    ).toThrow()
+
+    const classifications = new TransactionClassificationRepository(connection)
+    expect(classifications.findByTransactionId(transactionIds[0])).toBeUndefined()
+    expect(classifications.findByTransactionId(transactionIds[1])).toBeUndefined()
+  })
+
+  it('keeps ordinary manual save limited to the current transaction', () => {
+    const { transactionIds, categoryId } = seedTransactions(connection, [
+      'Synthetic Ordinary Save',
+      'Synthetic Ordinary Save'
+    ])
+    const merchant = new MerchantRepository(connection).create({
+      name: 'Synthetic Ordinary Merchant'
+    })
+    const workflow = createWorkflow(connection)
+
+    workflow.saveManualClassification({
+      transactionId: transactionIds[0],
+      merchantId: merchant.id,
+      categoryId
+    })
+
+    const classifications = new TransactionClassificationRepository(connection)
+    expect(classifications.findByTransactionId(transactionIds[0])).toMatchObject({
+      merchantId: merchant.id,
+      categoryId
+    })
+    expect(classifications.findByTransactionId(transactionIds[1])).toBeUndefined()
+  })
+
   it('preserves existing merchant when accepting only category', () => {
     const { transactionIds, categoryId } = seedTransactions(connection, [
       'Synthetic Existing Merchant'

@@ -67,6 +67,10 @@ const sampo: SampoApi = {
   classification: {
     get: (transactionId) => ipcRenderer.invoke(IPC_CHANNELS.classificationGet, transactionId),
     saveManual: (input) => ipcRenderer.invoke(IPC_CHANNELS.classificationSaveManual, input),
+    matchingSummary: (input) =>
+      ipcRenderer.invoke(IPC_CHANNELS.classificationMatchingSummary, input),
+    saveManualAndConfirmMatches: (input) =>
+      ipcRenderer.invoke(IPC_CHANNELS.classificationSaveManualAndConfirmMatches, input),
     previewRule: (input) => ipcRenderer.invoke(IPC_CHANNELS.classificationPreviewRule, input),
     createRule: (input) => ipcRenderer.invoke(IPC_CHANNELS.classificationCreateRule, input),
     applyRule: (input) => ipcRenderer.invoke(IPC_CHANNELS.classificationApplyRule, input),
