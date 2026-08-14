@@ -86,6 +86,23 @@ The EVO/Bankinter account PDF importer maps validated statement movements to `Ne
 
 The importer does not detect own-account transfers, refunds, categories, merchants, subscriptions, or reconciliation links.
 
+## Account Excel Import Mapping
+
+The EVO/Bankinter account Excel importer maps validated workbook movement rows to `NewTransaction` objects:
+
+- `Fecha contable` becomes `transactionDate`.
+- `Fecha valor` becomes `valueDate`.
+- `Descripción` becomes `originalDescription`.
+- `Importe` is parsed as a signed integer-cent amount.
+- `Saldo` is parsed as `balanceCents`.
+- `Divisa` becomes `currency`.
+- `sourceRowIndex` is a deterministic zero-based transaction-row index after metadata, headers, and blank rows are excluded.
+- Metadata date ranges are ignored for filtering; the observed statement period is derived from parsed transaction dates.
+- Normal negative movements are `expense`; normal positive movements are `income`.
+- Structurally recognised Visa settlement rows are `card_settlement`, `reviewStatus: needs_review`, and remain `excludedFromSpending: false` until reconciliation links them to Visa movements.
+
+The importer does not detect own-account transfers, refunds, categories, merchants, subscriptions, or reconciliation links.
+
 ## Visa Settlement Reconciliation Mapping
 
 Phase 4 reconciles one account `card_settlement` transaction to one committed EVO Visa import batch. The persisted link direction is:

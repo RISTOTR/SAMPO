@@ -14,7 +14,7 @@ Application services
 Import adapters / repositories / SQLite
 ```
 
-The Electron shell, typed preload API, renderer layout, validation setup, SQLite initialization, migrations, repositories, prepared-import service, EVO/Bankinter Visa XLS importer, EVO/Bankinter account PDF importer, Visa settlement reconciliation service, account/import/transaction/reconciliation UI, deterministic transaction categorisation, and optional AI categorisation suggestions are implemented. Subscriptions, recurring-series detection, charts, monthly analysis, and broader AI analysis remain planned.
+The Electron shell, typed preload API, renderer layout, validation setup, SQLite initialization, migrations, repositories, prepared-import service, EVO/Bankinter Visa XLS importer, EVO/Bankinter account PDF importer, EVO/Bankinter account Excel importer, Visa settlement reconciliation service, account/import/transaction/reconciliation UI, deterministic transaction categorisation, and optional AI categorisation suggestions are implemented. Subscriptions, recurring-series detection, charts, monthly analysis, and broader AI analysis remain planned.
 
 ## Responsibilities
 
@@ -82,6 +82,14 @@ Recognised Visa settlement rows are mapped as `card_settlement`, remain visible,
 
 The account PDF importer enforces a 10 MB maximum before parsing, stores only the basename as `sourceFileName`, and calculates file hashes with the streaming SHA-256 utility.
 
+## EVO Account Excel Importer
+
+The detected EVO/Bankinter account workbook is an Excel file with metadata rows above a movement table. The importer uses `@e965/xlsx` and recognises the source by required Spanish table headers rather than filename extension.
+
+The parser scans workbook sheets for `Fecha contable`, `Fecha valor`, `Descripción`, `Importe`, `Saldo`, and `Divisa`, then parses only rows below the detected table header. Metadata rows and blank rows are ignored. Metadata date ranges are not authoritative and do not filter parsed rows.
+
+The importer maps signed movement amounts, value dates, resulting balances, currencies, and original descriptions into the same normalised current-account transaction model used by the account PDF importer. Recognised Visa settlement rows become `card_settlement`, remain visible, and keep `reviewStatus: needs_review` until explicit reconciliation.
+
 ## Visa Settlement Reconciliation
 
 The Phase 4 reconciliation service is main-process/application-layer code. It is not exposed through renderer IPC and does not add a UI.
@@ -116,7 +124,7 @@ Native file selection happens only in the main process with Electron's open-file
 Supported Phase 5 account/source combinations are:
 
 ```text
-current account     -> EVO account PDF
+current account     -> EVO account PDF or account Excel
 credit-card account -> EVO Visa XLS
 ```
 

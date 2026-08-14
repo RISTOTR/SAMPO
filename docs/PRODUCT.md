@@ -9,7 +9,7 @@ Bank exports are fragmented: Visa purchases, pending movements, card settlements
 ## Input Sources
 
 - EVO/Bankinter Visa movements exported as `.xls`
-- EVO/Bankinter account movements exported as text-based PDF
+- EVO/Bankinter account movements exported as text-based PDF or account Excel workbook
 
 ## Expected Value
 

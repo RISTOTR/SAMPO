@@ -26,6 +26,21 @@ Current milestone: Phase 7 smart AI categorisation complete.
 - The observed statement period is derived from the minimum and maximum parsed transaction dates
 - OCR, image-only PDFs, encrypted PDFs and unsupported changed layouts are not implemented
 
+## EVO/Bankinter Account Excel
+
+- Source format: `.xlsx` workbook with an account movements table.
+- Parsed with `@e965/xlsx` in the main process/application layer.
+- Detected by table headers, not filename extension.
+- Required headers are `Fecha contable`, `Fecha valor`, `Descripción`, `Importe`, `Saldo`, and `Divisa`.
+- Metadata rows before the table are ignored. Metadata date ranges are not used to filter movements.
+- Transaction date comes from `Fecha contable`; value date comes from `Fecha valor`.
+- Description is preserved as the original transaction description.
+- Signed `Importe` values become integer-cent transaction amounts.
+- `Saldo` values are stored as `balanceCents`.
+- `Divisa` is stored as the transaction currency.
+- The observed statement period is derived from the minimum and maximum parsed transaction dates.
+- Recognised `RECIBO VISA CLASICA` rows are mapped like account PDF settlements for reconciliation.
+
 ## Reconciliation Rule
 
 - Individual Visa purchases count as expenses.
@@ -105,7 +120,7 @@ Visa importer tests generate temporary BIFF `.xls` workbooks from synthetic rows
 - Import preview sessions live only in main-process memory and expire after 30 minutes.
 - Preview sessions store the prepared import internally and expose only safe DTOs.
 - Commit requires explicit user confirmation and revalidates that the file hash has not changed.
-- Current accounts can import only supported account PDFs.
+- Current accounts can import supported account PDFs and account Excel workbooks.
 - Credit-card accounts can import only supported Visa XLS files.
 - Cash and other account kinds are not import targets in Phase 5.
 - Import history keeps batch records; rollback does not delete history.

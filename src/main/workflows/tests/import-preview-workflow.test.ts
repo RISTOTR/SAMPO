@@ -70,6 +70,29 @@ describe('ImportPreviewWorkflow', () => {
     expect(preview?.inspection.details?.balanceContinuityPassed).toBe(true)
   })
 
+  it('creates and commits an account Excel preview for current accounts', async () => {
+    const account = accounts.create({ name: 'Synthetic current', kind: 'current' })
+    selectedFilePath = writeAccountExcelWorkbook(directory, 'synthetic-account.xlsx')
+
+    const preview = await workflow.selectAndInspectImport(account.id)
+
+    expect(preview).toMatchObject({
+      sourceKind: 'evo_account_excel',
+      sourceFileName: 'synthetic-account.xlsx'
+    })
+    expect(preview?.transactions).toHaveLength(2)
+    expect(preview?.transactions[1]).toMatchObject({
+      description: 'RECIBO VISA CLASICA',
+      transactionType: 'card_settlement',
+      reviewStatus: 'needs_review'
+    })
+    expect(transactions.listForAccount(account.id)).toHaveLength(0)
+
+    const committed = await workflow.commitImportPreview(preview?.id ?? '')
+    expect(committed.transactionCount).toBe(2)
+    expect(transactions.listForAccount(account.id)).toHaveLength(2)
+  })
+
   it('handles cancellation, incompatible source, source changes, active limit, and duplicate commit', async () => {
     const current = accounts.create({ name: 'Synthetic current', kind: 'current' })
     const card = accounts.create({ name: 'Synthetic Visa', kind: 'credit_card' })
@@ -122,6 +145,23 @@ function writeVisaWorkbook(directory: string, fileName: string): string {
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Movimientos')
   const filePath = join(directory, fileName)
   writeFileSync(filePath, XLSX.write(workbook, { bookType: 'biff8', type: 'buffer' }) as Buffer)
+  return filePath
+}
+
+function writeAccountExcelWorkbook(directory: string, fileName: string): string {
+  const rows = [
+    ['Cuenta', 'Synthetic current'],
+    ['Fecha', '01/06/2026 - 30/06/2026'],
+    [],
+    ['Fecha contable', 'Fecha valor', 'Descripción', 'Importe', 'Saldo', 'Divisa'],
+    ['01/06/2026', '01/06/2026', 'SYNTHETIC MARKET', '-10,00', '90,00', 'EUR'],
+    ['05/06/2026', '05/06/2026', 'RECIBO VISA CLASICA', '-20,00', '70,00', 'EUR']
+  ]
+  const worksheet = XLSX.utils.aoa_to_sheet(rows)
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Movimientos')
+  const filePath = join(directory, fileName)
+  writeFileSync(filePath, XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer' }) as Buffer)
   return filePath
 }
 

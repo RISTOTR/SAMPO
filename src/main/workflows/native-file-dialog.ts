@@ -8,8 +8,9 @@ export class NativeFileDialogAdapter implements FileDialogAdapter {
           title: 'Select statement file',
           properties: ['openFile'],
           filters: [
-            { name: 'Supported statements', extensions: ['xls', 'pdf'] },
+            { name: 'Supported statements', extensions: ['xls', 'pdf', 'xlsx'] },
             { name: 'Excel XLS', extensions: ['xls'] },
+            { name: 'Excel XLSX', extensions: ['xlsx'] },
             { name: 'PDF', extensions: ['pdf'] }
           ]
         })
@@ -17,8 +18,9 @@ export class NativeFileDialogAdapter implements FileDialogAdapter {
           title: 'Select statement file',
           properties: ['openFile'],
           filters: [
-            { name: 'Supported statements', extensions: ['xls', 'pdf'] },
+            { name: 'Supported statements', extensions: ['xls', 'pdf', 'xlsx'] },
             { name: 'Excel XLS', extensions: ['xls'] },
+            { name: 'Excel XLSX', extensions: ['xlsx'] },
             { name: 'PDF', extensions: ['pdf'] }
           ]
         })

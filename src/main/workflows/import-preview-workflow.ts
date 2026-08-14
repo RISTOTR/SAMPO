@@ -11,6 +11,7 @@ import {
 } from '../../shared/dtos'
 import { UnsupportedImportFormatError } from '../domain/errors'
 import type { Account, ImportSourceKind, PreparedImport } from '../domain/schemas'
+import { EvoAccountExcelImporter } from '../importers/evo-account-excel/evo-account-excel-importer'
 import { EvoAccountPdfImporter } from '../importers/evo-account-pdf/evo-account-pdf-importer'
 import { EvoVisaXlsImporter } from '../importers/evo-visa/evo-visa-xls-importer'
 import type { ImportFileInput, ImportInspection, TransactionImporter } from '../importers/types'
@@ -54,7 +55,11 @@ export class ImportPreviewWorkflow {
   constructor(
     database: Database,
     private readonly dialogAdapter: FileDialogAdapter,
-    importers: TransactionImporter[] = [new EvoVisaXlsImporter(), new EvoAccountPdfImporter()]
+    importers: TransactionImporter[] = [
+      new EvoAccountExcelImporter(),
+      new EvoVisaXlsImporter(),
+      new EvoAccountPdfImporter()
+    ]
   ) {
     this.accounts = new AccountRepository(database)
     this.importService = new ImportService(database)
@@ -211,7 +216,10 @@ export function assertAccountSourceCompatibility(
   account: Account,
   sourceKind: ImportSourceKind
 ): void {
-  if (account.kind === 'current' && sourceKind === 'evo_account_pdf') {
+  if (
+    account.kind === 'current' &&
+    (sourceKind === 'evo_account_pdf' || sourceKind === 'evo_account_excel')
+  ) {
     return
   }
 

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import Database from 'better-sqlite3'
 import { mkdirSync, mkdtempSync, rmSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
@@ -89,6 +90,7 @@ describe('financial core migrations', () => {
     const path = tempDatabasePath(directory)
     const phase6 = createDatabase({ path, useWal: false })
 
+    phase6.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(8)
     phase6.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(6)
     phase6.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(7)
     phase6.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(5)
@@ -122,6 +124,178 @@ describe('financial core migrations', () => {
           .get() as { count: number }
       ).count
     ).toBe(1)
+    upgraded.close()
+  })
+
+  it('upgrades a synthetic Phase 7 database to allow account Excel imports', () => {
+    const path = tempDatabasePath(directory)
+    const phase7 = new Database(path)
+
+    phase7.pragma('foreign_keys = ON')
+    phase7.exec(`
+      CREATE TABLE schema_migrations (
+        version INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        applied_at TEXT NOT NULL
+      );
+
+      CREATE TABLE accounts (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+        kind TEXT NOT NULL CHECK (kind IN ('current', 'credit_card', 'cash', 'other')),
+        institution TEXT,
+        currency TEXT NOT NULL DEFAULT 'EUR' CHECK (length(currency) = 3),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE import_batches (
+        id TEXT PRIMARY KEY,
+        account_id TEXT NOT NULL,
+        source_kind TEXT NOT NULL CHECK (
+          source_kind IN ('evo_visa_xls', 'evo_account_pdf', 'unknown')
+        ),
+        source_file_name TEXT NOT NULL CHECK (length(trim(source_file_name)) > 0),
+        file_sha256 TEXT NOT NULL CHECK (length(file_sha256) = 64),
+        statement_period_start TEXT,
+        statement_period_end TEXT,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'committed', 'rolled_back', 'failed')),
+        transaction_count INTEGER NOT NULL DEFAULT 0 CHECK (transaction_count >= 0),
+        created_at TEXT NOT NULL,
+        committed_at TEXT,
+        rolled_back_at TEXT,
+        FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE RESTRICT
+      );
+
+      CREATE UNIQUE INDEX import_batches_committed_file_hash_idx
+        ON import_batches(account_id, file_sha256)
+        WHERE status = 'committed';
+
+      CREATE INDEX import_batches_account_id_idx ON import_batches(account_id);
+
+      CREATE TABLE transactions (
+        id TEXT PRIMARY KEY,
+        import_batch_id TEXT NOT NULL,
+        account_id TEXT NOT NULL,
+        source_row_index INTEGER NOT NULL CHECK (source_row_index >= 0),
+        transaction_date TEXT NOT NULL,
+        original_description TEXT NOT NULL CHECK (length(trim(original_description)) > 0),
+        amount_cents INTEGER NOT NULL CHECK (amount_cents != 0),
+        currency TEXT NOT NULL DEFAULT 'EUR' CHECK (length(currency) = 3),
+        transaction_type TEXT NOT NULL CHECK (
+          transaction_type IN (
+            'expense',
+            'income',
+            'transfer',
+            'card_settlement',
+            'refund',
+            'fee',
+            'cash_withdrawal',
+            'tax',
+            'unknown'
+          )
+        ),
+        is_pending INTEGER NOT NULL DEFAULT 0 CHECK (is_pending IN (0, 1)),
+        excluded_from_spending INTEGER NOT NULL DEFAULT 0 CHECK (excluded_from_spending IN (0, 1)),
+        review_status TEXT NOT NULL CHECK (review_status IN ('confirmed', 'needs_review')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (import_batch_id) REFERENCES import_batches(id) ON DELETE CASCADE,
+        FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE RESTRICT
+      );
+
+      INSERT INTO schema_migrations (version, name, applied_at)
+      VALUES
+        (1, 'create_financial_core_tables', datetime('now')),
+        (2, 'add_card_settlement_reconciliation_indexes', datetime('now')),
+        (3, 'add_ui_query_indexes', datetime('now')),
+        (4, 'add_categorisation_tables', datetime('now')),
+        (5, 'add_ai_classification_tables', datetime('now')),
+        (6, 'allow_ai_transaction_classifications', datetime('now')),
+        (7, 'add_field_level_classification_sources', datetime('now'));
+
+      INSERT INTO accounts (id, name, kind, currency, created_at, updated_at)
+      VALUES (
+        '22222222-2222-4222-8222-000000000010',
+        'Synthetic current',
+        'current',
+        'EUR',
+        datetime('now'),
+        datetime('now')
+      );
+
+      INSERT INTO import_batches (
+        id, account_id, source_kind, source_file_name, file_sha256, status,
+        transaction_count, created_at, committed_at
+      )
+      VALUES (
+        '22222222-2222-4222-8222-000000000011',
+        '22222222-2222-4222-8222-000000000010',
+        'evo_account_pdf',
+        'synthetic.pdf',
+        '${'e'.repeat(64)}',
+        'committed',
+        1,
+        datetime('now'),
+        datetime('now')
+      );
+
+      INSERT INTO transactions (
+        id, import_batch_id, account_id, source_row_index, transaction_date,
+        original_description, amount_cents, currency, transaction_type,
+        is_pending, excluded_from_spending, review_status, created_at, updated_at
+      )
+      VALUES (
+        '22222222-2222-4222-8222-000000000012',
+        '22222222-2222-4222-8222-000000000011',
+        '22222222-2222-4222-8222-000000000010',
+        0,
+        '2026-06-01',
+        'Synthetic movement',
+        -100,
+        'EUR',
+        'expense',
+        0,
+        0,
+        'confirmed',
+        datetime('now'),
+        datetime('now')
+      );
+    `)
+    phase7.close()
+
+    const upgraded = createDatabase({ path, useWal: false })
+
+    expect(upgraded.schemaVersion).toBe(latestMigrationVersion)
+    expect(upgraded.connection.pragma('foreign_key_check')).toEqual([])
+    expect(() =>
+      upgraded.connection
+        .prepare(
+          `
+            INSERT INTO import_batches (
+              id, account_id, source_kind, source_file_name, file_sha256, status,
+              transaction_count, created_at, committed_at
+            )
+            VALUES (
+              '22222222-2222-4222-8222-000000000013',
+              '22222222-2222-4222-8222-000000000010',
+              'evo_account_excel',
+              'synthetic.xlsx',
+              @hash,
+              'committed',
+              0,
+              datetime('now'),
+              datetime('now')
+            )
+          `
+        )
+        .run({ hash: 'f'.repeat(64) })
+    ).not.toThrow()
+    expect(
+      upgraded.connection
+        .prepare('SELECT COUNT(*) AS count FROM transactions WHERE import_batch_id = ?')
+        .get('22222222-2222-4222-8222-000000000011')
+    ).toMatchObject({ count: 1 })
     upgraded.close()
   })
 

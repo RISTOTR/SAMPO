@@ -2,7 +2,12 @@ import { z } from 'zod'
 
 export const accountKindDtoSchema = z.enum(['current', 'credit_card', 'cash', 'other'])
 export const creatableAccountKindDtoSchema = z.enum(['current', 'credit_card'])
-export const importSourceKindDtoSchema = z.enum(['evo_visa_xls', 'evo_account_pdf', 'unknown'])
+export const importSourceKindDtoSchema = z.enum([
+  'evo_visa_xls',
+  'evo_account_pdf',
+  'evo_account_excel',
+  'unknown'
+])
 export const importStatusDtoSchema = z.enum(['pending', 'committed', 'rolled_back', 'failed'])
 export const transactionTypeDtoSchema = z.enum([
   'expense',
