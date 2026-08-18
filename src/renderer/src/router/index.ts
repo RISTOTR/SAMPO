@@ -11,7 +11,7 @@ export const router = createRouter({
     { path: '/', name: 'overview', component: OverviewView },
     { path: '/imports', name: 'imports', component: ImportsView },
     { path: '/transactions', name: 'transactions', component: TransactionsView },
-    { path: '/subscriptions', name: 'subscriptions', component: SubscriptionsView },
+    { path: '/recurring', name: 'recurring', component: SubscriptionsView },
     { path: '/settings', name: 'settings', component: SettingsView }
   ]
 })

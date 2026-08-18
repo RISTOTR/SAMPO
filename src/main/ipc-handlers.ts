@@ -140,6 +140,17 @@ export function registerApplicationIpcHandlers(
   handle(IPC_CHANNELS.aiRejectSuggestion, isTrustedSender, (input) =>
     workflow.rejectAiSuggestion(input)
   )
+  handle(IPC_CHANNELS.recurringScan, isTrustedSender, () => workflow.scanRecurringSeries())
+  handle(IPC_CHANNELS.recurringList, isTrustedSender, () => workflow.listRecurringSeries())
+  handle(IPC_CHANNELS.recurringGet, isTrustedSender, (seriesId) =>
+    workflow.getRecurringSeries(z.string().uuid().parse(seriesId))
+  )
+  handle(IPC_CHANNELS.recurringConfirm, isTrustedSender, (input) =>
+    workflow.confirmRecurringSeries(input)
+  )
+  handle(IPC_CHANNELS.recurringReject, isTrustedSender, (input) =>
+    workflow.rejectRecurringSeries(input)
+  )
 }
 
 function handle<T>(

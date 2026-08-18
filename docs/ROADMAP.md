@@ -1,6 +1,6 @@
 # Roadmap
 
-Current milestone: Phase 7 - Smart AI Categorisation complete.
+Current milestone: Phase 8 - Recurring Payments and Subscriptions in progress.
 
 ## Phase 0 - Foundation
 
@@ -81,8 +81,10 @@ Current milestone: Phase 7 - Smart AI Categorisation complete.
 
 ## Phase 8 - Subscriptions and Analysis
 
-- Recurring-series detection
-- Subscription review
+- Deterministic recurring-series detection - complete
+- Subscription, recurring bill, recurring payment review - complete
+- Candidate rejection persistence - complete
+- Recurring series detail with linked transactions - complete
 - Monthly comparisons
 - Weekday analysis
 - Merchant and location analysis

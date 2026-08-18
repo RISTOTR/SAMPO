@@ -1,6 +1,6 @@
 # Data Model
 
-Current milestone: Phase 7 smart AI categorisation over the Phase 1-6 import, reconciliation, and deterministic categorisation foundation. The database schema may still evolve through forward-only migrations before external-user use.
+Current milestone: Phase 8 recurring payments over the Phase 1-7 import, reconciliation, deterministic categorisation, and AI suggestion foundation. The database schema may still evolve through forward-only migrations before external-user use.
 
 ## Locked Conventions
 
@@ -44,13 +44,16 @@ Overlapping statement files are handled without a permanent transaction identity
 
 `ai_suggestion_sources` stores HTTPS sources attached to web-derived AI suggestions.
 
+`recurring_series` stores deterministic recurring-payment candidates and user decisions. Each row has a stable `series_key`, matching basis (`merchant` or exact `description`), optional merchant, canonical display description, recurrence type (`subscription`, `recurring_bill`, `recurring_payment`, `unknown`, or `not_recurring`), cadence (`monthly`, `quarterly`, `yearly`, or `irregular`), status (`candidate`, `confirmed`, or `rejected`), median typical amount, amount range, amount variability in basis points, first/latest occurrence dates, occurrence count, transparent confidence, and timestamps.
+
+`recurring_series_transactions` links a recurring series to the imported transactions that explain the candidate. The links are recalculated on scan and are deleted by cascade if either the series or linked transaction is deleted.
+
 `schema_migrations` records applied forward-only database migrations.
 
 ## Planned Entities
 
 The following planned entities are not implemented:
 
-- `RecurringSeries`
 - `MonthlyReport`
 
 `TransactionLink` stores Phase 4 Visa settlement reconciliation links. Historical reconciliation audit beyond link creation timestamps remains planned.
@@ -149,3 +152,13 @@ Manual classifications are authoritative. Rule application fills unclassified or
 AI suggestions are not imported transaction facts. They are review records with confidence metadata and do not affect reports until explicitly accepted. Accepting a suggestion may create classification enrichment with source `ai` and may create or reuse a canonical merchant when the user accepts the merchant suggestion. Merchant aliases remain explicit deterministic enrichment and are not created as a side effect of AI suggestion acceptance. Existing confirmed classifications remain authoritative until the user explicitly accepts a differing AI field.
 
 Suggestion review is component-level. The review UI shows only unresolved suggested fields or fields where AI differs from the current confirmed classification. If a suggestion contains both merchant and category, accepting only one field leaves the suggestion pending for the other differing field until it is accepted, rejected, or superseded. Confirmed transaction classification fields are authoritative over pending AI drafts.
+
+## Recurring-Series Detection
+
+Recurring-series detection reads imported transaction facts and confirmed classification enrichment but does not modify transactions or classifications. Merchant-based grouping uses confirmed canonical merchant IDs; otherwise the scanner falls back to exact normalised descriptions. It intentionally avoids fuzzy matching and ignores pending AI suggestions.
+
+The scanner currently focuses on outgoing committed transactions and excludes refunds, card settlements, income, cash withdrawals, and pending rows from normal recurring expense detection. Cadence is based on interval ranges rather than exact month-day equality: monthly 25-35 days, quarterly 75-105 days, yearly 330-400 days. Two occurrences are weak evidence only; three or more observations can produce stronger candidates when cadence is regular.
+
+Typical amount is the median absolute outgoing amount. Amount variability is stored separately from cadence confidence as `(max - min) / median` in basis points. This allows fixed subscriptions and variable recurring bills to be represented without forcing utility bills to look like fixed-price subscriptions.
+
+User decisions are authoritative for recurring semantics. Candidates start with `recurrence_type = unknown`; users can confirm them as subscriptions, recurring bills, recurring payments, or reject them as not recurring. Repeated scans update the same `series_key` and associated transactions rather than creating duplicate records. Rejected records remain rejected on immediate rediscovery.

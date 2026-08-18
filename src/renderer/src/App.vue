@@ -9,9 +9,9 @@ const route = useRoute()
 
 const navigationItems = [
   { path: '/', label: 'Overview' },
-  { path: '/imports', label: 'Imports' },
   { path: '/transactions', label: 'Transactions' },
-  { path: '/subscriptions', label: 'Subscriptions' },
+  { path: '/recurring', label: 'Recurring' },
+  { path: '/imports', label: 'Imports' },
   { path: '/settings', label: 'Settings' }
 ]
 

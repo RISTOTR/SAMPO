@@ -90,6 +90,18 @@ describe('financial core migrations', () => {
 
     expect(database.schemaVersion).toBe(latestMigrationVersion)
     expect(getSchemaVersion(database.connection)).toBe(latestMigrationVersion)
+    expect(
+      database.connection
+        .prepare(
+          `
+            SELECT COUNT(*) AS count
+            FROM sqlite_master
+            WHERE type = 'table'
+              AND name IN ('recurring_series', 'recurring_series_transactions')
+          `
+        )
+        .get()
+    ).toMatchObject({ count: 2 })
     database.close()
   })
 
@@ -97,6 +109,7 @@ describe('financial core migrations', () => {
     const path = tempDatabasePath(directory)
     const phase6 = createDatabase({ path, useWal: false })
 
+    phase6.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(10)
     phase6.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(9)
     phase6.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(8)
     phase6.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(6)
@@ -111,6 +124,8 @@ describe('financial core migrations', () => {
     phase6.connection.prepare('DROP TABLE ai_suggestion_sources').run()
     phase6.connection.prepare('DROP TABLE ai_classification_suggestions').run()
     phase6.connection.prepare('DROP TABLE ai_settings').run()
+    phase6.connection.prepare('DROP TABLE recurring_series_transactions').run()
+    phase6.connection.prepare('DROP TABLE recurring_series').run()
     expect(getSchemaVersion(phase6.connection)).toBe(4)
     phase6.close()
 

@@ -18,6 +18,7 @@ Bank exports are fragmented: Visa purchases, pending movements, card settlements
 - Visible reconciliation between card purchases and card settlement payments
 - Deterministic merchant and category enrichment for imported transactions
 - Optional AI merchant and category suggestions for explicit review
+- Deterministic recurring-payment candidates for user confirmation
 - Better location, date, and weekday analysis later
 - Optional explanations later, without treating AI as authoritative
 
@@ -36,6 +37,7 @@ Bank exports are fragmented: Visa purchases, pending movements, card settlements
 - Deterministic reporting and reconciliation
 - Manual review of uncertain import and reconciliation results
 - Optional descriptor-only AI categorisation suggestions
+- Deterministic recurring-series scanning and confirmation
 
 ## Explicit Exclusions From V1
 
@@ -48,9 +50,11 @@ Bank exports are fragmented: Visa purchases, pending movements, card settlements
 - Mac App Store distribution
 - Multiple banks
 - AI-generated financial calculations
+- AI-generated recurring-series decisions
 
 ## Future Possibilities
 
 - Natural-language questions over local summaries
+- Recurring spend dashboards and upcoming-payment forecasting
 - Signing and notarisation
 - External-user testing
