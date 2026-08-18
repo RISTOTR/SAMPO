@@ -34,6 +34,15 @@ describe('transactions manual AI classify contract', () => {
     expect(transactionsView).toContain('editorTransactionId.value = null')
   })
 
+  it('unticks the edited transaction when the classification editor is saved or closed', () => {
+    expect(transactionsView).toContain('function closeEditor(): void')
+    expect(transactionsView).toContain(
+      'selectedTransactionIds.value = selectedTransactionIds.value.filter'
+    )
+    expect(transactionsView).toContain('@click="closeEditor"')
+    expect(transactionsView).toContain('closeEditor()')
+  })
+
   it('keeps empty, disabled, and missing-key states visible instead of silent', () => {
     expect(aiStore).toContain("message.value = 'No eligible transactions selected.'")
     expect(aiStore).toContain("error.value = 'Enable AI categorisation in Settings first.'")
@@ -119,9 +128,13 @@ describe('transactions manual AI classify contract', () => {
     expect(transactionsView).toContain('refreshMatchingSummary()')
     expect(transactionsView).toContain('matchingSummary.otherMatchingTransactionCount')
     expect(transactionsView).toContain('have this exact description')
-    expect(transactionsView).toContain('They will already be detected automatically after saving.')
-    expect(transactionsView).toContain('Save this transaction')
-    expect(transactionsView).toContain('Save + confirm')
+    expect(transactionsView).toContain(
+      'Choose whether to save only this transaction or also confirm similar transactions.'
+    )
+    expect(transactionsView).toContain('Save 1 transaction')
+    expect(transactionsView).toContain(
+      'Save {{ classification.matchingSummary.eligibleCount }} similar'
+    )
     expect(transactionsView).toContain('saveManualAndConfirmMatches')
     expect(applicationWorkflow).toContain('matchingClassificationSummary')
     expect(applicationWorkflow).toContain('saveManualClassificationAndConfirmMatches')

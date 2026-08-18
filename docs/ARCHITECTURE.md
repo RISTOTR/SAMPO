@@ -50,7 +50,7 @@ Migrations are explicit, ordered, numeric, and forward-only. Applied migrations 
 
 Import adapters are separate modules from the normalised transaction model. Each adapter parses one source format, validates extracted data, reports confidence and errors, and produces a prepared import for the Phase 1 import service.
 
-The prepared-import service validates input, rejects duplicate committed file hashes for the same account, filters overlapping rows by account-scoped stable-fact fingerprint occurrence counts, creates a pending batch, inserts all new transactions in one SQLite transaction, and commits the batch atomically. Failed imports leave no partial transactions.
+The prepared-import service validates input, rejects duplicate committed file hashes for the same account, filters overlapping rows by account-scoped stable-fact fingerprint occurrence counts, creates a pending batch, inserts all new transactions in one SQLite transaction, and commits the batch atomically. Startup migrations repair historical committed duplicate fingerprints by keeping the earliest committed occurrence and recalculating import-batch transaction counts. Failed imports leave no partial transactions.
 
 Rollback is a deliberate operation for committed batches. It deletes imported transactions and related transaction links in one transaction, preserves the import-batch record, sets status to `rolled_back`, records `rolled_back_at`, and resets `transaction_count` to zero.
 

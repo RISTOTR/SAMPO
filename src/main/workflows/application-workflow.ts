@@ -69,12 +69,7 @@ import {
   type TransactionListQueryDto,
   type TransactionPageDto
 } from '../../shared/dtos'
-import type {
-  AiClassificationSuggestion,
-  ImportBatch,
-  Transaction,
-  TransactionClassification
-} from '../domain/schemas'
+import type { AiClassificationSuggestion, ImportBatch, Transaction } from '../domain/schemas'
 import { aiModelConfig } from '../ai/config'
 import { isDevelopmentRuntime, probeOpenAiModelsEndpoint } from '../ai/diagnostics'
 import { AiNotConfiguredError } from '../ai/errors'
@@ -435,6 +430,9 @@ export class ApplicationWorkflow {
       const merchantId =
         parsed.merchantId ??
         (parsed.merchantName ? this.findOrCreateMerchant(parsed.merchantName) : undefined)
+      const matching = this.matchingTransactionsFor(parsed.transactionId).filter(
+        (transaction) => transaction.id !== parsed.transactionId
+      )
 
       this.classification.saveManual({
         transactionId: parsed.transactionId,
@@ -445,28 +443,18 @@ export class ApplicationWorkflow {
         necessity: parsed.necessity
       })
       this.learnExactMerchantAliasFromManualClassification(parsed.transactionId, merchantId)
-
-      const matching = this.matchingTransactionsFor(parsed.transactionId).filter(
-        (transaction) => transaction.id !== parsed.transactionId
-      )
       let confirmedMatchingTransactionCount = 0
 
       for (const transaction of matching) {
-        const existing = this.classifications.findByTransactionId(transaction.id)
-        const merchantApplies = canApplyMerchant(existing, merchantId)
-        const categoryApplies = canApplyCategory(existing, parsed.categoryId)
-
-        if (!merchantApplies && !categoryApplies) continue
-
         this.classifications.save({
           transactionId: transaction.id,
-          merchantId: merchantApplies ? merchantId : existing?.merchantId,
-          merchantSource: merchantApplies ? 'manual' : existing?.merchantSource,
-          categoryId: categoryApplies ? parsed.categoryId : existing?.categoryId,
-          categorySource: categoryApplies ? 'manual' : existing?.categorySource,
-          usageType: existing?.usageType ?? 'unspecified',
-          costBehaviour: existing?.costBehaviour ?? 'unspecified',
-          necessity: existing?.necessity ?? 'unspecified',
+          merchantId,
+          merchantSource: merchantId ? 'manual' : undefined,
+          categoryId: parsed.categoryId,
+          categorySource: parsed.categoryId ? 'manual' : undefined,
+          usageType: parsed.usageType,
+          costBehaviour: parsed.costBehaviour,
+          necessity: parsed.necessity,
           classificationSource: 'manual',
           classificationStatus: 'confirmed',
           appliedRuleId: undefined
@@ -707,7 +695,6 @@ export class ApplicationWorkflow {
   }): MatchingClassificationSummaryDto {
     const matching = this.matchingTransactionsFor(input.transactionId)
     const otherMatching = matching.filter((transaction) => transaction.id !== input.transactionId)
-    let eligibleCount = 0
     let manualMerchantPreservedCount = 0
     let manualCategoryPreservedCount = 0
 
@@ -719,19 +706,13 @@ export class ApplicationWorkflow {
       if (input.categoryId && existing?.categoryId && existing.categorySource === 'manual') {
         manualCategoryPreservedCount += 1
       }
-      if (
-        canApplyMerchant(existing, input.merchantId) ||
-        canApplyCategory(existing, input.categoryId)
-      ) {
-        eligibleCount += 1
-      }
     }
 
     return matchingClassificationSummaryDtoSchema.parse({
       transactionId: input.transactionId,
       totalMatchingTransactionCount: matching.length,
       otherMatchingTransactionCount: otherMatching.length,
-      eligibleCount,
+      eligibleCount: otherMatching.length,
       manualMerchantPreservedCount,
       manualCategoryPreservedCount
     })
@@ -871,22 +852,6 @@ function aiAcceptanceMode(input: { acceptCategory: boolean; acceptMerchant: bool
   if (input.acceptCategory) return 'category'
   if (input.acceptMerchant) return 'merchant'
   return 'none'
-}
-
-function canApplyMerchant(
-  existing: TransactionClassification | undefined,
-  merchantId: string | undefined
-): boolean {
-  if (!merchantId) return false
-  return !(existing?.merchantId && existing.merchantSource === 'manual')
-}
-
-function canApplyCategory(
-  existing: TransactionClassification | undefined,
-  categoryId: string | undefined
-): boolean {
-  if (!categoryId) return false
-  return !(existing?.categoryId && existing.categorySource === 'manual')
 }
 
 function sameMerchantName(left: string | undefined, right: string | undefined): boolean {

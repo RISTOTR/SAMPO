@@ -97,6 +97,7 @@ describe('financial core migrations', () => {
     const path = tempDatabasePath(directory)
     const phase6 = createDatabase({ path, useWal: false })
 
+    phase6.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(9)
     phase6.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(8)
     phase6.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(6)
     phase6.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(7)
@@ -303,6 +304,150 @@ describe('financial core migrations', () => {
         .prepare('SELECT COUNT(*) AS count FROM transactions WHERE import_batch_id = ?')
         .get('22222222-2222-4222-8222-000000000011')
     ).toMatchObject({ count: 1 })
+    upgraded.close()
+  })
+
+  it('repairs committed duplicate transaction fingerprints from older imports', () => {
+    const path = tempDatabasePath(directory)
+    const database = createDatabase({ path, useWal: false })
+
+    database.connection.exec(`
+      INSERT INTO accounts (id, name, kind, currency, created_at, updated_at)
+      VALUES (
+        '22222222-2222-4222-8222-000000000020',
+        'Synthetic current',
+        'current',
+        'EUR',
+        '2026-08-01T00:00:00.000Z',
+        '2026-08-01T00:00:00.000Z'
+      );
+
+      INSERT INTO import_batches (
+        id, account_id, source_kind, source_file_name, file_sha256, status,
+        transaction_count, created_at, committed_at
+      )
+      VALUES
+        (
+          '22222222-2222-4222-8222-000000000021',
+          '22222222-2222-4222-8222-000000000020',
+          'evo_account_pdf',
+          'synthetic.pdf',
+          '${'1'.repeat(64)}',
+          'committed',
+          1,
+          '2026-08-01T00:00:00.000Z',
+          '2026-08-01T00:00:00.000Z'
+        ),
+        (
+          '22222222-2222-4222-8222-000000000022',
+          '22222222-2222-4222-8222-000000000020',
+          'evo_account_excel',
+          'synthetic.xlsx',
+          '${'2'.repeat(64)}',
+          'committed',
+          1,
+          '2026-08-02T00:00:00.000Z',
+          '2026-08-02T00:00:00.000Z'
+        );
+
+      INSERT INTO transactions (
+        id, import_batch_id, account_id, source_row_index, transaction_date,
+        value_date, original_description, amount_cents, currency, transaction_type,
+        is_pending, excluded_from_spending, review_status, created_at, updated_at
+      )
+      VALUES
+        (
+          '22222222-2222-4222-8222-000000000023',
+          '22222222-2222-4222-8222-000000000021',
+          '22222222-2222-4222-8222-000000000020',
+          11,
+          '2026-07-20',
+          '2026-07-20',
+          'Synthetic   incoming transfer',
+          72000,
+          'EUR',
+          'income',
+          0,
+          0,
+          'confirmed',
+          '2026-08-01T00:00:01.000Z',
+          '2026-08-01T00:00:01.000Z'
+        ),
+        (
+          '22222222-2222-4222-8222-000000000024',
+          '22222222-2222-4222-8222-000000000022',
+          '22222222-2222-4222-8222-000000000020',
+          11,
+          '2026-07-20',
+          '2026-07-20',
+          ' synthetic incoming transfer ',
+          72000,
+          'EUR',
+          'income',
+          0,
+          0,
+          'confirmed',
+          '2026-08-02T00:00:01.000Z',
+          '2026-08-02T00:00:01.000Z'
+        );
+
+      INSERT INTO transaction_classifications (
+        transaction_id, classification_source, classification_status, created_at, updated_at
+      )
+      VALUES (
+        '22222222-2222-4222-8222-000000000024',
+        'manual',
+        'confirmed',
+        '2026-08-02T00:00:02.000Z',
+        '2026-08-02T00:00:02.000Z'
+      );
+    `)
+    database.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(9)
+    database.close()
+
+    const upgraded = createDatabase({ path, useWal: false })
+
+    expect(
+      upgraded.connection
+        .prepare(
+          `
+            SELECT COUNT(*) AS count
+            FROM transactions
+            WHERE account_id = '22222222-2222-4222-8222-000000000020'
+          `
+        )
+        .get()
+    ).toMatchObject({ count: 1 })
+    expect(
+      upgraded.connection
+        .prepare(
+          `
+            SELECT COUNT(*) AS count
+            FROM transactions
+            WHERE id = '22222222-2222-4222-8222-000000000023'
+          `
+        )
+        .get()
+    ).toMatchObject({ count: 1 })
+    expect(
+      upgraded.connection
+        .prepare(
+          `
+            SELECT id, transaction_count AS transactionCount
+            FROM import_batches
+            WHERE id IN (
+              '22222222-2222-4222-8222-000000000021',
+              '22222222-2222-4222-8222-000000000022'
+            )
+            ORDER BY created_at ASC
+          `
+        )
+        .all()
+    ).toEqual([
+      { id: '22222222-2222-4222-8222-000000000021', transactionCount: 1 },
+      { id: '22222222-2222-4222-8222-000000000022', transactionCount: 0 }
+    ])
+    expect(getSchemaVersion(upgraded.connection)).toBe(latestMigrationVersion)
     upgraded.close()
   })
 
@@ -564,6 +709,46 @@ describe('import service and transaction repository', () => {
         {
           sourceKind: 'evo_visa_xls',
           fileSha256: '2'.repeat(64)
+        }
+      )
+    )
+
+    expect(first.transactions).toHaveLength(1)
+    expect(overlap.transactions).toHaveLength(0)
+    expect(overlap.skippedDuplicateTransactionCount).toBe(1)
+    expect(overlap.batch.transactionCount).toBe(0)
+    expect(transactions.listForAccount(account.id)).toHaveLength(1)
+  })
+
+  it('skips account Excel rows already imported from account PDF with the same stable facts', () => {
+    const equivalent = {
+      sourceRowIndex: 11,
+      transactionDate: '2026-07-20',
+      valueDate: '2026-07-20',
+      originalDescription: 'Synthetic incoming transfer',
+      amountCents: 72000,
+      transactionType: 'income' as const
+    }
+    const first = service.commitPreparedImport(
+      makePreparedImport(account.id, [makeTransaction(account.id, equivalent)], {
+        sourceKind: 'evo_account_pdf',
+        sourceFileName: 'synthetic.pdf',
+        fileSha256: '5'.repeat(64)
+      })
+    )
+    const overlap = service.commitPreparedImport(
+      makePreparedImport(
+        account.id,
+        [
+          makeTransaction(account.id, {
+            ...equivalent,
+            originalDescription: ' synthetic   incoming transfer '
+          })
+        ],
+        {
+          sourceKind: 'evo_account_excel',
+          sourceFileName: 'synthetic.xlsx',
+          fileSha256: '6'.repeat(64)
         }
       )
     )

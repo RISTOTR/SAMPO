@@ -1128,7 +1128,7 @@ describe('smart classification service', () => {
     expect(summary.eligibleCount).toBe(1)
   })
 
-  it('confirms matching exact-description transactions while preserving manual fields', () => {
+  it('confirms matching exact-description transactions through explicit similar save', () => {
     const { transactionIds, categoryId } = seedTransactions(connection, [
       'Synthetic Confirm Match',
       'Synthetic Confirm Match',
@@ -1173,7 +1173,7 @@ describe('smart classification service', () => {
       categorySource: 'manual'
     })
     expect(classifications.findByTransactionId(transactionIds[1])).toMatchObject({
-      merchantId: preservedMerchant.id,
+      merchantId: selectedMerchant.id,
       merchantSource: 'manual',
       categoryId,
       categorySource: 'manual'
@@ -1181,10 +1181,75 @@ describe('smart classification service', () => {
     expect(classifications.findByTransactionId(transactionIds[2])).toMatchObject({
       merchantId: selectedMerchant.id,
       merchantSource: 'manual',
-      categoryId: otherCategoryId,
+      categoryId,
       categorySource: 'manual'
     })
     expect(classifications.findByTransactionId(transactionIds[3])).toBeUndefined()
+  })
+
+  it('overwrites exact-description rows when similar save is explicit', () => {
+    const { transactionIds, categoryId } = seedTransactions(connection, [
+      'Synthetic Preserved Similar',
+      'Synthetic Preserved Similar',
+      'Synthetic Preserved Similar'
+    ])
+    const merchants = new MerchantRepository(connection)
+    const selectedMerchant = merchants.create({ name: 'Synthetic Similar Merchant' })
+    const preservedMerchant = merchants.create({ name: 'Synthetic Preserved Similar Merchant' })
+    const otherCategoryId = connection
+      .prepare("SELECT id FROM categories WHERE key = 'transport.public'")
+      .pluck()
+      .get() as string
+    const classifications = new TransactionClassificationRepository(connection)
+
+    for (const transactionId of transactionIds.slice(1)) {
+      classifications.save({
+        transactionId,
+        merchantId: preservedMerchant.id,
+        merchantSource: 'manual',
+        categoryId: otherCategoryId,
+        categorySource: 'manual',
+        usageType: 'business',
+        costBehaviour: 'fixed',
+        necessity: 'essential',
+        classificationSource: 'manual',
+        classificationStatus: 'confirmed'
+      })
+    }
+
+    const workflow = createWorkflow(connection)
+    const summary = workflow.matchingClassificationSummary({
+      transactionId: transactionIds[0],
+      merchantId: selectedMerchant.id,
+      categoryId
+    })
+
+    expect(summary.otherMatchingTransactionCount).toBe(2)
+    expect(summary.eligibleCount).toBe(2)
+
+    const result = workflow.saveManualClassificationAndConfirmMatches({
+      transactionId: transactionIds[0],
+      merchantId: selectedMerchant.id,
+      categoryId,
+      usageType: 'personal',
+      costBehaviour: 'variable',
+      necessity: 'discretionary'
+    })
+
+    expect(result.confirmedMatchingTransactionCount).toBe(2)
+    for (const transactionId of transactionIds.slice(1)) {
+      expect(classifications.findByTransactionId(transactionId)).toMatchObject({
+        merchantId: selectedMerchant.id,
+        merchantSource: 'manual',
+        categoryId,
+        categorySource: 'manual',
+        usageType: 'personal',
+        costBehaviour: 'variable',
+        necessity: 'discretionary',
+        classificationSource: 'manual',
+        classificationStatus: 'confirmed'
+      })
+    }
   })
 
   it('rolls back save plus matching confirmation when the current save is invalid', () => {

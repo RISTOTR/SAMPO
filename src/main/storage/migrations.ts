@@ -1,5 +1,6 @@
 import type { Database } from 'better-sqlite3'
 import { MigrationApplicationError, MigrationVersionIncompatibilityError } from '../domain/errors'
+import { normaliseMatchText } from '../categorisation/normalisation'
 
 export type Migration = {
   version: number
@@ -494,8 +495,88 @@ export const migrations: Migration[] = [
         database.pragma('legacy_alter_table = OFF')
       }
     }
+  },
+  {
+    version: 9,
+    name: 'remove_duplicate_committed_transaction_fingerprints',
+    up: (database) => {
+      removeDuplicateCommittedTransactionFingerprints(database)
+      refreshImportBatchTransactionCounts(database)
+    }
   }
 ]
+
+function removeDuplicateCommittedTransactionFingerprints(database: Database): void {
+  const rows = database
+    .prepare(
+      `
+        SELECT
+          transactions.id,
+          transactions.account_id AS accountId,
+          transactions.transaction_date AS transactionDate,
+          transactions.original_description AS originalDescription,
+          transactions.amount_cents AS amountCents,
+          transactions.currency,
+          transactions.source_row_index AS sourceRowIndex,
+          transactions.created_at AS transactionCreatedAt,
+          batches.created_at AS batchCreatedAt
+        FROM transactions transactions
+        JOIN import_batches batches ON batches.id = transactions.import_batch_id
+        WHERE batches.status = 'committed'
+        ORDER BY
+          batches.created_at ASC,
+          transactions.created_at ASC,
+          transactions.source_row_index ASC,
+          transactions.id ASC
+      `
+    )
+    .all() as Array<{
+    id: string
+    accountId: string
+    transactionDate: string
+    originalDescription: string
+    amountCents: number
+    currency: string
+    sourceRowIndex: number
+    transactionCreatedAt: string
+    batchCreatedAt: string
+  }>
+  const seen = new Set<string>()
+  const duplicateIds: string[] = []
+
+  for (const row of rows) {
+    const fingerprint = [
+      row.accountId,
+      row.transactionDate,
+      normaliseMatchText(row.originalDescription),
+      String(row.amountCents),
+      row.currency.toUpperCase()
+    ].join('\u001f')
+
+    if (seen.has(fingerprint)) {
+      duplicateIds.push(row.id)
+      continue
+    }
+
+    seen.add(fingerprint)
+  }
+
+  const deleteTransaction = database.prepare('DELETE FROM transactions WHERE id = ?')
+  for (const id of duplicateIds) {
+    deleteTransaction.run(id)
+  }
+}
+
+function refreshImportBatchTransactionCounts(database: Database): void {
+  database.exec(`
+    UPDATE import_batches
+    SET transaction_count = (
+      SELECT COUNT(*)
+      FROM transactions
+      WHERE transactions.import_batch_id = import_batches.id
+    );
+  `)
+}
 
 function seedCategories(database: Database): void {
   const now = new Date().toISOString()

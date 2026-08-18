@@ -341,8 +341,7 @@ async function saveManual(): Promise<void> {
   await classification.saveManual(editorClassificationInput())
   if (classification.error) return
 
-  editorTransactionId.value = null
-  newMerchantName.value = ''
+  closeEditor()
   await classification.loadReference()
   await loadTransactions()
   await ai.loadSuggestions(currentSuggestionListInput())
@@ -353,11 +352,19 @@ async function saveManualAndConfirmMatches(): Promise<void> {
   const result = await classification.saveManualAndConfirmMatches(editorClassificationInput())
   if (classification.error || !result) return
 
-  editorTransactionId.value = null
-  newMerchantName.value = ''
+  closeEditor()
   await classification.loadReference()
   await loadTransactions()
   await ai.loadSuggestions(currentSuggestionListInput())
+}
+
+function closeEditor(): void {
+  const transactionId = editorTransactionId.value
+  editorTransactionId.value = null
+  newMerchantName.value = ''
+
+  if (!transactionId) return
+  selectedTransactionIds.value = selectedTransactionIds.value.filter((id) => id !== transactionId)
 }
 
 async function refreshMatchingSummary(): Promise<void> {
@@ -1104,25 +1111,19 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
             {{ classification.matchingSummary.otherMatchingTransactionCount }} other transactions
             have this exact description.
           </p>
-          <p>They will already be detected automatically after saving.</p>
+          <p>Choose whether to save only this transaction or also confirm similar transactions.</p>
         </div>
-        <button type="submit" :disabled="classification.submitting">Save this transaction</button>
+        <button type="submit" :disabled="classification.submitting">Save 1 transaction</button>
         <button
           v-if="classification.matchingSummary && classification.matchingSummary.eligibleCount > 0"
           type="button"
           :disabled="classification.submitting"
           @click="saveManualAndConfirmMatches"
         >
-          Save + confirm {{ classification.matchingSummary.eligibleCount }}
-          {{
-            classification.matchingSummary.eligibleCount === 1
-              ? 'matching transaction'
-              : 'matching transactions'
-          }}
+          Save {{ classification.matchingSummary.eligibleCount }} similar
+          {{ classification.matchingSummary.eligibleCount === 1 ? 'transaction' : 'transactions' }}
         </button>
-        <button class="secondary-button" type="button" @click="editorTransactionId = null">
-          Close
-        </button>
+        <button class="secondary-button" type="button" @click="closeEditor">Close</button>
       </form>
     </div>
   </section>
