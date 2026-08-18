@@ -35,5 +35,9 @@ export function sourceLabel(value: string): string {
     return 'Account PDF'
   }
 
+  if (value === 'evo_account_excel') {
+    return 'Account Excel'
+  }
+
   return 'Unknown'
 }

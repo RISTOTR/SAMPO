@@ -52,6 +52,18 @@ describe('transactions manual AI classify contract', () => {
     expect(transactionsView).toContain('delete query.offset')
   })
 
+  it('reloads transactions when search or confirmation filters change', () => {
+    expect(transactionsView).toContain('watch(')
+    expect(transactionsView).toContain('filters.search')
+    expect(transactionsView).toContain('filters.confirmationFilter')
+    expect(transactionsView).toContain('() => scheduleFilterReload()')
+    expect(transactionsView).toContain('setTimeout(() =>')
+    expect(transactionsView).toContain('void applyFilters()')
+    expect(transactionsView).toContain('}, 150)')
+    expect(transactionsView).toContain('filters.offset = 0')
+    expect(transactionsView).toContain('await loadTransactions()')
+  })
+
   it('uses persisted suggestion ids for same-merchant suggestion rows and actions', () => {
     expect(transactionsView).toContain('v-for="suggestion in ai.suggestions"')
     expect(transactionsView).toContain(':key="suggestion.id"')
@@ -70,8 +82,9 @@ describe('transactions manual AI classify contract', () => {
     expect(transactionsView).toContain(':disabled="ai.submitting || !suggestion.canAcceptCategory"')
     expect(transactionsView).toContain(':disabled="ai.submitting || !suggestion.canAcceptMerchant"')
     expect(transactionsView).toContain(
-      '(!suggestion.canAcceptCategory && !suggestion.canAcceptMerchant)'
+      'v-if="suggestion.canAcceptCategory && suggestion.canAcceptMerchant"'
     )
+    expect(transactionsView).toContain('Use both')
     expect(aiStore).toContain('Manual category preserved')
     expect(aiStore).toContain('Manual merchant preserved')
     expect(aiStore).toContain('AI suggestion unchanged.')

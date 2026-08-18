@@ -9,8 +9,11 @@ import {
   type Transaction
 } from '../domain/schemas'
 import { mapTransaction } from './row-mappers'
+import { createTransactionFingerprint } from '../services/transaction-fingerprint'
 
 type TransactionListQuery = {
+  search?: string
+  confirmationFilter?: 'all' | 'needs_confirmation' | 'confirmed'
   accountId?: string
   dateFrom?: string
   dateTo?: string
@@ -184,9 +187,7 @@ export class TransactionRepository {
     const items = this.database
       .prepare(
         `
-          SELECT transactions.* FROM transactions transactions
-          LEFT JOIN transaction_classifications classification
-            ON classification.transaction_id = transactions.id
+          SELECT transactions.* ${fromSql}
           ${whereSql}
           ORDER BY ${orderColumn} ${direction}, transactions.created_at DESC
           LIMIT @limit OFFSET @offset
@@ -222,6 +223,30 @@ export class TransactionRepository {
       )
       .all()
       .map((row) => transactionSchema.parse(mapTransaction(row as never)))
+  }
+
+  countCommittedFingerprintsForAccount(accountId: string): Map<string, number> {
+    const counts = new Map<string, number>()
+    const rows = this.database
+      .prepare(
+        `
+          SELECT transactions.*
+          FROM transactions transactions
+          JOIN import_batches batches ON batches.id = transactions.import_batch_id
+          WHERE transactions.account_id = @accountId
+            AND batches.status = 'committed'
+          ORDER BY transactions.transaction_date ASC, transactions.created_at ASC
+        `
+      )
+      .all({ accountId })
+
+    for (const row of rows) {
+      const transaction = transactionSchema.parse(mapTransaction(row as never))
+      const fingerprint = createTransactionFingerprint(transaction)
+      counts.set(fingerprint, (counts.get(fingerprint) ?? 0) + 1)
+    }
+
+    return counts
   }
 
   insertForImportBatch(input: {
@@ -349,6 +374,32 @@ function buildTransactionListSql(query: TransactionListQuery): {
   const where: string[] = []
   const params: Record<string, string | number> = {}
 
+  if (query.search?.trim()) {
+    where.push(
+      `(lower(transactions.original_description) LIKE @search OR lower(merchant.name) LIKE @search)`
+    )
+    params['search'] = `%${query.search.trim().toLocaleLowerCase('es-ES')}%`
+  }
+
+  if (query.confirmationFilter === 'confirmed') {
+    where.push(`
+      classification.classification_status = 'confirmed'
+      AND classification.merchant_id IS NOT NULL
+      AND classification.category_id IS NOT NULL
+    `)
+  }
+
+  if (query.confirmationFilter === 'needs_confirmation') {
+    where.push(`
+      (
+        classification.transaction_id IS NULL
+        OR classification.classification_status != 'confirmed'
+        OR classification.merchant_id IS NULL
+        OR classification.category_id IS NULL
+      )
+    `)
+  }
+
   if (query.accountId) {
     where.push('transactions.account_id = @accountId')
     params['accountId'] = query.accountId
@@ -422,6 +473,8 @@ function buildTransactionListSql(query: TransactionListQuery): {
       FROM transactions transactions
       LEFT JOIN transaction_classifications classification
         ON classification.transaction_id = transactions.id
+      LEFT JOIN merchants merchant
+        ON merchant.id = classification.merchant_id
     `
   }
 }

@@ -11,6 +11,7 @@ import {
 } from '../../shared/dtos'
 import { UnsupportedImportFormatError } from '../domain/errors'
 import type { Account, ImportSourceKind, PreparedImport } from '../domain/schemas'
+import { EvoAccountExcelImporter } from '../importers/evo-account-excel/evo-account-excel-importer'
 import { EvoAccountPdfImporter } from '../importers/evo-account-pdf/evo-account-pdf-importer'
 import { EvoVisaXlsImporter } from '../importers/evo-visa/evo-visa-xls-importer'
 import type { ImportFileInput, ImportInspection, TransactionImporter } from '../importers/types'
@@ -54,7 +55,11 @@ export class ImportPreviewWorkflow {
   constructor(
     database: Database,
     private readonly dialogAdapter: FileDialogAdapter,
-    importers: TransactionImporter[] = [new EvoVisaXlsImporter(), new EvoAccountPdfImporter()]
+    importers: TransactionImporter[] = [
+      new EvoAccountExcelImporter(),
+      new EvoVisaXlsImporter(),
+      new EvoAccountPdfImporter()
+    ]
   ) {
     this.accounts = new AccountRepository(database)
     this.importService = new ImportService(database)
@@ -82,7 +87,19 @@ export class ImportPreviewWorkflow {
     assertAccountSourceCompatibility(account, importer.sourceKind)
 
     const inspection = await importer.inspect(input)
-    const preparedImport = await importer.prepare(input, { accountId: account.id })
+    const originalPreparedImport = await importer.prepare(input, { accountId: account.id })
+    const duplicatePreview =
+      this.importService.previewPreparedImportDeduplication(originalPreparedImport)
+    const preparedImport = duplicatePreview.preparedImport
+    const inspectionWithDuplicates: ImportInspection = {
+      ...inspection,
+      newTransactionCount: duplicatePreview.newTransactionCount,
+      duplicateTransactionCount: duplicatePreview.duplicateTransactionCount,
+      canImport:
+        inspection.canImport &&
+        duplicatePreview.newTransactionCount > 0 &&
+        duplicatePreview.originalTransactionCount > 0
+    }
     const fileSha256 = await sha256File(filePath)
     const now = new Date()
     const session: InternalPreviewSession = {
@@ -92,7 +109,7 @@ export class ImportPreviewWorkflow {
       sourceFileName: basename(input.originalFileName),
       sourceKind: importer.sourceKind,
       importer,
-      inspection,
+      inspection: inspectionWithDuplicates,
       preparedImport,
       fileSha256,
       createdAt: now.toISOString(),
@@ -211,7 +228,10 @@ export function assertAccountSourceCompatibility(
   account: Account,
   sourceKind: ImportSourceKind
 ): void {
-  if (account.kind === 'current' && sourceKind === 'evo_account_pdf') {
+  if (
+    account.kind === 'current' &&
+    (sourceKind === 'evo_account_pdf' || sourceKind === 'evo_account_excel')
+  ) {
     return
   }
 

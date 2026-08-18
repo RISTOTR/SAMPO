@@ -39,7 +39,8 @@ export type SmartClassifySummary = {
   skippedDeterministicOrManual: number
 }
 
-export type AiSuggestionReviewComponentStatus = 'accepted' | 'preserved_manual' | 'not_suggested'
+export type AiSuggestionReviewComponentStatus =
+  'accepted' | 'preserved_manual' | 'preserved_confirmed' | 'not_suggested'
 
 export type AiSuggestionReviewResult = {
   suggestion: AiClassificationSuggestion
@@ -239,7 +240,12 @@ export class SmartClassificationService {
 
       const existing = this.classifications.findByTransactionId(suggestion.transactionId)
       const category = reviewCategoryStatus(input, suggestion, existing)
-      const merchant = reviewMerchantStatus(input, suggestion, existing)
+      const merchant = reviewMerchantStatus(
+        input,
+        suggestion,
+        existing,
+        this.currentMerchantName(existing)
+      )
       const shouldApplyCategory = category === 'accepted'
       const shouldApplyMerchant = merchant === 'accepted'
       if (
@@ -276,10 +282,10 @@ export class SmartClassificationService {
       }
 
       const reviewedSuggestion =
-        shouldApplyCategory || shouldApplyMerchant
-          ? this.suggestions.mark(suggestion.id, 'accepted')
+        input.acceptCategory || input.acceptMerchant
+          ? this.markSuggestionAfterReview(suggestion.id)
           : suggestion
-      if (shouldApplyCategory || shouldApplyMerchant) {
+      if (reviewedSuggestion.status !== suggestion.status) {
         logReviewDiagnostic('suggestion status updated', { mode })
       }
       return { suggestion: reviewedSuggestion, category, merchant }
@@ -372,6 +378,28 @@ export class SmartClassificationService {
       )
     return existing?.id ?? this.merchants.create({ name }).id
   }
+
+  private markSuggestionAfterReview(suggestionId: string): AiClassificationSuggestion {
+    const suggestion = this.suggestions.findById(suggestionId)
+    const existing = this.classifications.findByTransactionId(suggestion.transactionId)
+    const categoryPending = Boolean(
+      suggestion.suggestedCategoryId && existing?.categoryId !== suggestion.suggestedCategoryId
+    )
+    const merchantPending = Boolean(
+      suggestion.suggestedMerchantName &&
+      !sameMerchantName(this.currentMerchantName(existing), suggestion.suggestedMerchantName)
+    )
+
+    if (!categoryPending && !merchantPending) {
+      return this.suggestions.mark(suggestion.id, 'accepted')
+    }
+
+    return suggestion
+  }
+
+  private currentMerchantName(existing: TransactionClassification | undefined): string | undefined {
+    return existing?.merchantId ? this.merchants.findById(existing.merchantId).name : undefined
+  }
 }
 
 function mergeTargetedWebResult(
@@ -404,18 +432,34 @@ function reviewCategoryStatus(
   existing: TransactionClassification | undefined
 ): AiSuggestionReviewComponentStatus {
   if (!input.acceptCategory || !suggestion.suggestedCategoryId) return 'not_suggested'
-  if (existing?.categoryId && existing.categorySource === 'manual') return 'preserved_manual'
+  if (
+    existing?.categoryId === suggestion.suggestedCategoryId &&
+    existing.classificationStatus === 'confirmed'
+  ) {
+    return existing.categorySource === 'manual' ? 'preserved_manual' : 'preserved_confirmed'
+  }
   return 'accepted'
 }
 
 function reviewMerchantStatus(
   input: { acceptMerchant: boolean },
   suggestion: AiClassificationSuggestion,
-  existing: TransactionClassification | undefined
+  existing: TransactionClassification | undefined,
+  merchantName?: string
 ): AiSuggestionReviewComponentStatus {
   if (!input.acceptMerchant || !suggestion.suggestedMerchantName) return 'not_suggested'
-  if (existing?.merchantId && existing.merchantSource === 'manual') return 'preserved_manual'
+  if (
+    sameMerchantName(merchantName, suggestion.suggestedMerchantName) &&
+    existing?.classificationStatus === 'confirmed'
+  ) {
+    return existing.merchantSource === 'manual' ? 'preserved_manual' : 'preserved_confirmed'
+  }
   return 'accepted'
+}
+
+function sameMerchantName(left: string | undefined, right: string | undefined): boolean {
+  if (!left || !right) return false
+  return normaliseMatchText(left) === normaliseMatchText(right)
 }
 
 function mergedClassificationSource(input: {

@@ -248,9 +248,9 @@ export class VisaSettlementReconciliationService {
       )
     }
 
-    if (settlementBatch.sourceKind !== 'evo_account_pdf') {
+    if (!isAccountImportSource(settlementBatch.sourceKind)) {
       warnings.push(
-        warning('settlement_wrong_source', 'Settlement is not from an account PDF import.', true)
+        warning('settlement_wrong_source', 'Settlement is not from an account import.', true)
       )
     }
 
@@ -418,6 +418,10 @@ function visaTotals(transactions: Transaction[]): {
     earliestDate: dates[0],
     latestDate: dates.at(-1)
   }
+}
+
+function isAccountImportSource(sourceKind: ImportBatch['sourceKind']): boolean {
+  return sourceKind === 'evo_account_pdf' || sourceKind === 'evo_account_excel'
 }
 
 function warning(

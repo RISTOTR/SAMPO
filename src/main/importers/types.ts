@@ -70,6 +70,8 @@ export const importInspectionSchema = z.object({
   detectedFormat: z.string().min(1),
   completedCount: z.number().int().min(0),
   pendingCount: z.number().int().min(0),
+  newTransactionCount: z.number().int().min(0).optional(),
+  duplicateTransactionCount: z.number().int().min(0).optional(),
   invalidRowCount: z.number().int().min(0),
   warningCount: z.number().int().min(0),
   statementPeriodStart: isoDateSchema.optional(),

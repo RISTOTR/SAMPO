@@ -608,15 +608,16 @@ export class ApplicationWorkflow {
         )
       : this.aiSuggestions.listPending()
 
-    return suggestions.map((suggestion) =>
-      aiSuggestionDtoSchema.parse(
+    return suggestions
+      .map((suggestion) =>
         aiSuggestionToDto({
           suggestion,
           categoryPath: this.categoryPath(suggestion.suggestedCategoryId),
           ...this.aiSuggestionActionability(suggestion.transactionId, suggestion)
         })
       )
-    )
+      .filter((suggestion) => suggestion.canAcceptCategory || suggestion.canAcceptMerchant)
+      .map((suggestion) => aiSuggestionDtoSchema.parse(suggestion))
   }
 
   acceptAiSuggestion(input: unknown): AiSuggestionReviewDto {
@@ -824,16 +825,28 @@ export class ApplicationWorkflow {
   private aiSuggestionActionability(
     transactionId: string,
     suggestion: AiClassificationSuggestion
-  ): { canAcceptCategory: boolean; canAcceptMerchant: boolean } {
+  ): {
+    canAcceptCategory: boolean
+    canAcceptMerchant: boolean
+    currentMerchantName?: string
+    currentCategoryPath?: string[]
+  } {
     const classification = this.classifications.findByTransactionId(transactionId)
+    const currentMerchantName = classification?.merchantId
+      ? this.merchants.findById(classification.merchantId).name
+      : undefined
+    const currentCategoryPath = this.categoryPath(classification?.categoryId)
+    const suggestedCategoryPath = this.categoryPath(suggestion.suggestedCategoryId)
     return {
+      currentMerchantName,
+      currentCategoryPath,
       canAcceptCategory: Boolean(
         suggestion.suggestedCategoryId &&
-        !(classification?.categoryId && classification.categorySource === 'manual')
+        !sameCategoryPath(currentCategoryPath, suggestedCategoryPath)
       ),
       canAcceptMerchant: Boolean(
         suggestion.suggestedMerchantName &&
-        !(classification?.merchantId && classification.merchantSource === 'manual')
+        !sameMerchantName(currentMerchantName, suggestion.suggestedMerchantName)
       )
     }
   }
@@ -874,6 +887,16 @@ function canApplyCategory(
 ): boolean {
   if (!categoryId) return false
   return !(existing?.categoryId && existing.categorySource === 'manual')
+}
+
+function sameMerchantName(left: string | undefined, right: string | undefined): boolean {
+  if (!left || !right) return false
+  return normaliseMatchText(left) === normaliseMatchText(right)
+}
+
+function sameCategoryPath(left: string[] | undefined, right: string[] | undefined): boolean {
+  if (!left || !right || left.length !== right.length) return false
+  return left.every((part, index) => normaliseMatchText(part) === normaliseMatchText(right[index]!))
 }
 
 function logAiReviewDiagnostic(label: string, metadata: Record<string, unknown>): void {

@@ -4,6 +4,7 @@ import { MigrationApplicationError, MigrationVersionIncompatibilityError } from 
 export type Migration = {
   version: number
   name: string
+  disableForeignKeys?: boolean
   up: (database: Database) => void
 }
 
@@ -26,7 +27,7 @@ export const migrations: Migration[] = [
         CREATE TABLE import_batches (
           id TEXT PRIMARY KEY,
           account_id TEXT NOT NULL,
-          source_kind TEXT NOT NULL CHECK (source_kind IN ('evo_visa_xls', 'evo_account_pdf', 'unknown')),
+          source_kind TEXT NOT NULL CHECK (source_kind IN ('evo_visa_xls', 'evo_account_pdf', 'evo_account_excel', 'unknown')),
           source_file_name TEXT NOT NULL CHECK (length(trim(source_file_name)) > 0),
           file_sha256 TEXT NOT NULL CHECK (length(file_sha256) = 64),
           statement_period_start TEXT,
@@ -432,6 +433,67 @@ export const migrations: Migration[] = [
             END;
       `)
     }
+  },
+  {
+    version: 8,
+    name: 'allow_account_excel_import_batches',
+    disableForeignKeys: true,
+    up: (database) => {
+      const table = database
+        .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'import_batches'")
+        .get() as { sql: string } | undefined
+
+      if (table?.sql.includes("'evo_account_excel'")) {
+        return
+      }
+
+      database.pragma('legacy_alter_table = ON')
+
+      try {
+        database.exec(`
+          ALTER TABLE import_batches RENAME TO import_batches_old;
+
+          CREATE TABLE import_batches (
+            id TEXT PRIMARY KEY,
+            account_id TEXT NOT NULL,
+            source_kind TEXT NOT NULL CHECK (
+              source_kind IN ('evo_visa_xls', 'evo_account_pdf', 'evo_account_excel', 'unknown')
+            ),
+            source_file_name TEXT NOT NULL CHECK (length(trim(source_file_name)) > 0),
+            file_sha256 TEXT NOT NULL CHECK (length(file_sha256) = 64),
+            statement_period_start TEXT,
+            statement_period_end TEXT,
+            status TEXT NOT NULL CHECK (status IN ('pending', 'committed', 'rolled_back', 'failed')),
+            transaction_count INTEGER NOT NULL DEFAULT 0 CHECK (transaction_count >= 0),
+            created_at TEXT NOT NULL,
+            committed_at TEXT,
+            rolled_back_at TEXT,
+            FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE RESTRICT
+          );
+
+          INSERT INTO import_batches (
+            id, account_id, source_kind, source_file_name, file_sha256,
+            statement_period_start, statement_period_end, status, transaction_count,
+            created_at, committed_at, rolled_back_at
+          )
+          SELECT
+            id, account_id, source_kind, source_file_name, file_sha256,
+            statement_period_start, statement_period_end, status, transaction_count,
+            created_at, committed_at, rolled_back_at
+          FROM import_batches_old;
+
+          DROP TABLE import_batches_old;
+
+          CREATE UNIQUE INDEX import_batches_committed_file_hash_idx
+            ON import_batches(account_id, file_sha256)
+            WHERE status = 'committed';
+
+          CREATE INDEX import_batches_account_id_idx ON import_batches(account_id);
+        `)
+      } finally {
+        database.pragma('legacy_alter_table = OFF')
+      }
+    }
   }
 ]
 
@@ -559,17 +621,33 @@ export function runMigrations(database: Database): void {
       continue
     }
 
+    if (migration.disableForeignKeys) {
+      database.pragma('foreign_keys = OFF')
+    }
+
     const applyMigration = database.transaction(() => {
       migration.up(database)
       database
         .prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)')
         .run(migration.version, migration.name, new Date().toISOString())
+
+      if (migration.disableForeignKeys) {
+        const foreignKeyFailures = database.pragma('foreign_key_check') as unknown[]
+
+        if (foreignKeyFailures.length > 0) {
+          throw new Error('Migration left invalid foreign keys')
+        }
+      }
     })
 
     try {
       applyMigration()
     } catch (error) {
       throw new MigrationApplicationError(migration.version, migration.name, error)
+    } finally {
+      if (migration.disableForeignKeys) {
+        database.pragma('foreign_keys = ON')
+      }
     }
   }
 }

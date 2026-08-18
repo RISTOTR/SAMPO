@@ -26,6 +26,21 @@ Current milestone: Phase 7 smart AI categorisation complete.
 - The observed statement period is derived from the minimum and maximum parsed transaction dates
 - OCR, image-only PDFs, encrypted PDFs and unsupported changed layouts are not implemented
 
+## EVO/Bankinter Account Excel
+
+- Source format: `.xlsx` workbook with an account movements table.
+- Parsed with `@e965/xlsx` in the main process/application layer.
+- Detected by table headers, not filename extension.
+- Required headers are `Fecha contable`, `Fecha valor`, `Descripción`, `Importe`, `Saldo`, and `Divisa`.
+- Metadata rows before the table are ignored. Metadata date ranges are not used to filter movements.
+- Transaction date comes from `Fecha contable`; value date comes from `Fecha valor`.
+- Description is preserved as the original transaction description.
+- Signed `Importe` values become integer-cent transaction amounts.
+- `Saldo` values are stored as `balanceCents`.
+- `Divisa` is stored as the transaction currency.
+- The observed statement period is derived from the minimum and maximum parsed transaction dates.
+- Recognised `RECIBO VISA CLASICA` rows are mapped like account PDF settlements for reconciliation.
+
 ## Reconciliation Rule
 
 - Individual Visa purchases count as expenses.
@@ -41,6 +56,7 @@ Current milestone: Phase 7 smart AI categorisation complete.
 - Prepared imports are committed atomically: batch creation, transaction insertion, transaction count, and committed status succeed or fail together.
 - A committed file hash cannot be imported twice for the same account.
 - A rolled-back file may be deliberately imported again.
+- Overlapping exports are filtered at row level with account-scoped stable-fact transaction fingerprints and occurrence counts, so repeated exports do not duplicate already committed rows while genuine repeated identical purchases keep their multiplicity. The overlap fingerprint uses transaction date, normalised original description, signed amount, and currency; it does not use value date, balance, pending/completed state, reference, or import source.
 - Rollback removes the imported transactions and related transaction links, preserves the batch record, sets status to `rolled_back`, and resets `transaction_count` to zero.
 - Rollback is rejected while any transaction in the import batch participates in active `card_settlement` reconciliation links.
 - Source adapters must store only source filenames, never full source paths.
@@ -105,7 +121,7 @@ Visa importer tests generate temporary BIFF `.xls` workbooks from synthetic rows
 - Import preview sessions live only in main-process memory and expire after 30 minutes.
 - Preview sessions store the prepared import internally and expose only safe DTOs.
 - Commit requires explicit user confirmation and revalidates that the file hash has not changed.
-- Current accounts can import only supported account PDFs.
+- Current accounts can import supported account PDFs and account Excel workbooks.
 - Credit-card accounts can import only supported Visa XLS files.
 - Cash and other account kinds are not import targets in Phase 5.
 - Import history keeps batch records; rollback does not delete history.
@@ -131,6 +147,7 @@ Visa importer tests generate temporary BIFF `.xls` workbooks from synthetic rows
 - Bulk classification sends normalised descriptors and category context, not amounts, balances, account identifiers, source files, source paths, or statement contents.
 - Web lookup is disabled unless the user explicitly enables it.
 - AI suggestions are pending review records and do not change imported transaction facts.
-- Manual classifications remain authoritative and are not silently overwritten by AI acceptance.
+- Existing confirmed classifications remain authoritative until the user explicitly accepts a differing AI field.
 - Accepting an AI suggestion is explicit and stores user-reviewed enrichment with source `ai`.
+- AI suggestion acceptance is field-aware: accepting only merchant or only category confirms that field and leaves any other differing suggested field pending until reviewed. Suggestions that already match the current classification do not produce actionable review cards.
 - AI failures must not roll back or invalidate a valid financial import.

@@ -70,6 +70,48 @@ describe('ImportPreviewWorkflow', () => {
     expect(preview?.inspection.details?.balanceContinuityPassed).toBe(true)
   })
 
+  it('creates and commits an account Excel preview for current accounts', async () => {
+    const account = accounts.create({ name: 'Synthetic current', kind: 'current' })
+    selectedFilePath = writeAccountExcelWorkbook(directory, 'synthetic-account.xlsx')
+
+    const preview = await workflow.selectAndInspectImport(account.id)
+
+    expect(preview).toMatchObject({
+      sourceKind: 'evo_account_excel',
+      sourceFileName: 'synthetic-account.xlsx'
+    })
+    expect(preview?.transactions).toHaveLength(2)
+    expect(preview?.transactions[1]).toMatchObject({
+      description: 'RECIBO VISA CLASICA',
+      transactionType: 'card_settlement',
+      reviewStatus: 'needs_review'
+    })
+    expect(transactions.listForAccount(account.id)).toHaveLength(0)
+
+    const committed = await workflow.commitImportPreview(preview?.id ?? '')
+    expect(committed.transactionCount).toBe(2)
+    expect(transactions.listForAccount(account.id)).toHaveLength(2)
+  })
+
+  it('reports overlapping rows as already imported in preview', async () => {
+    const account = accounts.create({ name: 'Synthetic Visa', kind: 'credit_card' })
+    selectedFilePath = writeVisaWorkbook(directory, 'first-overlap.xls', 'First synthetic export')
+    const firstPreview = await workflow.selectAndInspectImport(account.id)
+    await workflow.commitImportPreview(firstPreview?.id ?? '')
+
+    selectedFilePath = writeVisaWorkbook(directory, 'second-overlap.xls', 'Second synthetic export')
+    const overlapPreview = await workflow.selectAndInspectImport(account.id)
+
+    expect(overlapPreview?.inspection).toMatchObject({
+      completedCount: 2,
+      newTransactionCount: 0,
+      duplicateTransactionCount: 2,
+      canImport: false
+    })
+    expect(overlapPreview?.transactions).toHaveLength(0)
+    expect(transactions.listForAccount(account.id)).toHaveLength(2)
+  })
+
   it('handles cancellation, incompatible source, source changes, active limit, and duplicate commit', async () => {
     const current = accounts.create({ name: 'Synthetic current', kind: 'current' })
     const card = accounts.create({ name: 'Synthetic Visa', kind: 'credit_card' })
@@ -107,9 +149,13 @@ describe('ImportPreviewWorkflow', () => {
   })
 })
 
-function writeVisaWorkbook(directory: string, fileName: string): string {
+function writeVisaWorkbook(
+  directory: string,
+  fileName: string,
+  heading = 'Synthetic Visa movements'
+): string {
   const rows = [
-    ['Synthetic Visa movements'],
+    [heading],
     ['FECHA', 'COMERCIO/CAJERO', 'IMPORTE'],
     [excelSerial('2026-02-01'), 'NORTH MARKET', -10],
     [excelSerial('2026-02-02'), 'TEST REFUND', 2],
@@ -122,6 +168,23 @@ function writeVisaWorkbook(directory: string, fileName: string): string {
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Movimientos')
   const filePath = join(directory, fileName)
   writeFileSync(filePath, XLSX.write(workbook, { bookType: 'biff8', type: 'buffer' }) as Buffer)
+  return filePath
+}
+
+function writeAccountExcelWorkbook(directory: string, fileName: string): string {
+  const rows = [
+    ['Cuenta', 'Synthetic current'],
+    ['Fecha', '01/06/2026 - 30/06/2026'],
+    [],
+    ['Fecha contable', 'Fecha valor', 'Descripción', 'Importe', 'Saldo', 'Divisa'],
+    ['01/06/2026', '01/06/2026', 'SYNTHETIC MARKET', '-10,00', '90,00', 'EUR'],
+    ['05/06/2026', '05/06/2026', 'RECIBO VISA CLASICA', '-20,00', '70,00', 'EUR']
+  ]
+  const worksheet = XLSX.utils.aoa_to_sheet(rows)
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Movimientos')
+  const filePath = join(directory, fileName)
+  writeFileSync(filePath, XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer' }) as Buffer)
   return filePath
 }
 

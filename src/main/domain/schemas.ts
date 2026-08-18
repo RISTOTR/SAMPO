@@ -1,7 +1,12 @@
 import { z } from 'zod'
 
 export const accountKinds = ['current', 'credit_card', 'cash', 'other'] as const
-export const importSourceKinds = ['evo_visa_xls', 'evo_account_pdf', 'unknown'] as const
+export const importSourceKinds = [
+  'evo_visa_xls',
+  'evo_account_pdf',
+  'evo_account_excel',
+  'unknown'
+] as const
 export const importStatuses = ['pending', 'committed', 'rolled_back', 'failed'] as const
 export const transactionTypes = [
   'expense',
@@ -189,7 +194,7 @@ export const preparedImportSchema = z.object({
   fileSha256: fileSha256Schema,
   statementPeriodStart: isoDateSchema.optional(),
   statementPeriodEnd: isoDateSchema.optional(),
-  transactions: z.array(newTransactionSchema).min(1)
+  transactions: z.array(newTransactionSchema)
 })
 
 export const categorySchema = z.object({
