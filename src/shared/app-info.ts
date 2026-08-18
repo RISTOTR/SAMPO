@@ -29,6 +29,11 @@ import type {
   OverviewStatsDto,
   ReconciliationCandidateDto,
   ReconciliationPreviewDto,
+  RecurringConfirmInputDto,
+  RecurringRejectInputDto,
+  RecurringScanSummaryDto,
+  RecurringSeriesDetailDto,
+  RecurringSeriesDto,
   ReversedReconciliationDto,
   RuleApplicationPreviewDto,
   RuleInputDto,
@@ -148,5 +153,12 @@ export type SampoApi = {
       input: AcceptAiSuggestionInputDto
     ) => Promise<ApiResult<AiSuggestionReviewDto>>
     rejectSuggestion: (input: { suggestionId: string }) => Promise<ApiResult<AiSuggestionReviewDto>>
+  }
+  recurring: {
+    scan: () => Promise<ApiResult<RecurringScanSummaryDto>>
+    list: () => Promise<ApiResult<RecurringSeriesDto[]>>
+    get: (seriesId: string) => Promise<ApiResult<RecurringSeriesDetailDto>>
+    confirm: (input: RecurringConfirmInputDto) => Promise<ApiResult<RecurringSeriesDto>>
+    reject: (input: RecurringRejectInputDto) => Promise<ApiResult<RecurringSeriesDto>>
   }
 }

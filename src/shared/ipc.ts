@@ -49,5 +49,10 @@ export const IPC_CHANNELS = {
   aiSmartClassifyImportBatch: 'sampo:ai:smart-classify-import-batch',
   aiListSuggestions: 'sampo:ai:list-suggestions',
   aiAcceptSuggestion: 'sampo:ai:accept-suggestion',
-  aiRejectSuggestion: 'sampo:ai:reject-suggestion'
+  aiRejectSuggestion: 'sampo:ai:reject-suggestion',
+  recurringScan: 'sampo:recurring:scan',
+  recurringList: 'sampo:recurring:list',
+  recurringGet: 'sampo:recurring:get',
+  recurringConfirm: 'sampo:recurring:confirm',
+  recurringReject: 'sampo:recurring:reject'
 } as const

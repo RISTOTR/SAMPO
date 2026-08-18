@@ -52,6 +52,22 @@ export const aiConnectionStatusDtoSchema = z.enum([
   'network_error',
   'service_error'
 ])
+export const recurringSeriesTypeDtoSchema = z.enum([
+  'subscription',
+  'recurring_bill',
+  'recurring_payment',
+  'unknown',
+  'not_recurring'
+])
+export const recurringSeriesCadenceDtoSchema = z.enum([
+  'monthly',
+  'quarterly',
+  'yearly',
+  'irregular'
+])
+export const recurringSeriesStatusDtoSchema = z.enum(['candidate', 'confirmed', 'rejected'])
+export const recurringSeriesConfidenceDtoSchema = z.enum(['low', 'medium', 'high'])
+export const recurringSeriesMatchingBasisDtoSchema = z.enum(['merchant', 'description'])
 
 export const uuidDtoSchema = z.string().uuid()
 export const isoDateDtoSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -678,6 +694,60 @@ export const listAiSuggestionsInputDtoSchema = z
   })
   .partial()
 
+export const recurringSeriesOccurrenceDtoSchema = z.object({
+  transactionId: uuidDtoSchema,
+  transactionDate: isoDateDtoSchema,
+  description: z.string().min(1),
+  amountCents: z.number().int(),
+  currency: z.string().length(3),
+  merchantName: z.string().min(1).optional(),
+  categoryPath: z.array(z.string().min(1)).optional()
+})
+
+export const recurringSeriesDtoSchema = z.object({
+  id: uuidDtoSchema,
+  seriesKey: z.string().min(1),
+  matchingBasis: recurringSeriesMatchingBasisDtoSchema,
+  merchantId: uuidDtoSchema.optional(),
+  merchantName: z.string().min(1).optional(),
+  canonicalDescription: z.string().min(1),
+  recurrenceType: recurringSeriesTypeDtoSchema,
+  cadence: recurringSeriesCadenceDtoSchema,
+  status: recurringSeriesStatusDtoSchema,
+  typicalAmountCents: z.number().int(),
+  minAmountCents: z.number().int(),
+  maxAmountCents: z.number().int(),
+  amountVariabilityBasisPoints: z.number().int().min(0),
+  firstSeen: isoDateDtoSchema,
+  lastSeen: isoDateDtoSchema,
+  occurrenceCount: z.number().int().min(2),
+  confidence: recurringSeriesConfidenceDtoSchema,
+  confidenceScore: z.number().int().min(0).max(100),
+  createdAt: utcTimestampDtoSchema,
+  updatedAt: utcTimestampDtoSchema
+})
+
+export const recurringSeriesDetailDtoSchema = recurringSeriesDtoSchema.extend({
+  occurrences: z.array(recurringSeriesOccurrenceDtoSchema)
+})
+
+export const recurringScanSummaryDtoSchema = z.object({
+  candidateCount: z.number().int().min(0),
+  confirmedCount: z.number().int().min(0),
+  rejectedCount: z.number().int().min(0),
+  scannedGroupCount: z.number().int().min(0),
+  linkedTransactionCount: z.number().int().min(0)
+})
+
+export const recurringConfirmInputDtoSchema = z.object({
+  seriesId: uuidDtoSchema,
+  recurrenceType: recurringSeriesTypeDtoSchema.exclude(['unknown', 'not_recurring'])
+})
+
+export const recurringRejectInputDtoSchema = z.object({
+  seriesId: uuidDtoSchema
+})
+
 export type AccountSummaryDto = z.infer<typeof accountSummaryDtoSchema>
 export type CreateAccountInputDto = z.input<typeof createAccountInputDtoSchema>
 export type UpdateAccountInputDto = z.input<typeof updateAccountInputDtoSchema>
@@ -738,4 +808,11 @@ export type SmartClassifySummaryDto = z.infer<typeof smartClassifySummaryDtoSche
 export type AcceptAiSuggestionInputDto = z.input<typeof acceptAiSuggestionInputDtoSchema>
 export type RejectAiSuggestionInputDto = z.input<typeof rejectAiSuggestionInputDtoSchema>
 export type ListAiSuggestionsInputDto = z.input<typeof listAiSuggestionsInputDtoSchema>
+export type RecurringSeriesTypeDto = z.infer<typeof recurringSeriesTypeDtoSchema>
+export type RecurringSeriesDto = z.infer<typeof recurringSeriesDtoSchema>
+export type RecurringSeriesDetailDto = z.infer<typeof recurringSeriesDetailDtoSchema>
+export type RecurringSeriesOccurrenceDto = z.infer<typeof recurringSeriesOccurrenceDtoSchema>
+export type RecurringScanSummaryDto = z.infer<typeof recurringScanSummaryDtoSchema>
+export type RecurringConfirmInputDto = z.input<typeof recurringConfirmInputDtoSchema>
+export type RecurringRejectInputDto = z.input<typeof recurringRejectInputDtoSchema>
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: OperationErrorDto }

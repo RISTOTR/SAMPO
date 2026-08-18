@@ -93,6 +93,13 @@ const sampo: SampoApi = {
     listSuggestions: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiListSuggestions, input),
     acceptSuggestion: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiAcceptSuggestion, input),
     rejectSuggestion: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiRejectSuggestion, input)
+  },
+  recurring: {
+    scan: () => ipcRenderer.invoke(IPC_CHANNELS.recurringScan),
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.recurringList),
+    get: (seriesId) => ipcRenderer.invoke(IPC_CHANNELS.recurringGet, seriesId),
+    confirm: (input) => ipcRenderer.invoke(IPC_CHANNELS.recurringConfirm, input),
+    reject: (input) => ipcRenderer.invoke(IPC_CHANNELS.recurringReject, input)
   }
 }
 

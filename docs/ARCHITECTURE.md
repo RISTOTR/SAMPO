@@ -1,6 +1,6 @@
 # Architecture
 
-Current milestone: Phase 7 - Smart AI Categorisation complete.
+Current milestone: Phase 8 - Recurring Payments and Subscriptions in progress.
 
 ```text
 Vue renderer
@@ -14,7 +14,7 @@ Application services
 Import adapters / repositories / SQLite
 ```
 
-The Electron shell, typed preload API, renderer layout, validation setup, SQLite initialization, migrations, repositories, prepared-import service, EVO/Bankinter Visa XLS importer, EVO/Bankinter account PDF importer, EVO/Bankinter account Excel importer, Visa settlement reconciliation service, account/import/transaction/reconciliation UI, deterministic transaction categorisation, and optional AI categorisation suggestions are implemented. Subscriptions, recurring-series detection, charts, monthly analysis, and broader AI analysis remain planned.
+The Electron shell, typed preload API, renderer layout, validation setup, SQLite initialization, migrations, repositories, prepared-import service, EVO/Bankinter Visa XLS importer, EVO/Bankinter account PDF importer, EVO/Bankinter account Excel importer, Visa settlement reconciliation service, account/import/transaction/reconciliation UI, deterministic transaction categorisation, optional AI categorisation suggestions, and deterministic recurring-series candidate detection are implemented. Charts, monthly analysis dashboards, forecasting, and broader AI analysis remain planned.
 
 ## Responsibilities
 
@@ -157,3 +157,13 @@ The OpenAI API key is stored locally through Electron `safeStorage` in the user-
 Provider requests use the OpenAI Responses API with structured JSON output and `store: false`. The bulk classifier sends normalised descriptors, source context, enabled category choices, and optional country/city context. It does not send amounts, balances, account identifiers, transaction dates, source filenames, source paths, statement contents, or database rows. Web search is not attached unless the user enables web lookup.
 
 AI suggestions are persisted separately in `ai_classification_suggestions` and remain pending until explicitly accepted, rejected, or superseded. Pending suggestions do not override current confirmed classifications; the review UI shows only unresolved fields or AI fields that differ from the authoritative transaction state. Accepting a suggestion writes user-reviewed classification enrichment with source `ai`; it can replace a differing merchant or category only through explicit user action and never modifies imported transaction facts, reconciliation links, amounts, dates, descriptions, or import-batch history. Merchant and category acceptance are tracked by the authoritative transaction classification fields: a two-field suggestion remains pending when only one differing suggested field has been accepted. AI output is suggestion data only and must never generate authoritative financial totals.
+
+## Phase 8 Recurring Detection
+
+Recurring detection is deterministic main-process/application-layer code exposed through `window.sampo.recurring`. It does not call OpenAI and does not use pending AI suggestions as authoritative merchant identity.
+
+The scanner groups committed, non-pending outgoing transactions by confirmed canonical merchant when available, otherwise by exact normalised original description. It does not perform fuzzy merchant merging. Refunds, card settlements, income, and cash withdrawals are excluded from normal recurring expense detection. Duplicate imported occurrences with the same date, normalised description, and signed amount are collapsed before cadence scoring so duplicate imports do not inflate occurrence counts.
+
+Cadence is classified from day intervals with explicit tolerances: monthly 25-35 days, quarterly 75-105 days, and yearly 330-400 days. Two observations create only weak candidates. Three or more observations can become medium or high confidence depending on cadence regularity and amount variability. Amount variability is tracked separately as range relative to median amount, so variable utility bills can still be strong recurring candidates without pretending they are fixed-price subscriptions.
+
+Detected records are candidates until the user confirms them as `subscription`, `recurring_bill`, or `recurring_payment`, or rejects them as `not_recurring`. Repeated scans are idempotent by stable series key and extend existing confirmed or rejected records instead of recreating duplicate candidates. Rejected exact candidates remain rejected on immediate rediscovery. Forecasting, upcoming-payment prediction, fuzzy descriptor merging, and dashboard aggregates are intentionally deferred.

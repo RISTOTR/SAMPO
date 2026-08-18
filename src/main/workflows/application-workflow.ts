@@ -25,6 +25,11 @@ import {
   merchantDtoSchema,
   merchantListQueryDtoSchema,
   overviewStatsDtoSchema,
+  recurringConfirmInputDtoSchema,
+  recurringRejectInputDtoSchema,
+  recurringScanSummaryDtoSchema,
+  recurringSeriesDetailDtoSchema,
+  recurringSeriesDtoSchema,
   rejectAiSuggestionInputDtoSchema,
   ruleApplicationPreviewDtoSchema,
   ruleInputDtoSchema,
@@ -61,6 +66,9 @@ import {
   type OverviewStatsDto,
   type ReconciliationCandidateDto,
   type ReconciliationPreviewDto,
+  type RecurringScanSummaryDto,
+  type RecurringSeriesDetailDto,
+  type RecurringSeriesDto,
   type ReversedReconciliationDto,
   type RuleApplicationPreviewDto,
   type SaveManualAndConfirmMatchesResultDto,
@@ -83,6 +91,8 @@ import type { AiSuggestionReviewComponentStatus } from '../ai/smart-classificati
 import { MemorySecretStore, type SecretStore } from '../ai/secret-store'
 import { ClassificationService } from '../categorisation/classification-service'
 import { normaliseMatchText } from '../categorisation/normalisation'
+import { RecurringDetectionService } from '../recurring/recurring-service'
+import type { RecurringSeries } from '../storage/recurring'
 import { ImportService } from '../services/import-service'
 import { VisaSettlementReconciliationService } from '../reconciliation/visa-settlement-reconciliation-service'
 import { AccountRepository } from '../storage/accounts'
@@ -134,6 +144,7 @@ export class ApplicationWorkflow {
   private readonly aiSettings: AiSettingsRepository
   private readonly aiSuggestions: AiSuggestionRepository
   private readonly smartClassification: SmartClassificationService
+  private readonly recurring: RecurringDetectionService
   readonly previews: ImportPreviewWorkflow
 
   constructor(
@@ -161,6 +172,7 @@ export class ApplicationWorkflow {
       database,
       aiProvider ?? new OpenAiClassificationProvider(secretStore)
     )
+    this.recurring = new RecurringDetectionService(database)
     this.previews = new ImportPreviewWorkflow(database, dialogAdapter)
   }
 
@@ -262,6 +274,38 @@ export class ApplicationWorkflow {
       limit: query.limit,
       offset: query.offset
     })
+  }
+
+  scanRecurringSeries(): RecurringScanSummaryDto {
+    return recurringScanSummaryDtoSchema.parse(this.recurring.scan())
+  }
+
+  listRecurringSeries(): RecurringSeriesDto[] {
+    return this.recurring
+      .list()
+      .map((series) => recurringSeriesDtoSchema.parse(recurringSeriesToDto(series)))
+  }
+
+  getRecurringSeries(seriesId: string): RecurringSeriesDetailDto {
+    const series = this.recurring.get(seriesId)
+    return recurringSeriesDetailDtoSchema.parse({
+      ...recurringSeriesToDto(series),
+      occurrences: series.occurrences
+    })
+  }
+
+  confirmRecurringSeries(input: unknown): RecurringSeriesDto {
+    const parsed = recurringConfirmInputDtoSchema.parse(input)
+    return recurringSeriesDtoSchema.parse(
+      recurringSeriesToDto(this.recurring.confirm(parsed.seriesId, parsed.recurrenceType))
+    )
+  }
+
+  rejectRecurringSeries(input: unknown): RecurringSeriesDto {
+    const parsed = recurringRejectInputDtoSchema.parse(input)
+    return recurringSeriesDtoSchema.parse(
+      recurringSeriesToDto(this.recurring.reject(parsed.seriesId))
+    )
   }
 
   listUnreconciledSettlements(): SettlementSummaryDto[] {
@@ -852,6 +896,31 @@ function aiAcceptanceMode(input: { acceptCategory: boolean; acceptMerchant: bool
   if (input.acceptCategory) return 'category'
   if (input.acceptMerchant) return 'merchant'
   return 'none'
+}
+
+function recurringSeriesToDto(series: RecurringSeries): RecurringSeriesDto {
+  return {
+    id: series.id,
+    seriesKey: series.seriesKey,
+    matchingBasis: series.matchingBasis,
+    merchantId: series.merchantId,
+    merchantName: series.merchantName,
+    canonicalDescription: series.canonicalDescription,
+    recurrenceType: series.recurrenceType,
+    cadence: series.cadence,
+    status: series.status,
+    typicalAmountCents: series.typicalAmountCents,
+    minAmountCents: series.minAmountCents,
+    maxAmountCents: series.maxAmountCents,
+    amountVariabilityBasisPoints: series.amountVariabilityBasisPoints,
+    firstSeen: series.firstSeen,
+    lastSeen: series.lastSeen,
+    occurrenceCount: series.occurrenceCount,
+    confidence: series.confidence,
+    confidenceScore: series.confidenceScore,
+    createdAt: series.createdAt,
+    updatedAt: series.updatedAt
+  }
 }
 
 function sameMerchantName(left: string | undefined, right: string | undefined): boolean {
