@@ -36,6 +36,24 @@ describe('shared renderer DTO schemas', () => {
     expect(() => transactionListQueryDtoSchema.parse({ limit: 500 })).toThrow()
   })
 
+  it('preserves transaction search and confirmation filter query fields', () => {
+    expect(
+      transactionListQueryDtoSchema.parse({
+        search: 'iberdrola',
+        confirmationFilter: 'needs_confirmation',
+        sortBy: 'transactionDate',
+        sortDirection: 'desc',
+        limit: 50,
+        offset: 25
+      })
+    ).toMatchObject({
+      search: 'iberdrola',
+      confirmationFilter: 'needs_confirmation',
+      limit: 50,
+      offset: 25
+    })
+  })
+
   it('validates Phase 6 classification DTO inputs', () => {
     expect(
       transactionListQueryDtoSchema.parse({

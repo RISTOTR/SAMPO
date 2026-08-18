@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { formatCents, formatDate } from '../formatters'
 import { useAccountsStore } from '../stores/accounts'
 import { useAiStore } from '../stores/ai'
@@ -48,6 +48,8 @@ const bulkForm = reactive({
   costBehaviour: '',
   necessity: ''
 })
+let filterReloadTimer: ReturnType<typeof setTimeout> | undefined
+let suppressFilterReload = false
 
 const currentPage = computed(
   () => Math.floor(transactions.page.offset / transactions.page.limit) + 1
@@ -81,9 +83,36 @@ const editorSuggestion = computed(() =>
   editorTransactionId.value ? aiSuggestionFor(editorTransactionId.value) : undefined
 )
 
+watch(
+  () => [
+    filters.search,
+    filters.confirmationFilter,
+    filters.accountId,
+    filters.dateFrom,
+    filters.dateTo,
+    filters.transactionType,
+    filters.pending,
+    filters.excludedFromSpending,
+    filters.categoryId,
+    filters.merchantId,
+    filters.usageType,
+    filters.costBehaviour,
+    filters.necessity,
+    filters.classificationStatus,
+    filters.unclassifiedOnly,
+    filters.sortBy,
+    filters.sortDirection
+  ],
+  () => scheduleFilterReload()
+)
+
 onMounted(async () => {
   await Promise.all([accounts.load(), classification.loadReference(), ai.loadSettings()])
   await loadTransactions()
+})
+
+onBeforeUnmount(() => {
+  if (filterReloadTimer) clearTimeout(filterReloadTimer)
 })
 
 function currentTransactionQuery(): TransactionListQueryDto {
@@ -194,13 +223,26 @@ async function loadAiSuggestions(): Promise<void> {
   await ai.loadSuggestions(currentSuggestionListInput())
 }
 
+function scheduleFilterReload(): void {
+  if (suppressFilterReload) return
+  if (filterReloadTimer) clearTimeout(filterReloadTimer)
+  filterReloadTimer = setTimeout(() => {
+    void applyFilters()
+  }, 150)
+}
+
 async function applyFilters(): Promise<void> {
+  if (filterReloadTimer) {
+    clearTimeout(filterReloadTimer)
+    filterReloadTimer = undefined
+  }
   filters.offset = 0
   selectedTransactionIds.value = []
   await loadTransactions()
 }
 
 async function resetFilters(): Promise<void> {
+  suppressFilterReload = true
   filters.search = ''
   filters.confirmationFilter = 'all'
   filters.accountId = ''
@@ -220,7 +262,8 @@ async function resetFilters(): Promise<void> {
   filters.sortDirection = 'desc'
   filters.offset = 0
   selectedTransactionIds.value = []
-  await loadTransactions()
+  suppressFilterReload = false
+  await applyFilters()
 }
 
 async function nextPage(): Promise<void> {

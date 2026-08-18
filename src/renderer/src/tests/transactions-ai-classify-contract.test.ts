@@ -52,6 +52,18 @@ describe('transactions manual AI classify contract', () => {
     expect(transactionsView).toContain('delete query.offset')
   })
 
+  it('reloads transactions when search or confirmation filters change', () => {
+    expect(transactionsView).toContain('watch(')
+    expect(transactionsView).toContain('filters.search')
+    expect(transactionsView).toContain('filters.confirmationFilter')
+    expect(transactionsView).toContain('() => scheduleFilterReload()')
+    expect(transactionsView).toContain('setTimeout(() =>')
+    expect(transactionsView).toContain('void applyFilters()')
+    expect(transactionsView).toContain('}, 150)')
+    expect(transactionsView).toContain('filters.offset = 0')
+    expect(transactionsView).toContain('await loadTransactions()')
+  })
+
   it('uses persisted suggestion ids for same-merchant suggestion rows and actions', () => {
     expect(transactionsView).toContain('v-for="suggestion in ai.suggestions"')
     expect(transactionsView).toContain(':key="suggestion.id"')

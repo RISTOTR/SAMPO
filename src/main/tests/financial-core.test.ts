@@ -1094,6 +1094,171 @@ describe('import service and transaction repository', () => {
     ).toBe(3)
   })
 
+  it('filters transactions by text search and authoritative confirmation state', () => {
+    const imported = service.commitPreparedImport(
+      makePreparedImport(account.id, [
+        makeTransaction(account.id, {
+          sourceRowIndex: 0,
+          transactionDate: '2026-03-01',
+          originalDescription: 'IBERDROLA synthetic bill',
+          amountCents: -4100
+        }),
+        makeTransaction(account.id, {
+          sourceRowIndex: 1,
+          transactionDate: '2026-03-02',
+          originalDescription: 'Synthetic power charge',
+          amountCents: -4200
+        }),
+        makeTransaction(account.id, {
+          sourceRowIndex: 2,
+          transactionDate: '2026-03-03',
+          originalDescription: 'Synthetic fully confirmed',
+          amountCents: -4300
+        }),
+        makeTransaction(account.id, {
+          sourceRowIndex: 3,
+          transactionDate: '2026-03-04',
+          originalDescription: 'Synthetic detected proposal',
+          amountCents: -4400
+        }),
+        makeTransaction(account.id, {
+          sourceRowIndex: 4,
+          transactionDate: '2026-03-05',
+          originalDescription: 'Synthetic partial classification',
+          amountCents: -4500
+        }),
+        makeTransaction(account.id, {
+          sourceRowIndex: 5,
+          transactionDate: '2026-03-06',
+          originalDescription: 'Synthetic unrelated transaction',
+          amountCents: -4600
+        })
+      ])
+    )
+    const categories = new CategoryRepository(database.connection)
+    const merchants = new MerchantRepository(database.connection)
+    const classifications = new TransactionClassificationRepository(database.connection)
+    const utilities = categories.create({ name: 'Synthetic Utilities' })
+    const iberdrola = merchants.create({ name: 'Iberdrola Synthetic' })
+    const confirmedMerchant = merchants.create({ name: 'Synthetic Confirmed Merchant' })
+    const detectedMerchant = merchants.create({ name: 'Synthetic Detected Merchant' })
+    const partialMerchant = merchants.create({ name: 'Synthetic Partial Merchant' })
+
+    classifications.save({
+      transactionId: imported.transactions[1].id,
+      merchantId: iberdrola.id,
+      categoryId: utilities.id,
+      classificationSource: 'manual',
+      classificationStatus: 'confirmed'
+    })
+    classifications.save({
+      transactionId: imported.transactions[2].id,
+      merchantId: confirmedMerchant.id,
+      categoryId: utilities.id,
+      classificationSource: 'manual',
+      classificationStatus: 'confirmed'
+    })
+    classifications.save({
+      transactionId: imported.transactions[3].id,
+      merchantId: detectedMerchant.id,
+      categoryId: utilities.id,
+      classificationSource: 'rule',
+      classificationStatus: 'needs_review'
+    })
+    classifications.save({
+      transactionId: imported.transactions[4].id,
+      merchantId: partialMerchant.id,
+      classificationSource: 'manual',
+      classificationStatus: 'confirmed'
+    })
+
+    expect(
+      transactions
+        .listPage({
+          search: 'iberdrola',
+          confirmationFilter: 'all',
+          sortBy: 'transactionDate',
+          sortDirection: 'asc',
+          limit: 50,
+          offset: 0
+        })
+        .items.map((transaction) => transaction.id)
+    ).toEqual([imported.transactions[0].id, imported.transactions[1].id])
+    expect(
+      transactions
+        .listPage({
+          search: 'IBERDROLA',
+          confirmationFilter: 'all',
+          sortBy: 'transactionDate',
+          sortDirection: 'asc',
+          limit: 50,
+          offset: 0
+        })
+        .items.map((transaction) => transaction.id)
+    ).toEqual([imported.transactions[0].id, imported.transactions[1].id])
+    expect(
+      transactions.listPage({
+        search: 'does-not-match',
+        confirmationFilter: 'all',
+        sortBy: 'transactionDate',
+        sortDirection: 'asc',
+        limit: 50,
+        offset: 0
+      }).items
+    ).toHaveLength(0)
+
+    expect(
+      transactions
+        .listPage({
+          confirmationFilter: 'confirmed',
+          sortBy: 'transactionDate',
+          sortDirection: 'asc',
+          limit: 50,
+          offset: 0
+        })
+        .items.map((transaction) => transaction.id)
+    ).toEqual([imported.transactions[1].id, imported.transactions[2].id])
+    expect(
+      transactions
+        .listPage({
+          confirmationFilter: 'needs_confirmation',
+          sortBy: 'transactionDate',
+          sortDirection: 'asc',
+          limit: 50,
+          offset: 0
+        })
+        .items.map((transaction) => transaction.id)
+    ).toEqual([
+      imported.transactions[0].id,
+      imported.transactions[3].id,
+      imported.transactions[4].id,
+      imported.transactions[5].id
+    ])
+    expect(
+      transactions.listPage({
+        confirmationFilter: 'all',
+        sortBy: 'transactionDate',
+        sortDirection: 'asc',
+        limit: 50,
+        offset: 0
+      }).total
+    ).toBe(6)
+
+    const filteredPage = transactions.listPage({
+      search: 'synthetic',
+      confirmationFilter: 'needs_confirmation',
+      sortBy: 'transactionDate',
+      sortDirection: 'asc',
+      limit: 2,
+      offset: 1
+    })
+    expect(filteredPage.total).toBe(4)
+    expect(filteredPage.items.map((transaction) => transaction.id)).toEqual([
+      imported.transactions[3].id,
+      imported.transactions[4].id
+    ])
+  })
+
   it('creates, retrieves, lists, deletes, and validates transaction links', () => {
     const result = service.commitPreparedImport(
       makePreparedImport(account.id, [
