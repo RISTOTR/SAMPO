@@ -16,10 +16,19 @@ import { ImportBatchRepository } from '../storage/import-batches'
 import { TransactionLinkRepository } from '../storage/transaction-links'
 import { TransactionRepository } from '../storage/transactions'
 import { ClassificationService } from '../categorisation/classification-service'
+import { createTransactionFingerprint } from './transaction-fingerprint'
 
 export type CommitPreparedImportResult = {
   batch: ImportBatch
   transactions: Transaction[]
+  skippedDuplicateTransactionCount: number
+}
+
+export type PreparedImportDuplicatePreview = {
+  preparedImport: PreparedImport
+  originalTransactionCount: number
+  newTransactionCount: number
+  duplicateTransactionCount: number
 }
 
 export class ImportService {
@@ -35,6 +44,10 @@ export class ImportService {
     this.transactions = new TransactionRepository(database)
   }
 
+  previewPreparedImportDeduplication(input: PreparedImport): PreparedImportDuplicatePreview {
+    return this.filterDuplicateTransactions(preparedImportSchema.parse(input))
+  }
+
   commitPreparedImport(input: PreparedImport): CommitPreparedImportResult {
     const preparedImport = preparedImportSchema.parse(input)
     this.accounts.findById(preparedImport.accountId)
@@ -46,6 +59,7 @@ export class ImportService {
     }
 
     const commit = this.database.transaction(() => {
+      const deduplicated = this.filterDuplicateTransactions(preparedImport)
       const batch = this.importBatches.createPending({
         accountId: preparedImport.accountId,
         sourceKind: preparedImport.sourceKind,
@@ -55,7 +69,7 @@ export class ImportService {
         statementPeriodEnd: preparedImport.statementPeriodEnd
       })
 
-      const transactions = preparedImport.transactions.map((transaction) => {
+      const transactions = deduplicated.preparedImport.transactions.map((transaction) => {
         if (transaction.accountId !== preparedImport.accountId) {
           throw new AccountMismatchError()
         }
@@ -71,7 +85,8 @@ export class ImportService {
 
       return {
         batch: committedBatch,
-        transactions
+        transactions,
+        skippedDuplicateTransactionCount: deduplicated.duplicateTransactionCount
       }
     })
 
@@ -86,6 +101,34 @@ export class ImportService {
     }
 
     return result
+  }
+
+  private filterDuplicateTransactions(
+    preparedImport: PreparedImport
+  ): PreparedImportDuplicatePreview {
+    const existingCounts = this.transactions.countCommittedFingerprintsForAccount(
+      preparedImport.accountId
+    )
+    const incomingCounts = new Map<string, number>()
+    const transactions = preparedImport.transactions.filter((transaction) => {
+      const fingerprint = createTransactionFingerprint(transaction)
+      const seen = (incomingCounts.get(fingerprint) ?? 0) + 1
+      incomingCounts.set(fingerprint, seen)
+
+      return seen > (existingCounts.get(fingerprint) ?? 0)
+    })
+
+    const filteredPreparedImport = preparedImportSchema.parse({
+      ...preparedImport,
+      transactions
+    })
+
+    return {
+      preparedImport: filteredPreparedImport,
+      originalTransactionCount: preparedImport.transactions.length,
+      newTransactionCount: transactions.length,
+      duplicateTransactionCount: preparedImport.transactions.length - transactions.length
+    }
   }
 
   markPendingBatchFailed(id: string): ImportBatch {

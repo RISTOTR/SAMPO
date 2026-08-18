@@ -202,6 +202,40 @@ select {
   grid-column: 1 / -1;
 }
 
+.confirmation-filter {
+  grid-column: span 2;
+}
+
+.confirmation-filter > span {
+  color: #48564d;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.segmented-control {
+  display: inline-flex;
+  min-height: 38px;
+  overflow: hidden;
+  border: 1px solid #b8c8bd;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.segmented-control button {
+  min-height: 36px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.segmented-control button + button {
+  border-left: 1px solid #dce3dc;
+}
+
+.segmented-control button.active {
+  background: #d8e7dc;
+}
+
 .classification-note {
   display: block;
   margin: 4px 0 0;

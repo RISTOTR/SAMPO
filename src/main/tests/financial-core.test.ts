@@ -9,6 +9,11 @@ import { AccountRepository } from '../storage/accounts'
 import { ImportBatchRepository } from '../storage/import-batches'
 import { TransactionRepository } from '../storage/transactions'
 import { TransactionLinkRepository } from '../storage/transaction-links'
+import {
+  CategoryRepository,
+  MerchantRepository,
+  TransactionClassificationRepository
+} from '../storage/categorisation'
 import { ImportService } from '../services/import-service'
 import {
   AccountMismatchError,
@@ -56,14 +61,16 @@ function makeTransaction(
 
 function makePreparedImport(
   accountId: string,
-  transactions: NewTransaction[] = [makeTransaction(accountId)]
+  transactions: NewTransaction[] = [makeTransaction(accountId)],
+  overrides: Partial<PreparedImport> = {}
 ): PreparedImport {
   return {
     accountId,
     sourceKind: 'unknown',
     sourceFileName: 'synthetic-source.txt',
     fileSha256: syntheticHash,
-    transactions
+    transactions,
+    ...overrides
   }
 }
 
@@ -525,6 +532,283 @@ describe('import service and transaction repository', () => {
     expect(second.batch.status).toBe('committed')
   })
 
+  it('skips overlapping transactions from different files using occurrence counts', () => {
+    const first = service.commitPreparedImport(
+      makePreparedImport(
+        account.id,
+        [
+          makeTransaction(account.id, {
+            sourceRowIndex: 0,
+            transactionDate: '2026-06-10',
+            originalDescription: 'Synthetic utility',
+            amountCents: -1000
+          })
+        ],
+        {
+          sourceKind: 'evo_visa_xls',
+          fileSha256: '1'.repeat(64)
+        }
+      )
+    )
+    const overlap = service.commitPreparedImport(
+      makePreparedImport(
+        account.id,
+        [
+          makeTransaction(account.id, {
+            sourceRowIndex: 0,
+            transactionDate: '2026-06-10',
+            originalDescription: 'Synthetic utility',
+            amountCents: -1000
+          })
+        ],
+        {
+          sourceKind: 'evo_visa_xls',
+          fileSha256: '2'.repeat(64)
+        }
+      )
+    )
+
+    expect(first.transactions).toHaveLength(1)
+    expect(overlap.transactions).toHaveLength(0)
+    expect(overlap.skippedDuplicateTransactionCount).toBe(1)
+    expect(overlap.batch.transactionCount).toBe(0)
+    expect(transactions.listForAccount(account.id)).toHaveLength(1)
+  })
+
+  it('treats pending-to-completed Visa rows as the same imported transaction', () => {
+    service.commitPreparedImport(
+      makePreparedImport(
+        account.id,
+        [
+          makeTransaction(account.id, {
+            sourceRowIndex: 0,
+            transactionDate: '2026-06-10',
+            originalDescription: 'Synthetic pending card merchant',
+            amountCents: -1000,
+            isPending: true
+          })
+        ],
+        {
+          sourceKind: 'evo_visa_xls',
+          fileSha256: '8'.repeat(64)
+        }
+      )
+    )
+
+    const completed = service.commitPreparedImport(
+      makePreparedImport(
+        account.id,
+        [
+          makeTransaction(account.id, {
+            sourceRowIndex: 0,
+            transactionDate: '2026-06-10',
+            originalDescription: 'Synthetic pending card merchant',
+            amountCents: -1000,
+            isPending: false
+          })
+        ],
+        {
+          sourceKind: 'evo_visa_xls',
+          fileSha256: '9'.repeat(64)
+        }
+      )
+    )
+
+    expect(completed.transactions).toHaveLength(0)
+    expect(completed.skippedDuplicateTransactionCount).toBe(1)
+    expect(transactions.listForAccount(account.id)).toHaveLength(1)
+  })
+
+  it('ignores changed value dates and balances when detecting overlap', () => {
+    const stableFacts = {
+      transactionDate: '2026-06-10',
+      originalDescription: 'Synthetic balance-shifted merchant',
+      amountCents: -1000
+    }
+    service.commitPreparedImport(
+      makePreparedImport(
+        account.id,
+        [
+          makeTransaction(account.id, {
+            sourceRowIndex: 0,
+            ...stableFacts,
+            valueDate: '2026-06-11',
+            balanceCents: 10000
+          })
+        ],
+        {
+          sourceKind: 'evo_account_excel',
+          fileSha256: 'a'.repeat(64)
+        }
+      )
+    )
+
+    const changedMetadata = service.commitPreparedImport(
+      makePreparedImport(
+        account.id,
+        [
+          makeTransaction(account.id, {
+            sourceRowIndex: 0,
+            ...stableFacts,
+            valueDate: '2026-06-12',
+            balanceCents: 9000
+          })
+        ],
+        {
+          sourceKind: 'evo_account_excel',
+          fileSha256: 'b'.repeat(64)
+        }
+      )
+    )
+
+    expect(changedMetadata.transactions).toHaveLength(0)
+    expect(changedMetadata.skippedDuplicateTransactionCount).toBe(1)
+    expect(transactions.listForAccount(account.id)).toHaveLength(1)
+  })
+
+  it('does not deduplicate matching descriptions and amounts from another month', () => {
+    const equivalent = {
+      originalDescription: 'Synthetic monthly subscription',
+      amountCents: -1000
+    }
+    service.commitPreparedImport(
+      makePreparedImport(
+        account.id,
+        [
+          makeTransaction(account.id, {
+            sourceRowIndex: 0,
+            transactionDate: '2026-06-10',
+            ...equivalent
+          })
+        ],
+        {
+          sourceKind: 'evo_visa_xls',
+          fileSha256: 'c'.repeat(64)
+        }
+      )
+    )
+
+    const nextMonth = service.commitPreparedImport(
+      makePreparedImport(
+        account.id,
+        [
+          makeTransaction(account.id, {
+            sourceRowIndex: 0,
+            transactionDate: '2026-07-10',
+            ...equivalent
+          })
+        ],
+        {
+          sourceKind: 'evo_visa_xls',
+          fileSha256: 'd'.repeat(64)
+        }
+      )
+    )
+
+    expect(nextMonth.transactions).toHaveLength(1)
+    expect(nextMonth.skippedDuplicateTransactionCount).toBe(0)
+    expect(transactions.listForAccount(account.id)).toHaveLength(2)
+  })
+
+  it('imports only the non-overlapping excess occurrence from a partial overlap', () => {
+    const equivalent = {
+      transactionDate: '2026-06-10',
+      originalDescription: 'Synthetic repeated merchant',
+      amountCents: -1000
+    }
+    service.commitPreparedImport(
+      makePreparedImport(
+        account.id,
+        [
+          makeTransaction(account.id, { sourceRowIndex: 0, ...equivalent }),
+          makeTransaction(account.id, { sourceRowIndex: 1, ...equivalent })
+        ],
+        {
+          sourceKind: 'evo_visa_xls',
+          fileSha256: '3'.repeat(64)
+        }
+      )
+    )
+    const overlap = service.commitPreparedImport(
+      makePreparedImport(
+        account.id,
+        [
+          makeTransaction(account.id, { sourceRowIndex: 0, ...equivalent }),
+          makeTransaction(account.id, { sourceRowIndex: 1, ...equivalent }),
+          makeTransaction(account.id, { sourceRowIndex: 2, ...equivalent })
+        ],
+        {
+          sourceKind: 'evo_visa_xls',
+          fileSha256: '4'.repeat(64)
+        }
+      )
+    )
+
+    expect(overlap.transactions).toHaveLength(1)
+    expect(overlap.skippedDuplicateTransactionCount).toBe(2)
+    expect(overlap.batch.transactionCount).toBe(1)
+    expect(transactions.listForAccount(account.id)).toHaveLength(3)
+  })
+
+  it('preserves genuine identical transactions within one new import', () => {
+    const equivalent = {
+      transactionDate: '2026-06-10',
+      originalDescription: 'Synthetic identical purchases',
+      amountCents: -1000
+    }
+    const result = service.commitPreparedImport(
+      makePreparedImport(
+        account.id,
+        [
+          makeTransaction(account.id, { sourceRowIndex: 0, ...equivalent }),
+          makeTransaction(account.id, { sourceRowIndex: 1, ...equivalent })
+        ],
+        {
+          sourceKind: 'evo_visa_xls',
+          fileSha256: '5'.repeat(64)
+        }
+      )
+    )
+
+    expect(result.transactions).toHaveLength(2)
+    expect(result.skippedDuplicateTransactionCount).toBe(0)
+    expect(transactions.listForAccount(account.id)).toHaveLength(2)
+  })
+
+  it('does not deduplicate equivalent rows on another account', () => {
+    const otherAccount = accounts.create({ name: 'Synthetic other card', kind: 'credit_card' })
+    const equivalent = {
+      transactionDate: '2026-06-10',
+      originalDescription: 'Synthetic account-scoped merchant',
+      amountCents: -1000
+    }
+
+    service.commitPreparedImport(
+      makePreparedImport(
+        account.id,
+        [makeTransaction(account.id, { sourceRowIndex: 0, ...equivalent })],
+        {
+          sourceKind: 'evo_visa_xls',
+          fileSha256: '6'.repeat(64)
+        }
+      )
+    )
+    const other = service.commitPreparedImport(
+      makePreparedImport(
+        otherAccount.id,
+        [makeTransaction(otherAccount.id, { sourceRowIndex: 0, ...equivalent })],
+        {
+          sourceKind: 'evo_visa_xls',
+          fileSha256: '7'.repeat(64)
+        }
+      )
+    )
+
+    expect(other.transactions).toHaveLength(1)
+    expect(transactions.listForAccount(account.id)).toHaveLength(1)
+    expect(transactions.listForAccount(otherAccount.id)).toHaveLength(1)
+  })
+
   it('rejects an account mismatch without leaving partial rows', () => {
     const otherAccount = accounts.create({
       name: 'Synthetic other account',
@@ -651,13 +935,13 @@ describe('import service and transaction repository', () => {
 
   it('lists transactions with focused filters, sorting, pagination, and enforced limits', () => {
     const otherAccount = accounts.create({ name: 'Synthetic savings', kind: 'current' })
-    service.commitPreparedImport(
+    const firstImport = service.commitPreparedImport(
       makePreparedImport(account.id, [
         makeTransaction(account.id, {
           sourceRowIndex: 0,
           transactionDate: '2026-01-10',
           amountCents: -3000,
-          originalDescription: 'Synthetic groceries'
+          originalDescription: 'Synthetic market fuencarral'
         }),
         makeTransaction(account.id, {
           sourceRowIndex: 1,
@@ -665,14 +949,14 @@ describe('import service and transaction repository', () => {
           amountCents: 500,
           transactionType: 'refund',
           isPending: true,
-          originalDescription: 'Synthetic refund'
+          originalDescription: 'Synthetic EXPJUAN refund'
         }),
         makeTransaction(account.id, {
           sourceRowIndex: 2,
           transactionDate: '2026-02-01',
           amountCents: -900,
           excludedFromSpending: true,
-          originalDescription: 'Synthetic excluded movement'
+          originalDescription: 'Synthetic unresolved movement'
         })
       ])
     )
@@ -687,6 +971,32 @@ describe('import service and transaction repository', () => {
         })
       ])
     )
+    const categories = new CategoryRepository(database.connection)
+    const merchants = new MerchantRepository(database.connection)
+    const classifications = new TransactionClassificationRepository(database.connection)
+    const utilities = categories.create({ name: 'Utilities', sortOrder: 1 })
+    const market = merchants.create({ name: 'Synthetic Market' })
+    const utilityMerchant = merchants.create({ name: 'Iberdrola Synthetic' })
+
+    classifications.save({
+      transactionId: firstImport.transactions[0].id,
+      merchantId: market.id,
+      categoryId: utilities.id,
+      usageType: 'personal',
+      costBehaviour: 'variable',
+      necessity: 'essential',
+      classificationSource: 'manual',
+      classificationStatus: 'confirmed'
+    })
+    classifications.save({
+      transactionId: firstImport.transactions[1].id,
+      merchantId: utilityMerchant.id,
+      usageType: 'personal',
+      costBehaviour: 'variable',
+      necessity: 'essential',
+      classificationSource: 'manual',
+      classificationStatus: 'confirmed'
+    })
 
     const accountPage = transactions.listPage({
       accountId: account.id,
@@ -729,6 +1039,59 @@ describe('import service and transaction repository', () => {
         offset: 0
       }).items
     ).toHaveLength(1)
+    expect(
+      transactions
+        .listPage({
+          search: 'FUENCARRAL',
+          confirmationFilter: 'all',
+          sortBy: 'transactionDate',
+          sortDirection: 'desc',
+          limit: 50,
+          offset: 0
+        })
+        .items.map((transaction) => transaction.originalDescription)
+    ).toEqual(['Synthetic market fuencarral'])
+    expect(
+      transactions
+        .listPage({
+          search: 'iberdrola',
+          confirmationFilter: 'all',
+          sortBy: 'transactionDate',
+          sortDirection: 'desc',
+          limit: 50,
+          offset: 0
+        })
+        .items.map((transaction) => transaction.id)
+    ).toEqual([firstImport.transactions[1].id])
+    expect(
+      transactions.listPage({
+        search: 'expjuan',
+        confirmationFilter: 'needs_confirmation',
+        sortBy: 'transactionDate',
+        sortDirection: 'desc',
+        limit: 50,
+        offset: 0
+      }).items
+    ).toHaveLength(1)
+    expect(
+      transactions.listPage({
+        confirmationFilter: 'confirmed',
+        categoryId: utilities.id,
+        sortBy: 'transactionDate',
+        sortDirection: 'desc',
+        limit: 50,
+        offset: 0
+      }).items
+    ).toHaveLength(1)
+    expect(
+      transactions.listPage({
+        confirmationFilter: 'needs_confirmation',
+        sortBy: 'transactionDate',
+        sortDirection: 'desc',
+        limit: 50,
+        offset: 0
+      }).total
+    ).toBe(3)
   })
 
   it('creates, retrieves, lists, deletes, and validates transaction links', () => {

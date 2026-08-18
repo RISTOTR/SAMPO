@@ -70,8 +70,9 @@ describe('transactions manual AI classify contract', () => {
     expect(transactionsView).toContain(':disabled="ai.submitting || !suggestion.canAcceptCategory"')
     expect(transactionsView).toContain(':disabled="ai.submitting || !suggestion.canAcceptMerchant"')
     expect(transactionsView).toContain(
-      '(!suggestion.canAcceptCategory && !suggestion.canAcceptMerchant)'
+      'v-if="suggestion.canAcceptCategory && suggestion.canAcceptMerchant"'
     )
+    expect(transactionsView).toContain('Use both')
     expect(aiStore).toContain('Manual category preserved')
     expect(aiStore).toContain('Manual merchant preserved')
     expect(aiStore).toContain('AI suggestion unchanged.')

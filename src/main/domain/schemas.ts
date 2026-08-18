@@ -194,7 +194,7 @@ export const preparedImportSchema = z.object({
   fileSha256: fileSha256Schema,
   statementPeriodStart: isoDateSchema.optional(),
   statementPeriodEnd: isoDateSchema.optional(),
-  transactions: z.array(newTransactionSchema).min(1)
+  transactions: z.array(newTransactionSchema)
 })
 
 export const categorySchema = z.object({

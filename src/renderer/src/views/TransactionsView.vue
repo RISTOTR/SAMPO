@@ -12,6 +12,8 @@ const ai = useAiStore()
 const classification = useClassificationStore()
 const transactions = useTransactionsStore()
 const filters = reactive({
+  search: '',
+  confirmationFilter: 'all' as 'all' | 'needs_confirmation' | 'confirmed',
   accountId: '',
   dateFrom: '',
   dateTo: '',
@@ -90,6 +92,8 @@ function currentTransactionQuery(): TransactionListQueryDto {
     : undefined
 
   return {
+    search: filters.search.trim() || undefined,
+    confirmationFilter: filters.confirmationFilter,
     accountId: filters.accountId || undefined,
     dateFrom: filters.dateFrom || undefined,
     dateTo: filters.dateTo || undefined,
@@ -134,6 +138,48 @@ function aiSuggestionFor(transactionId: string): AiSuggestionDto | undefined {
   return ai.suggestions.find((suggestion) => suggestion.transactionId === transactionId)
 }
 
+function suggestionChangeLabels(suggestion: AiSuggestionDto): string {
+  return [
+    suggestion.suggestedMerchantName ? 'Merchant' : undefined,
+    suggestion.suggestedCategoryId ? 'Category' : undefined
+  ]
+    .filter(Boolean)
+    .join(' + ')
+}
+
+function suggestionCurrentValue(suggestion: AiSuggestionDto): string {
+  return [
+    suggestion.suggestedMerchantName
+      ? `Merchant: ${suggestion.currentMerchantName ?? 'Unassigned'}`
+      : undefined,
+    suggestion.suggestedCategoryId
+      ? `Category: ${suggestion.currentCategoryPath?.join(' / ') ?? 'Unclassified'}`
+      : undefined
+  ]
+    .filter(Boolean)
+    .join(' | ')
+}
+
+function suggestionAiValue(suggestion: AiSuggestionDto): string {
+  return [
+    suggestion.suggestedMerchantName ? `Merchant: ${suggestion.suggestedMerchantName}` : undefined,
+    suggestion.suggestedCategoryPath
+      ? `Category: ${suggestion.suggestedCategoryPath.join(' / ')}`
+      : undefined
+  ]
+    .filter(Boolean)
+    .join(' | ')
+}
+
+function suggestionConfidence(suggestion: AiSuggestionDto): string {
+  return [
+    suggestion.suggestedMerchantName ? `Merchant ${suggestion.merchantConfidenceBand}` : undefined,
+    suggestion.suggestedCategoryId ? `Category ${suggestion.categoryConfidenceBand}` : undefined
+  ]
+    .filter(Boolean)
+    .join(' | ')
+}
+
 async function handleMerchantChange(): Promise<void> {
   newMerchantName.value = ''
   await refreshMatchingSummary()
@@ -149,6 +195,29 @@ async function loadAiSuggestions(): Promise<void> {
 }
 
 async function applyFilters(): Promise<void> {
+  filters.offset = 0
+  selectedTransactionIds.value = []
+  await loadTransactions()
+}
+
+async function resetFilters(): Promise<void> {
+  filters.search = ''
+  filters.confirmationFilter = 'all'
+  filters.accountId = ''
+  filters.dateFrom = ''
+  filters.dateTo = ''
+  filters.transactionType = ''
+  filters.pending = ''
+  filters.excludedFromSpending = ''
+  filters.categoryId = ''
+  filters.merchantId = ''
+  filters.usageType = ''
+  filters.costBehaviour = ''
+  filters.necessity = ''
+  filters.classificationStatus = ''
+  filters.unclassifiedOnly = false
+  filters.sortBy = 'transactionDate'
+  filters.sortDirection = 'desc'
   filters.offset = 0
   selectedTransactionIds.value = []
   await loadTransactions()
@@ -233,6 +302,7 @@ async function saveManual(): Promise<void> {
   newMerchantName.value = ''
   await classification.loadReference()
   await loadTransactions()
+  await ai.loadSuggestions(currentSuggestionListInput())
 }
 
 async function saveManualAndConfirmMatches(): Promise<void> {
@@ -306,6 +376,7 @@ async function bulkUpdate(): Promise<void> {
   })
   selectedTransactionIds.value = []
   await loadTransactions()
+  await ai.loadSuggestions(currentSuggestionListInput())
 }
 
 async function classifySelectedWithAi(): Promise<void> {
@@ -329,7 +400,11 @@ async function acceptAiSuggestion(
     suggestionIdPresent: Boolean(suggestionId)
   })
   await ai.acceptSuggestion(suggestionId, options, currentSuggestionListInput())
-  await Promise.all([classification.loadReference(), loadTransactions()])
+  await classification.loadReference()
+  if (editorTransactionId.value) {
+    await classification.loadClassification(editorTransactionId.value)
+  }
+  await loadTransactions()
 }
 
 async function rejectAiSuggestion(suggestionId: string): Promise<void> {
@@ -385,6 +460,41 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
     <div class="panel">
       <h3>Filters</h3>
       <form class="form-grid" @submit.prevent="applyFilters">
+        <div class="form-field form-field-wide">
+          <label for="filter-search">Search transactions or merchants</label>
+          <input
+            id="filter-search"
+            v-model="filters.search"
+            type="search"
+            placeholder="Search transactions or merchants..."
+          />
+        </div>
+        <div class="form-field confirmation-filter">
+          <span>Confirmation</span>
+          <div class="segmented-control" role="group" aria-label="Confirmation filter">
+            <button
+              type="button"
+              :class="{ active: filters.confirmationFilter === 'all' }"
+              @click="filters.confirmationFilter = 'all'"
+            >
+              All
+            </button>
+            <button
+              type="button"
+              :class="{ active: filters.confirmationFilter === 'needs_confirmation' }"
+              @click="filters.confirmationFilter = 'needs_confirmation'"
+            >
+              Needs confirmation
+            </button>
+            <button
+              type="button"
+              :class="{ active: filters.confirmationFilter === 'confirmed' }"
+              @click="filters.confirmationFilter = 'confirmed'"
+            >
+              Confirmed
+            </button>
+          </div>
+        </div>
         <div class="form-field">
           <label for="filter-account">Account</label>
           <select id="filter-account" v-model="filters.accountId">
@@ -492,6 +602,7 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
           <input v-model="filters.unclassifiedOnly" type="checkbox" />
         </label>
         <button type="submit" :disabled="transactions.loading">Apply filters</button>
+        <button type="button" :disabled="transactions.loading" @click="resetFilters">Reset</button>
       </form>
     </div>
 
@@ -566,10 +677,10 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
         <table>
           <thead>
             <tr>
-              <th>Merchant</th>
-              <th>Category</th>
-              <th>Merchant confidence</th>
-              <th>Category confidence</th>
+              <th>Difference</th>
+              <th>Current</th>
+              <th>AI suggests</th>
+              <th>Confidence</th>
               <th>Lookup</th>
               <th>Reason</th>
               <th>Actions</th>
@@ -577,10 +688,10 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
           </thead>
           <tbody>
             <tr v-for="suggestion in ai.suggestions" :key="suggestion.id">
-              <td>{{ suggestion.suggestedMerchantName ?? '' }}</td>
-              <td>{{ suggestion.suggestedCategoryPath?.join(' / ') ?? '' }}</td>
-              <td>{{ suggestion.merchantConfidenceBand }}</td>
-              <td>{{ suggestion.categoryConfidenceBand }}</td>
+              <td>{{ suggestionChangeLabels(suggestion) }}</td>
+              <td>{{ suggestionCurrentValue(suggestion) }}</td>
+              <td>{{ suggestionAiValue(suggestion) }}</td>
+              <td>{{ suggestionConfidence(suggestion) }}</td>
               <td>{{ suggestion.usedWebSearch ? 'Web' : 'Local' }}</td>
               <td>{{ suggestion.reasonCode }}</td>
               <td>
@@ -595,7 +706,7 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
                       })
                     "
                   >
-                    Accept category
+                    Use AI category
                   </button>
                   <button
                     type="button"
@@ -607,14 +718,12 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
                       })
                     "
                   >
-                    Accept merchant
+                    Use AI merchant
                   </button>
                   <button
+                    v-if="suggestion.canAcceptCategory && suggestion.canAcceptMerchant"
                     type="button"
-                    :disabled="
-                      ai.submitting ||
-                      (!suggestion.canAcceptCategory && !suggestion.canAcceptMerchant)
-                    "
+                    :disabled="ai.submitting"
                     @click="
                       acceptAiSuggestion(suggestion.id, {
                         acceptCategory: true,
@@ -622,7 +731,7 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
                       })
                     "
                   >
-                    Accept both
+                    Use both
                   </button>
                   <button
                     class="danger-button"
@@ -780,13 +889,24 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
       </p>
 
       <div v-if="editorSuggestion" class="panel">
-        <h4>AI suggestion</h4>
-        <p>
+        <h4>AI review</h4>
+        <p v-if="editorSuggestion.suggestedMerchantName">
           Merchant:
-          <strong>{{ editorSuggestion.suggestedMerchantName ?? 'No merchant identified' }}</strong>
+          <strong>{{ editorSuggestion.currentMerchantName ?? 'Unassigned' }}</strong>
+          ->
+          <strong>{{ editorSuggestion.suggestedMerchantName }}</strong>
           <span class="classification-note">
             {{ editorSuggestion.usedWebSearch ? 'Web lookup' : 'AI' }} ·
             {{ editorSuggestion.merchantConfidenceBand }} confidence
+          </span>
+        </p>
+        <p v-if="editorSuggestion.suggestedCategoryPath">
+          Category:
+          <strong>{{ editorSuggestion.currentCategoryPath?.join(' / ') ?? 'Unclassified' }}</strong>
+          ->
+          <strong>{{ editorSuggestion.suggestedCategoryPath.join(' / ') }}</strong>
+          <span class="classification-note">
+            {{ editorSuggestion.categoryConfidenceBand }} confidence
           </span>
         </p>
         <div class="button-row">
@@ -805,13 +925,6 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
             Use AI category
           </button>
         </div>
-        <p v-if="editorSuggestion.suggestedCategoryPath">
-          Category:
-          <strong>{{ editorSuggestion.suggestedCategoryPath.join(' / ') }}</strong>
-          <span class="classification-note">
-            {{ editorSuggestion.categoryConfidenceBand }} confidence
-          </span>
-        </p>
       </div>
 
       <form class="form-grid" @submit.prevent="saveManual">

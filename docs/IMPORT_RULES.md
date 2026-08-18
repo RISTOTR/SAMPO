@@ -56,6 +56,7 @@ Current milestone: Phase 7 smart AI categorisation complete.
 - Prepared imports are committed atomically: batch creation, transaction insertion, transaction count, and committed status succeed or fail together.
 - A committed file hash cannot be imported twice for the same account.
 - A rolled-back file may be deliberately imported again.
+- Overlapping exports are filtered at row level with account-scoped stable-fact transaction fingerprints and occurrence counts, so repeated exports do not duplicate already committed rows while genuine repeated identical purchases keep their multiplicity. The overlap fingerprint uses transaction date, normalised original description, signed amount, and currency; it does not use value date, balance, pending/completed state, reference, or import source.
 - Rollback removes the imported transactions and related transaction links, preserves the batch record, sets status to `rolled_back`, and resets `transaction_count` to zero.
 - Rollback is rejected while any transaction in the import batch participates in active `card_settlement` reconciliation links.
 - Source adapters must store only source filenames, never full source paths.
@@ -146,6 +147,7 @@ Visa importer tests generate temporary BIFF `.xls` workbooks from synthetic rows
 - Bulk classification sends normalised descriptors and category context, not amounts, balances, account identifiers, source files, source paths, or statement contents.
 - Web lookup is disabled unless the user explicitly enables it.
 - AI suggestions are pending review records and do not change imported transaction facts.
-- Manual classifications remain authoritative and are not silently overwritten by AI acceptance.
+- Existing confirmed classifications remain authoritative until the user explicitly accepts a differing AI field.
 - Accepting an AI suggestion is explicit and stores user-reviewed enrichment with source `ai`.
+- AI suggestion acceptance is field-aware: accepting only merchant or only category confirms that field and leaves any other differing suggested field pending until reviewed. Suggestions that already match the current classification do not produce actionable review cards.
 - AI failures must not roll back or invalidate a valid financial import.

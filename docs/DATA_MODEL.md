@@ -26,6 +26,8 @@ Current milestone: Phase 7 smart AI categorisation over the Phase 1-6 import, re
 
 `transactions` stores normalised imported movements with account, import batch, source row index, dates, optional reference, required original description, optional normalised merchant, integer-cent amount, optional balance, currency, transaction type, pending flag, spending exclusion flag, review status, and timestamps.
 
+Overlapping statement files are handled without a permanent transaction identity column. During preview and commit, Sampo builds an account-scoped fingerprint from stable imported facts: transaction date, normalised original description, signed amount, and currency. The fingerprint deliberately ignores fields that can change between exports, such as value date, balance, pending/completed state, reference, and import source. A fingerprint bucket is not treated as globally unique; if two equivalent rows already exist and three equivalent rows arrive, only one additional occurrence is inserted.
+
 `transaction_links` stores directional links between transactions for future reconciliation. Links can represent card settlements, own-account transfers, refunds, or related transactions. Link creation does not change amounts.
 
 `categories` stores a two-level category tree. Default system categories are seeded with stable IDs. User categories can be added, deactivated, reactivated, and deleted only while unused.
@@ -144,4 +146,6 @@ Manual classifications are authoritative. Rule application fills unclassified or
 
 ## AI Suggestion Enrichment
 
-AI suggestions are not imported transaction facts. They are review records with confidence metadata and do not affect reports until explicitly accepted. Accepting a suggestion may create classification enrichment with source `ai` and may create or reuse a canonical merchant when the user accepts the merchant suggestion. Merchant aliases remain explicit deterministic enrichment and are not created as a side effect of AI suggestion acceptance. Manual classifications remain authoritative and are not silently overwritten by AI acceptance.
+AI suggestions are not imported transaction facts. They are review records with confidence metadata and do not affect reports until explicitly accepted. Accepting a suggestion may create classification enrichment with source `ai` and may create or reuse a canonical merchant when the user accepts the merchant suggestion. Merchant aliases remain explicit deterministic enrichment and are not created as a side effect of AI suggestion acceptance. Existing confirmed classifications remain authoritative until the user explicitly accepts a differing AI field.
+
+Suggestion review is component-level. The review UI shows only unresolved suggested fields or fields where AI differs from the current confirmed classification. If a suggestion contains both merchant and category, accepting only one field leaves the suggestion pending for the other differing field until it is accepted, rejected, or superseded. Confirmed transaction classification fields are authoritative over pending AI drafts.

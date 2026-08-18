@@ -23,6 +23,11 @@ export const transactionTypeDtoSchema = z.enum([
 export const reviewStatusDtoSchema = z.enum(['confirmed', 'needs_review'])
 export const sortDirectionDtoSchema = z.enum(['asc', 'desc'])
 export const transactionSortByDtoSchema = z.enum(['transactionDate', 'amount'])
+export const transactionConfirmationFilterDtoSchema = z.enum([
+  'all',
+  'needs_confirmation',
+  'confirmed'
+])
 export const aliasMatchKindDtoSchema = z.enum(['exact', 'starts_with', 'contains'])
 export const usageTypeDtoSchema = z.enum(['personal', 'business', 'mixed', 'unspecified'])
 export const costBehaviourDtoSchema = z.enum(['fixed', 'variable', 'unspecified'])
@@ -166,6 +171,8 @@ export const importInspectionDtoSchema = z.object({
   detectedFormat: z.string().min(1),
   completedCount: z.number().int().min(0),
   pendingCount: z.number().int().min(0),
+  newTransactionCount: z.number().int().min(0).optional(),
+  duplicateTransactionCount: z.number().int().min(0).optional(),
   invalidRowCount: z.number().int().min(0),
   warningCount: z.number().int().min(0),
   statementPeriodStart: isoDateDtoSchema.optional(),
@@ -223,6 +230,8 @@ export const importBatchSummaryDtoSchema = z.object({
 })
 
 export const transactionListQueryDtoSchema = z.object({
+  search: z.string().trim().min(1).max(100).optional(),
+  confirmationFilter: transactionConfirmationFilterDtoSchema.default('all'),
   accountId: uuidDtoSchema.optional(),
   dateFrom: isoDateDtoSchema.optional(),
   dateTo: isoDateDtoSchema.optional(),
@@ -591,7 +600,9 @@ export const aiConnectionTestDtoSchema = z.object({
 export const aiSuggestionDtoSchema = z.object({
   id: uuidDtoSchema,
   transactionId: uuidDtoSchema,
+  currentMerchantName: z.string().min(1).optional(),
   suggestedMerchantName: z.string().min(1).optional(),
+  currentCategoryPath: z.array(z.string().min(1)).optional(),
   suggestedCategoryId: uuidDtoSchema.optional(),
   suggestedCategoryPath: z.array(z.string().min(1)).optional(),
   merchantConfidence: z.number().int().min(0).max(1000),
@@ -618,6 +629,7 @@ export const aiSuggestionDtoSchema = z.object({
 export const aiSuggestionReviewComponentStatusDtoSchema = z.enum([
   'accepted',
   'preserved_manual',
+  'preserved_confirmed',
   'not_suggested'
 ])
 

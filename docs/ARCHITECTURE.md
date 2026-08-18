@@ -50,7 +50,7 @@ Migrations are explicit, ordered, numeric, and forward-only. Applied migrations 
 
 Import adapters are separate modules from the normalised transaction model. Each adapter parses one source format, validates extracted data, reports confidence and errors, and produces a prepared import for the Phase 1 import service.
 
-The prepared-import service validates input, rejects duplicate committed file hashes for the same account, creates a pending batch, inserts all transactions in one SQLite transaction, and commits the batch atomically. Failed imports leave no partial transactions.
+The prepared-import service validates input, rejects duplicate committed file hashes for the same account, filters overlapping rows by account-scoped stable-fact fingerprint occurrence counts, creates a pending batch, inserts all new transactions in one SQLite transaction, and commits the batch atomically. Failed imports leave no partial transactions.
 
 Rollback is a deliberate operation for committed batches. It deletes imported transactions and related transaction links in one transaction, preserves the import-batch record, sets status to `rolled_back`, records `rolled_back_at`, and resets `transaction_count` to zero.
 
@@ -130,7 +130,7 @@ credit-card account -> EVO Visa XLS
 
 Imports remain all-or-nothing. Preview and inspection do not write to SQLite. Commit revalidates source compatibility and file hash, then uses the existing atomic prepared-import service. Import history supports rollback for unreconciled committed batches and communicates active reconciliation blocking.
 
-The transaction list uses focused repository filtering and pagination with a default page size of 50. The reconciliation review workflow lists card settlements, displays candidate Visa batches, requires explicit preview and confirmation, and supports explicit reversal.
+The transaction list uses focused repository filtering and pagination with a default page size of 50. Text search is executed in the main-process query against original transaction descriptions and resolved merchant names, and combines with date, category, type, confirmation-state, and pagination filters. The reconciliation review workflow lists card settlements, displays candidate Visa batches, requires explicit preview and confirmation, and supports explicit reversal.
 
 ## Phase 6 Categorisation
 
@@ -156,4 +156,4 @@ The OpenAI API key is stored locally through Electron `safeStorage` in the user-
 
 Provider requests use the OpenAI Responses API with structured JSON output and `store: false`. The bulk classifier sends normalised descriptors, source context, enabled category choices, and optional country/city context. It does not send amounts, balances, account identifiers, transaction dates, source filenames, source paths, statement contents, or database rows. Web search is not attached unless the user enables web lookup.
 
-AI suggestions are persisted separately in `ai_classification_suggestions` and remain pending until explicitly accepted or rejected. Accepting a suggestion writes user-reviewed classification enrichment with source `ai`; it never overwrites manual classifications and never modifies imported transaction facts, reconciliation links, amounts, dates, descriptions, or import-batch history. AI output is suggestion data only and must never generate authoritative financial totals.
+AI suggestions are persisted separately in `ai_classification_suggestions` and remain pending until explicitly accepted, rejected, or superseded. Pending suggestions do not override current confirmed classifications; the review UI shows only unresolved fields or AI fields that differ from the authoritative transaction state. Accepting a suggestion writes user-reviewed classification enrichment with source `ai`; it can replace a differing merchant or category only through explicit user action and never modifies imported transaction facts, reconciliation links, amounts, dates, descriptions, or import-batch history. Merchant and category acceptance are tracked by the authoritative transaction classification fields: a two-field suggestion remains pending when only one differing suggested field has been accepted. AI output is suggestion data only and must never generate authoritative financial totals.

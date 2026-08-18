@@ -87,7 +87,19 @@ export class ImportPreviewWorkflow {
     assertAccountSourceCompatibility(account, importer.sourceKind)
 
     const inspection = await importer.inspect(input)
-    const preparedImport = await importer.prepare(input, { accountId: account.id })
+    const originalPreparedImport = await importer.prepare(input, { accountId: account.id })
+    const duplicatePreview =
+      this.importService.previewPreparedImportDeduplication(originalPreparedImport)
+    const preparedImport = duplicatePreview.preparedImport
+    const inspectionWithDuplicates: ImportInspection = {
+      ...inspection,
+      newTransactionCount: duplicatePreview.newTransactionCount,
+      duplicateTransactionCount: duplicatePreview.duplicateTransactionCount,
+      canImport:
+        inspection.canImport &&
+        duplicatePreview.newTransactionCount > 0 &&
+        duplicatePreview.originalTransactionCount > 0
+    }
     const fileSha256 = await sha256File(filePath)
     const now = new Date()
     const session: InternalPreviewSession = {
@@ -97,7 +109,7 @@ export class ImportPreviewWorkflow {
       sourceFileName: basename(input.originalFileName),
       sourceKind: importer.sourceKind,
       importer,
-      inspection,
+      inspection: inspectionWithDuplicates,
       preparedImport,
       fileSha256,
       createdAt: now.toISOString(),

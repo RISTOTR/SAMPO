@@ -156,6 +156,14 @@ async function reverseReconciliation(): Promise<void> {
           <dt>Pending</dt>
           <dd>{{ imports.preview.inspection.pendingCount }}</dd>
         </div>
+        <div v-if="imports.preview.inspection.newTransactionCount !== undefined">
+          <dt>New</dt>
+          <dd>{{ imports.preview.inspection.newTransactionCount }}</dd>
+        </div>
+        <div v-if="imports.preview.inspection.duplicateTransactionCount">
+          <dt>Already imported</dt>
+          <dd>{{ imports.preview.inspection.duplicateTransactionCount }}</dd>
+        </div>
         <div>
           <dt>Invalid rows</dt>
           <dd>{{ imports.preview.inspection.invalidRowCount }}</dd>

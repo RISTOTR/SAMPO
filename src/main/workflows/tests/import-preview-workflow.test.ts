@@ -93,6 +93,25 @@ describe('ImportPreviewWorkflow', () => {
     expect(transactions.listForAccount(account.id)).toHaveLength(2)
   })
 
+  it('reports overlapping rows as already imported in preview', async () => {
+    const account = accounts.create({ name: 'Synthetic Visa', kind: 'credit_card' })
+    selectedFilePath = writeVisaWorkbook(directory, 'first-overlap.xls', 'First synthetic export')
+    const firstPreview = await workflow.selectAndInspectImport(account.id)
+    await workflow.commitImportPreview(firstPreview?.id ?? '')
+
+    selectedFilePath = writeVisaWorkbook(directory, 'second-overlap.xls', 'Second synthetic export')
+    const overlapPreview = await workflow.selectAndInspectImport(account.id)
+
+    expect(overlapPreview?.inspection).toMatchObject({
+      completedCount: 2,
+      newTransactionCount: 0,
+      duplicateTransactionCount: 2,
+      canImport: false
+    })
+    expect(overlapPreview?.transactions).toHaveLength(0)
+    expect(transactions.listForAccount(account.id)).toHaveLength(2)
+  })
+
   it('handles cancellation, incompatible source, source changes, active limit, and duplicate commit', async () => {
     const current = accounts.create({ name: 'Synthetic current', kind: 'current' })
     const card = accounts.create({ name: 'Synthetic Visa', kind: 'credit_card' })
@@ -130,9 +149,13 @@ describe('ImportPreviewWorkflow', () => {
   })
 })
 
-function writeVisaWorkbook(directory: string, fileName: string): string {
+function writeVisaWorkbook(
+  directory: string,
+  fileName: string,
+  heading = 'Synthetic Visa movements'
+): string {
   const rows = [
-    ['Synthetic Visa movements'],
+    [heading],
     ['FECHA', 'COMERCIO/CAJERO', 'IMPORTE'],
     [excelSerial('2026-02-01'), 'NORTH MARKET', -10],
     [excelSerial('2026-02-02'), 'TEST REFUND', 2],

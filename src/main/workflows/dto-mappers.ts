@@ -54,6 +54,8 @@ export function inspectionToDto(
     detectedFormat: inspection.detectedFormat,
     completedCount: inspection.completedCount,
     pendingCount: inspection.pendingCount,
+    newTransactionCount: inspection.newTransactionCount,
+    duplicateTransactionCount: inspection.duplicateTransactionCount,
     invalidRowCount: inspection.invalidRowCount,
     warningCount: inspection.warningCount,
     statementPeriodStart: inspection.statementPeriodStart,
@@ -201,6 +203,8 @@ export function classificationToSummaryDto(input: {
 
 export function aiSuggestionToDto(input: {
   suggestion: AiClassificationSuggestion
+  currentMerchantName?: string
+  currentCategoryPath?: string[]
   categoryPath?: string[]
   canAcceptCategory?: boolean
   canAcceptMerchant?: boolean
@@ -208,9 +212,13 @@ export function aiSuggestionToDto(input: {
   return {
     id: input.suggestion.id,
     transactionId: input.suggestion.transactionId,
-    suggestedMerchantName: input.suggestion.suggestedMerchantName,
-    suggestedCategoryId: input.suggestion.suggestedCategoryId,
-    suggestedCategoryPath: input.categoryPath,
+    currentMerchantName: input.canAcceptMerchant ? input.currentMerchantName : undefined,
+    suggestedMerchantName: input.canAcceptMerchant
+      ? input.suggestion.suggestedMerchantName
+      : undefined,
+    currentCategoryPath: input.canAcceptCategory ? input.currentCategoryPath : undefined,
+    suggestedCategoryId: input.canAcceptCategory ? input.suggestion.suggestedCategoryId : undefined,
+    suggestedCategoryPath: input.canAcceptCategory ? input.categoryPath : undefined,
     merchantConfidence: input.suggestion.merchantConfidence,
     categoryConfidence: input.suggestion.categoryConfidence,
     merchantConfidenceBand: confidenceBand(input.suggestion.merchantConfidence),

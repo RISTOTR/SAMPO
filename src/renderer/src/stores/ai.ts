@@ -224,8 +224,10 @@ function suggestionReviewMessage(review: AiSuggestionReviewDto): string {
   const parts: string[] = []
   if (review.category === 'accepted') parts.push('Category accepted')
   if (review.category === 'preserved_manual') parts.push('Manual category preserved')
+  if (review.category === 'preserved_confirmed') parts.push('Confirmed category preserved')
   if (review.merchant === 'accepted') parts.push('Merchant accepted')
   if (review.merchant === 'preserved_manual') parts.push('Manual merchant preserved')
+  if (review.merchant === 'preserved_confirmed') parts.push('Confirmed merchant preserved')
   return parts.length > 0 ? parts.join(' - ') : 'AI suggestion unchanged.'
 }
 
