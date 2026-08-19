@@ -20,10 +20,14 @@ describe('recurring renderer contract', () => {
     expect(ipc).toContain("recurringScan: 'sampo:recurring:scan'")
     expect(ipc).toContain("recurringPreviewManual: 'sampo:recurring:preview-manual'")
     expect(ipc).toContain("recurringCreateManual: 'sampo:recurring:create-manual'")
+    expect(ipc).toContain("recurringUpdate: 'sampo:recurring:update'")
+    expect(ipc).toContain("recurringDelete: 'sampo:recurring:delete'")
     expect(preload).toContain('recurring: {')
     expect(preload).toContain('scan: () => ipcRenderer.invoke(IPC_CHANNELS.recurringScan)')
     expect(preload).toContain('previewManual: (input) =>')
     expect(preload).toContain('createManual: (input) =>')
+    expect(preload).toContain('update: (input) =>')
+    expect(preload).toContain('delete: (input) =>')
   })
 
   it('renders candidate and confirmed sections', () => {
@@ -45,12 +49,35 @@ describe('recurring renderer contract', () => {
     expect(recurringStore).toContain('window.sampo.recurring.reject')
   })
 
+  it('supports editing and deleting recurring series', () => {
+    expect(recurringView).toContain('Edit recurring series')
+    expect(recurringView).toContain('openEdit(series)')
+    expect(recurringView).toContain('editPanel.value?.scrollIntoView')
+    expect(recurringView).toContain('@click.stop="openEdit(series)"')
+    expect(recurringView).toContain('deleteSeries(series.id)')
+    expect(recurringView).toContain('recurring.update')
+    expect(recurringView).toContain('recurring.deleteSeries')
+    expect(recurringStore).toContain('window.sampo.recurring.update')
+    expect(recurringStore).toContain('window.sampo.recurring.delete')
+  })
+
   it('exposes manual recurring creation from recurring and transactions views', () => {
     expect(recurringView).toContain('+ Add recurring payment')
     expect(recurringView).toContain('ManualRecurringForm')
     expect(transactionsView).toContain('Mark as recurring')
+    expect(transactionsView).toContain('Edit recurring')
     expect(transactionsView).toContain('openRecurringCreator(transaction.id)')
     expect(transactionsView).toContain(':transaction-id="recurringTransactionId"')
+  })
+
+  it('shows already marked recurring transactions in lists', () => {
+    expect(recurringView).toContain('series.occurrenceCount')
+    expect(recurringView).toContain('transactions ·')
+    expect(recurringView).toContain('recurring.selected.source')
+    expect(transactionsView).toContain('<th>Recurring</th>')
+    expect(transactionsView).toContain('transaction.recurring.displayName')
+    expect(transactionsView).toContain('transaction.recurring.cadence')
+    expect(transactionsView).toContain('Not recurring')
   })
 
   it('lets users review matches and select type and cadence before manual save', () => {

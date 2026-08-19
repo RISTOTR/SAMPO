@@ -301,6 +301,14 @@ export const classificationSummaryDtoSchema = z.object({
   appliedRuleName: z.string().min(1).optional()
 })
 
+export const transactionRecurringSummaryDtoSchema = z.object({
+  seriesId: uuidDtoSchema,
+  displayName: z.string().min(1),
+  recurrenceType: recurringSeriesTypeDtoSchema.exclude(['unknown', 'not_recurring']),
+  cadence: recurringSeriesCadenceDtoSchema,
+  source: recurringSeriesSourceDtoSchema
+})
+
 export const transactionRowDtoSchema = z.object({
   id: uuidDtoSchema,
   accountId: uuidDtoSchema,
@@ -317,6 +325,7 @@ export const transactionRowDtoSchema = z.object({
   excludedFromSpending: z.boolean(),
   reviewStatus: reviewStatusDtoSchema,
   classification: classificationSummaryDtoSchema.optional(),
+  recurring: transactionRecurringSummaryDtoSchema.optional(),
   createdAt: utcTimestampDtoSchema
 })
 
@@ -750,6 +759,17 @@ export const recurringRejectInputDtoSchema = z.object({
   seriesId: uuidDtoSchema
 })
 
+export const recurringUpdateInputDtoSchema = z.object({
+  seriesId: uuidDtoSchema,
+  displayName: z.string().trim().min(1),
+  recurrenceType: recurringSeriesTypeDtoSchema.exclude(['unknown', 'not_recurring']),
+  cadence: recurringSeriesCadenceDtoSchema
+})
+
+export const recurringDeleteInputDtoSchema = z.object({
+  seriesId: uuidDtoSchema
+})
+
 export const recurringManualPreviewInputDtoSchema = z.object({
   transactionId: uuidDtoSchema
 })
@@ -784,6 +804,7 @@ export type CommittedImportDto = z.infer<typeof committedImportDtoSchema>
 export type ImportBatchSummaryDto = z.infer<typeof importBatchSummaryDtoSchema>
 export type TransactionListQueryDto = z.input<typeof transactionListQueryDtoSchema>
 export type TransactionPageDto = z.infer<typeof transactionPageDtoSchema>
+export type TransactionRecurringSummaryDto = z.infer<typeof transactionRecurringSummaryDtoSchema>
 export type TransactionRowDto = z.infer<typeof transactionRowDtoSchema>
 export type ClassificationSummaryDto = z.infer<typeof classificationSummaryDtoSchema>
 export type SettlementSummaryDto = z.infer<typeof settlementSummaryDtoSchema>
@@ -840,6 +861,8 @@ export type RecurringSeriesOccurrenceDto = z.infer<typeof recurringSeriesOccurre
 export type RecurringScanSummaryDto = z.infer<typeof recurringScanSummaryDtoSchema>
 export type RecurringConfirmInputDto = z.input<typeof recurringConfirmInputDtoSchema>
 export type RecurringRejectInputDto = z.input<typeof recurringRejectInputDtoSchema>
+export type RecurringUpdateInputDto = z.input<typeof recurringUpdateInputDtoSchema>
+export type RecurringDeleteInputDto = z.input<typeof recurringDeleteInputDtoSchema>
 export type RecurringManualPreviewInputDto = z.input<typeof recurringManualPreviewInputDtoSchema>
 export type RecurringManualPreviewDto = z.infer<typeof recurringManualPreviewDtoSchema>
 export type CreateManualRecurringInputDto = z.input<typeof createManualRecurringInputDtoSchema>

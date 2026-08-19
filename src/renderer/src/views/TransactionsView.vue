@@ -159,10 +159,10 @@ function currentTransactionQuery(): TransactionListQueryDto {
   }
 }
 
-function currentSuggestionTransactionQuery(): NonNullable<
-  Parameters<typeof ai.loadSuggestions>[0]
->['transactionQuery'] {
-  const query = { ...currentTransactionQuery() }
+function currentSuggestionTransactionQuery(
+  transactionQuery = currentTransactionQuery()
+): NonNullable<Parameters<typeof ai.loadSuggestions>[0]>['transactionQuery'] {
+  const query = { ...transactionQuery }
   delete query.limit
   delete query.offset
   return query
@@ -220,8 +220,12 @@ async function handleMerchantChange(): Promise<void> {
 }
 
 async function loadTransactions(): Promise<void> {
-  await transactions.load(currentTransactionQuery())
-  await ai.loadSuggestions(currentSuggestionListInput())
+  const transactionQuery = currentTransactionQuery()
+  const suggestionInput = currentSuggestionListInput(
+    currentSuggestionTransactionQuery(transactionQuery)
+  )
+  await transactions.load(transactionQuery)
+  await ai.loadSuggestions(suggestionInput)
 }
 
 async function loadAiSuggestions(): Promise<void> {
@@ -430,6 +434,11 @@ function useAiCategorySuggestion(): void {
   void refreshMatchingSummary()
 }
 
+async function handleRecurringSaved(): Promise<void> {
+  closeRecurringCreator()
+  await loadTransactions()
+}
+
 async function bulkUpdate(): Promise<void> {
   await classification.bulkUpdate({
     transactionIds: selectedTransactionIds.value,
@@ -487,8 +496,10 @@ async function acceptHighConfidenceCategories(): Promise<void> {
   await loadTransactions()
 }
 
-function currentSuggestionListInput(): NonNullable<Parameters<typeof ai.loadSuggestions>[0]> {
-  return { transactionQuery: currentSuggestionTransactionQuery() }
+function currentSuggestionListInput(
+  transactionQuery = currentSuggestionTransactionQuery()
+): NonNullable<Parameters<typeof ai.loadSuggestions>[0]> {
+  return { transactionQuery }
 }
 
 function logTransactionsDiagnostic(label: string, metadata: Record<string, unknown>): void {
@@ -849,6 +860,7 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
               <th>Usage</th>
               <th>Cost</th>
               <th>Necessity</th>
+              <th>Recurring</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -925,10 +937,19 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
               <td>{{ transaction.classification?.costBehaviour ?? 'unspecified' }}</td>
               <td>{{ transaction.classification?.necessity ?? 'unspecified' }}</td>
               <td>
+                <span v-if="transaction.recurring" class="badge">
+                  {{ transaction.recurring.displayName }}
+                </span>
+                <span v-if="transaction.recurring" class="classification-note">
+                  {{ transaction.recurring.cadence }} · {{ transaction.recurring.source }}
+                </span>
+                <span v-else>Not recurring</span>
+              </td>
+              <td>
                 <div class="button-row">
                   <button type="button" @click="openEditor(transaction.id)">Edit</button>
                   <button type="button" @click="openRecurringCreator(transaction.id)">
-                    Mark as recurring
+                    {{ transaction.recurring ? 'Edit recurring' : 'Mark as recurring' }}
                   </button>
                 </div>
               </td>
@@ -959,7 +980,7 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
       <ManualRecurringForm
         :transaction-id="recurringTransactionId"
         @close="closeRecurringCreator"
-        @saved="closeRecurringCreator"
+        @saved="handleRecurringSaved"
       />
     </div>
 

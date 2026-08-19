@@ -2,6 +2,7 @@ import { readFileSync } from 'fs'
 import { describe, expect, it } from 'vitest'
 
 const transactionsView = readFileSync('src/renderer/src/views/TransactionsView.vue', 'utf8')
+const transactionsStore = readFileSync('src/renderer/src/stores/transactions.ts', 'utf8')
 const aiStore = readFileSync('src/renderer/src/stores/ai.ts', 'utf8')
 const applicationWorkflow = readFileSync('src/main/workflows/application-workflow.ts', 'utf8')
 const sharedDtos = readFileSync('src/shared/dtos.ts', 'utf8')
@@ -54,11 +55,19 @@ describe('transactions manual AI classify contract', () => {
   })
 
   it('filters AI suggestions through the current transaction filters', () => {
-    expect(transactionsView).toContain('function currentSuggestionTransactionQuery()')
-    expect(transactionsView).toContain('function currentSuggestionListInput()')
-    expect(transactionsView).toContain('await ai.loadSuggestions(currentSuggestionListInput())')
+    expect(transactionsView).toContain('function currentSuggestionTransactionQuery(')
+    expect(transactionsView).toContain('function currentSuggestionListInput(')
+    expect(transactionsView).toContain('await ai.loadSuggestions(suggestionInput)')
     expect(transactionsView).toContain('delete query.limit')
     expect(transactionsView).toContain('delete query.offset')
+  })
+
+  it('prevents older transaction searches from replacing the latest page', () => {
+    expect(transactionsStore).toContain('let latestLoadId = 0')
+    expect(transactionsStore).toContain('const loadId = ++latestLoadId')
+    expect(transactionsStore).toContain('if (loadId !== latestLoadId) return')
+    expect(transactionsView).toContain('const transactionQuery = currentTransactionQuery()')
+    expect(transactionsView).toContain('currentSuggestionTransactionQuery(transactionQuery)')
   })
 
   it('reloads transactions when search or confirmation filters change', () => {
@@ -71,6 +80,15 @@ describe('transactions manual AI classify contract', () => {
     expect(transactionsView).toContain('}, 150)')
     expect(transactionsView).toContain('filters.offset = 0')
     expect(transactionsView).toContain('await loadTransactions()')
+  })
+
+  it('includes confirmed recurring status in transaction rows', () => {
+    expect(sharedDtos).toContain('transactionRecurringSummaryDtoSchema')
+    expect(sharedDtos).toContain('recurring: transactionRecurringSummaryDtoSchema.optional()')
+    expect(applicationWorkflow).toContain('findConfirmedSummariesForTransactions')
+    expect(applicationWorkflow).toContain('recurringMap.get(transaction.id)')
+    expect(transactionsView).toContain('<th>Recurring</th>')
+    expect(transactionsView).toContain('transaction.recurring')
   })
 
   it('uses persisted suggestion ids for same-merchant suggestion rows and actions', () => {

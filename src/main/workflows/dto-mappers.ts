@@ -29,6 +29,7 @@ import type {
   ReconciliationCandidateDto,
   ReconciliationPreviewDto,
   SettlementSummaryDto,
+  TransactionRecurringSummaryDto,
   TransactionRowDto
 } from '../../shared/dtos'
 import { confidenceBand } from '../ai/config'
@@ -86,7 +87,8 @@ export function previewTransactionToDto(
 export function transactionToRowDto(
   transaction: Transaction,
   account: Account,
-  classification?: ClassificationSummaryDto
+  classification?: ClassificationSummaryDto,
+  recurring?: TransactionRecurringSummaryDto
 ): TransactionRowDto {
   return {
     id: transaction.id,
@@ -104,6 +106,7 @@ export function transactionToRowDto(
     excludedFromSpending: transaction.excludedFromSpending,
     reviewStatus: transaction.reviewStatus,
     classification,
+    recurring,
     createdAt: transaction.createdAt
   }
 }

@@ -44,6 +44,15 @@ export type RecurringSeriesOccurrence = {
   categoryPath?: string[]
 }
 
+export type TransactionRecurringSummary = {
+  transactionId: string
+  seriesId: string
+  displayName: string
+  recurrenceType: Exclude<RecurringSeriesType, 'unknown' | 'not_recurring'>
+  cadence: RecurringCadence
+  source: RecurringSeriesSource
+}
+
 export type RecurringSeriesInput = Omit<
   RecurringSeries,
   'id' | 'merchantName' | 'createdAt' | 'updatedAt'
@@ -106,6 +115,51 @@ export class RecurringSeriesRepository {
       .get(seriesKey)
 
     return row ? mapSeries(row as Row) : undefined
+  }
+
+  findConfirmedSummariesForTransactions(
+    transactionIds: string[]
+  ): Map<string, TransactionRecurringSummary> {
+    const uniqueIds = [...new Set(transactionIds)]
+    if (uniqueIds.length === 0) return new Map()
+    const placeholders = uniqueIds.map(() => '?').join(', ')
+    const rows = this.database
+      .prepare(
+        `
+          SELECT
+            links.transaction_id AS transaction_id,
+            series.id AS series_id,
+            series.canonical_description,
+            series.recurrence_type,
+            series.cadence,
+            series.source
+          FROM recurring_series_transactions links
+          JOIN recurring_series series ON series.id = links.recurring_series_id
+          WHERE series.status = 'confirmed'
+            AND series.recurrence_type NOT IN ('unknown', 'not_recurring')
+            AND links.transaction_id IN (${placeholders})
+          ORDER BY series.updated_at DESC
+        `
+      )
+      .all(...uniqueIds) as Row[]
+
+    const summaries = new Map<string, TransactionRecurringSummary>()
+    for (const row of rows) {
+      const transactionId = String(row['transaction_id'])
+      if (summaries.has(transactionId)) continue
+      summaries.set(transactionId, {
+        transactionId,
+        seriesId: String(row['series_id']),
+        displayName: String(row['canonical_description']),
+        recurrenceType: row['recurrence_type'] as Exclude<
+          RecurringSeriesType,
+          'unknown' | 'not_recurring'
+        >,
+        cadence: row['cadence'] as RecurringCadence,
+        source: row['source'] as RecurringSeriesSource
+      })
+    }
+    return summaries
   }
 
   upsertCandidate(input: RecurringSeriesInput): RecurringSeries {
@@ -282,6 +336,45 @@ export class RecurringSeriesRepository {
       )
       .run({ id, recurrenceType, updatedAt: new Date().toISOString() })
     return this.findById(id)
+  }
+
+  updateUserFields(
+    id: string,
+    input: {
+      canonicalDescription: string
+      recurrenceType: Exclude<RecurringSeriesType, 'unknown' | 'not_recurring'>
+      cadence: RecurringCadence
+    }
+  ): RecurringSeries {
+    this.findById(id)
+    this.database
+      .prepare(
+        `
+          UPDATE recurring_series
+          SET canonical_description = @canonicalDescription,
+              recurrence_type = @recurrenceType,
+              cadence = @cadence,
+              status = 'confirmed',
+              source = 'manual',
+              confidence = 'high',
+              confidence_score = 100,
+              updated_at = @updatedAt
+          WHERE id = @id
+        `
+      )
+      .run({
+        id,
+        canonicalDescription: input.canonicalDescription.trim(),
+        recurrenceType: input.recurrenceType,
+        cadence: input.cadence,
+        updatedAt: new Date().toISOString()
+      })
+    return this.findById(id)
+  }
+
+  delete(id: string): void {
+    this.findById(id)
+    this.database.prepare('DELETE FROM recurring_series WHERE id = ?').run(id)
   }
 
   reject(id: string): RecurringSeries {

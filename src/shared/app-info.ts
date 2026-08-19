@@ -37,6 +37,8 @@ import type {
   RecurringScanSummaryDto,
   RecurringSeriesDetailDto,
   RecurringSeriesDto,
+  RecurringDeleteInputDto,
+  RecurringUpdateInputDto,
   ReversedReconciliationDto,
   RuleApplicationPreviewDto,
   RuleInputDto,
@@ -163,6 +165,8 @@ export type SampoApi = {
     get: (seriesId: string) => Promise<ApiResult<RecurringSeriesDetailDto>>
     confirm: (input: RecurringConfirmInputDto) => Promise<ApiResult<RecurringSeriesDto>>
     reject: (input: RecurringRejectInputDto) => Promise<ApiResult<RecurringSeriesDto>>
+    update: (input: RecurringUpdateInputDto) => Promise<ApiResult<RecurringSeriesDetailDto>>
+    delete: (input: RecurringDeleteInputDto) => Promise<ApiResult<void>>
     previewManual: (
       input: RecurringManualPreviewInputDto
     ) => Promise<ApiResult<RecurringManualPreviewDto>>

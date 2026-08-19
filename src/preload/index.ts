@@ -100,6 +100,8 @@ const sampo: SampoApi = {
     get: (seriesId) => ipcRenderer.invoke(IPC_CHANNELS.recurringGet, seriesId),
     confirm: (input) => ipcRenderer.invoke(IPC_CHANNELS.recurringConfirm, input),
     reject: (input) => ipcRenderer.invoke(IPC_CHANNELS.recurringReject, input),
+    update: (input) => ipcRenderer.invoke(IPC_CHANNELS.recurringUpdate, input),
+    delete: (input) => ipcRenderer.invoke(IPC_CHANNELS.recurringDelete, input),
     previewManual: (input) => ipcRenderer.invoke(IPC_CHANNELS.recurringPreviewManual, input),
     createManual: (input) => ipcRenderer.invoke(IPC_CHANNELS.recurringCreateManual, input)
   }

@@ -7,7 +7,8 @@ import {
   type RecurringMatchingBasis,
   type RecurringSeries,
   type RecurringSeriesOccurrence,
-  type RecurringSeriesType
+  type RecurringSeriesType,
+  type TransactionRecurringSummary
 } from '../storage/recurring'
 
 type CandidateTransaction = {
@@ -57,6 +58,13 @@ export type CreateManualRecurringInput = {
   cadence: RecurringCadence
 }
 
+export type UpdateRecurringInput = {
+  seriesId: string
+  displayName: string
+  recurrenceType: Exclude<RecurringSeriesType, 'unknown' | 'not_recurring'>
+  cadence: RecurringCadence
+}
+
 const cadenceRanges: Record<
   Exclude<RecurringCadence, 'irregular'>,
   { min: number; max: number }
@@ -99,6 +107,12 @@ export class RecurringDetectionService {
     return this.series.list()
   }
 
+  findConfirmedSummariesForTransactions(
+    transactionIds: string[]
+  ): Map<string, TransactionRecurringSummary> {
+    return this.series.findConfirmedSummariesForTransactions(transactionIds)
+  }
+
   get(id: string): RecurringSeries & { occurrences: RecurringSeriesOccurrence[] } {
     return {
       ...this.series.findById(id),
@@ -115,6 +129,21 @@ export class RecurringDetectionService {
 
   reject(id: string): RecurringSeries {
     return this.series.reject(id)
+  }
+
+  update(
+    input: UpdateRecurringInput
+  ): RecurringSeries & { occurrences: RecurringSeriesOccurrence[] } {
+    const updated = this.series.updateUserFields(input.seriesId, {
+      canonicalDescription: input.displayName,
+      recurrenceType: input.recurrenceType,
+      cadence: input.cadence
+    })
+    return this.get(updated.id)
+  }
+
+  delete(id: string): void {
+    this.series.delete(id)
   }
 
   previewManual(transactionId: string): ManualRecurringPreview {

@@ -220,6 +220,17 @@ describe('recurring detection service', () => {
     expect(created.occurrences.map((occurrence) => occurrence.transactionId)).toEqual(
       seeded.transactionIds
     )
+    expect(
+      recurring
+        .findConfirmedSummariesForTransactions(seeded.transactionIds)
+        .get(seeded.transactionIds[0]!)
+    ).toMatchObject({
+      seriesId: created.id,
+      displayName: 'Synthetic Rent - Payee',
+      recurrenceType: 'recurring_payment',
+      cadence: 'monthly',
+      source: 'manual'
+    })
   })
 
   it('manually falls back to exact description and excludes unrelated transactions', () => {
@@ -279,6 +290,41 @@ describe('recurring detection service', () => {
       cadence: 'quarterly',
       canonicalDescription: 'Synthetic second name'
     })
+  })
+
+  it('updates and deletes user-managed recurring series fields', () => {
+    const seeded = seedMerchantTransactions('Synthetic Editable Recurring', [
+      ['2026-01-08', -1200],
+      ['2026-02-07', -1200]
+    ])
+    const created = recurring.createManual({
+      transactionId: seeded.transactionIds[0]!,
+      displayName: 'Synthetic editable',
+      recurrenceType: 'subscription',
+      cadence: 'monthly'
+    })
+
+    const updated = recurring.update({
+      seriesId: created.id,
+      displayName: 'Synthetic edited',
+      recurrenceType: 'recurring_bill',
+      cadence: 'quarterly'
+    })
+
+    expect(updated).toMatchObject({
+      id: created.id,
+      canonicalDescription: 'Synthetic edited',
+      recurrenceType: 'recurring_bill',
+      cadence: 'quarterly',
+      status: 'confirmed',
+      source: 'manual',
+      occurrenceCount: 2
+    })
+
+    recurring.delete(created.id)
+
+    expect(recurring.list().some((series) => series.id === created.id)).toBe(false)
+    expect(recurring.findConfirmedSummariesForTransactions(seeded.transactionIds).size).toBe(0)
   })
 
   it('rescans preserve and extend manual recurring series without downgrading them', () => {

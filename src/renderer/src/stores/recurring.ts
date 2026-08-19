@@ -7,7 +7,8 @@ import type {
   RecurringScanSummaryDto,
   RecurringSeriesDetailDto,
   RecurringSeriesDto,
-  RecurringSeriesTypeDto
+  RecurringSeriesTypeDto,
+  RecurringUpdateInputDto
 } from '../../../shared/dtos'
 import { errorMessage, unwrapResult } from './api-result'
 
@@ -74,6 +75,24 @@ export const useRecurringStore = defineStore('recurring', () => {
       await window.sampo.recurring.reject({ seriesId })
       message.value = 'Recurring candidate rejected.'
       selected.value = selected.value?.id === seriesId ? null : selected.value
+      await load()
+    })
+  }
+
+  async function update(input: RecurringUpdateInputDto): Promise<void> {
+    await submit(async () => {
+      const updated = unwrapResult(await window.sampo.recurring.update(input))
+      selected.value = updated
+      message.value = 'Recurring series updated.'
+      await load()
+    })
+  }
+
+  async function deleteSeries(seriesId: string): Promise<void> {
+    await submit(async () => {
+      await window.sampo.recurring.delete({ seriesId })
+      selected.value = selected.value?.id === seriesId ? null : selected.value
+      message.value = 'Recurring series deleted.'
       await load()
     })
   }
@@ -146,6 +165,8 @@ export const useRecurringStore = defineStore('recurring', () => {
     open,
     confirm,
     reject,
+    update,
+    deleteSeries,
     previewManual,
     createManual,
     clearManualPreview

@@ -27,12 +27,14 @@ import {
   merchantListQueryDtoSchema,
   overviewStatsDtoSchema,
   recurringConfirmInputDtoSchema,
+  recurringDeleteInputDtoSchema,
   recurringManualPreviewDtoSchema,
   recurringManualPreviewInputDtoSchema,
   recurringRejectInputDtoSchema,
   recurringScanSummaryDtoSchema,
   recurringSeriesDetailDtoSchema,
   recurringSeriesDtoSchema,
+  recurringUpdateInputDtoSchema,
   rejectAiSuggestionInputDtoSchema,
   ruleApplicationPreviewDtoSchema,
   ruleInputDtoSchema,
@@ -252,27 +254,44 @@ export class ApplicationWorkflow {
     const query = transactionListQueryDtoSchema.parse(input)
     const page = this.transactions.listPage(query)
     const accountMap = new Map(this.accounts.list().map((account) => [account.id, account]))
+    const recurringMap = this.recurring.findConfirmedSummariesForTransactions(
+      page.items.map((transaction) => transaction.id)
+    )
 
     return transactionPageDtoSchema.parse({
       items: page.items.map((transaction) => {
         const account =
           accountMap.get(transaction.accountId) ?? this.accounts.findById(transaction.accountId)
         const proposal = this.classification.evaluateTransaction(transaction.id)
-        return transactionToRowDto(transaction, account, {
-          merchantId: proposal.merchantId,
-          merchantName: proposal.merchantName,
-          merchantDisplay: this.merchantDisplay(transaction.id, proposal),
-          categoryId: proposal.categoryId,
-          categoryPath: proposal.categoryPath,
-          categoryDisplay: this.categoryDisplay(transaction.id, proposal),
-          usageType: proposal.usageType,
-          costBehaviour: proposal.costBehaviour,
-          necessity: proposal.necessity,
-          classificationSource: proposal.source,
-          classificationStatus: proposal.status,
-          appliedRuleId: proposal.matchedRuleId,
-          appliedRuleName: proposal.matchedRuleName
-        })
+        const recurring = recurringMap.get(transaction.id)
+        return transactionToRowDto(
+          transaction,
+          account,
+          {
+            merchantId: proposal.merchantId,
+            merchantName: proposal.merchantName,
+            merchantDisplay: this.merchantDisplay(transaction.id, proposal),
+            categoryId: proposal.categoryId,
+            categoryPath: proposal.categoryPath,
+            categoryDisplay: this.categoryDisplay(transaction.id, proposal),
+            usageType: proposal.usageType,
+            costBehaviour: proposal.costBehaviour,
+            necessity: proposal.necessity,
+            classificationSource: proposal.source,
+            classificationStatus: proposal.status,
+            appliedRuleId: proposal.matchedRuleId,
+            appliedRuleName: proposal.matchedRuleName
+          },
+          recurring
+            ? {
+                seriesId: recurring.seriesId,
+                displayName: recurring.displayName,
+                recurrenceType: recurring.recurrenceType,
+                cadence: recurring.cadence,
+                source: recurring.source
+              }
+            : undefined
+        )
       }),
       total: page.total,
       limit: query.limit,
@@ -310,6 +329,20 @@ export class ApplicationWorkflow {
     return recurringSeriesDtoSchema.parse(
       recurringSeriesToDto(this.recurring.reject(parsed.seriesId))
     )
+  }
+
+  updateRecurringSeries(input: unknown): RecurringSeriesDetailDto {
+    const parsed = recurringUpdateInputDtoSchema.parse(input)
+    const series = this.recurring.update(parsed)
+    return recurringSeriesDetailDtoSchema.parse({
+      ...recurringSeriesToDto(series),
+      occurrences: series.occurrences
+    })
+  }
+
+  deleteRecurringSeries(input: unknown): void {
+    const parsed = recurringDeleteInputDtoSchema.parse(input)
+    this.recurring.delete(parsed.seriesId)
   }
 
   previewManualRecurringSeries(input: unknown): RecurringManualPreviewDto {
