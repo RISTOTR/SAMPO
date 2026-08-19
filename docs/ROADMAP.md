@@ -83,6 +83,7 @@ Current milestone: Phase 8 - Recurring Payments and Subscriptions in progress.
 
 - Deterministic recurring-series detection - complete
 - Subscription, recurring bill, recurring payment review - complete
+- Manual recurring-series creation from transactions - complete
 - Candidate rejection persistence - complete
 - Recurring series detail with linked transactions - complete
 - Monthly comparisons

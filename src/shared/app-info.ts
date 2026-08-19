@@ -14,6 +14,7 @@ import type {
   ClassificationProposalDto,
   CommittedImportDto,
   CommittedReconciliationDto,
+  CreateManualRecurringInputDto,
   CreateAccountInputDto,
   CreateCategoryInputDto,
   CreateMerchantAliasInputDto,
@@ -30,6 +31,8 @@ import type {
   ReconciliationCandidateDto,
   ReconciliationPreviewDto,
   RecurringConfirmInputDto,
+  RecurringManualPreviewDto,
+  RecurringManualPreviewInputDto,
   RecurringRejectInputDto,
   RecurringScanSummaryDto,
   RecurringSeriesDetailDto,
@@ -160,5 +163,11 @@ export type SampoApi = {
     get: (seriesId: string) => Promise<ApiResult<RecurringSeriesDetailDto>>
     confirm: (input: RecurringConfirmInputDto) => Promise<ApiResult<RecurringSeriesDto>>
     reject: (input: RecurringRejectInputDto) => Promise<ApiResult<RecurringSeriesDto>>
+    previewManual: (
+      input: RecurringManualPreviewInputDto
+    ) => Promise<ApiResult<RecurringManualPreviewDto>>
+    createManual: (
+      input: CreateManualRecurringInputDto
+    ) => Promise<ApiResult<RecurringSeriesDetailDto>>
   }
 }

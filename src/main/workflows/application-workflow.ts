@@ -14,6 +14,7 @@ import {
   categoryDtoSchema,
   classificationProposalDtoSchema,
   createAccountInputDtoSchema,
+  createManualRecurringInputDtoSchema,
   createCategoryInputDtoSchema,
   createMerchantAliasInputDtoSchema,
   createMerchantInputDtoSchema,
@@ -26,6 +27,8 @@ import {
   merchantListQueryDtoSchema,
   overviewStatsDtoSchema,
   recurringConfirmInputDtoSchema,
+  recurringManualPreviewDtoSchema,
+  recurringManualPreviewInputDtoSchema,
   recurringRejectInputDtoSchema,
   recurringScanSummaryDtoSchema,
   recurringSeriesDetailDtoSchema,
@@ -67,6 +70,7 @@ import {
   type ReconciliationCandidateDto,
   type ReconciliationPreviewDto,
   type RecurringScanSummaryDto,
+  type RecurringManualPreviewDto,
   type RecurringSeriesDetailDto,
   type RecurringSeriesDto,
   type ReversedReconciliationDto,
@@ -306,6 +310,20 @@ export class ApplicationWorkflow {
     return recurringSeriesDtoSchema.parse(
       recurringSeriesToDto(this.recurring.reject(parsed.seriesId))
     )
+  }
+
+  previewManualRecurringSeries(input: unknown): RecurringManualPreviewDto {
+    const parsed = recurringManualPreviewInputDtoSchema.parse(input)
+    return recurringManualPreviewDtoSchema.parse(this.recurring.previewManual(parsed.transactionId))
+  }
+
+  createManualRecurringSeries(input: unknown): RecurringSeriesDetailDto {
+    const parsed = createManualRecurringInputDtoSchema.parse(input)
+    const series = this.recurring.createManual(parsed)
+    return recurringSeriesDetailDtoSchema.parse({
+      ...recurringSeriesToDto(series),
+      occurrences: series.occurrences
+    })
   }
 
   listUnreconciledSettlements(): SettlementSummaryDto[] {
@@ -909,6 +927,7 @@ function recurringSeriesToDto(series: RecurringSeries): RecurringSeriesDto {
     recurrenceType: series.recurrenceType,
     cadence: series.cadence,
     status: series.status,
+    source: series.source,
     typicalAmountCents: series.typicalAmountCents,
     minAmountCents: series.minAmountCents,
     maxAmountCents: series.maxAmountCents,

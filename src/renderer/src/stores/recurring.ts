@@ -1,6 +1,9 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type {
+  CreateManualRecurringInputDto,
+  RecurringManualPreviewDto,
+  RecurringManualPreviewInputDto,
   RecurringScanSummaryDto,
   RecurringSeriesDetailDto,
   RecurringSeriesDto,
@@ -11,6 +14,7 @@ import { errorMessage, unwrapResult } from './api-result'
 export const useRecurringStore = defineStore('recurring', () => {
   const series = ref<RecurringSeriesDto[]>([])
   const selected = ref<RecurringSeriesDetailDto | null>(null)
+  const manualPreview = ref<RecurringManualPreviewDto | null>(null)
   const lastScan = ref<RecurringScanSummaryDto | null>(null)
   const loading = ref(false)
   const submitting = ref(false)
@@ -74,6 +78,47 @@ export const useRecurringStore = defineStore('recurring', () => {
     })
   }
 
+  async function previewManual(input: RecurringManualPreviewInputDto): Promise<void> {
+    submitting.value = true
+    error.value = null
+    message.value = null
+    try {
+      manualPreview.value = unwrapResult(await window.sampo.recurring.previewManual(input))
+    } catch (caught) {
+      manualPreview.value = null
+      error.value = errorMessage(caught)
+    } finally {
+      submitting.value = false
+    }
+  }
+
+  async function createManual(
+    input: CreateManualRecurringInputDto
+  ): Promise<RecurringSeriesDetailDto | null> {
+    submitting.value = true
+    error.value = null
+    message.value = null
+    try {
+      const created = unwrapResult(await window.sampo.recurring.createManual(input))
+      selected.value = created
+      manualPreview.value = null
+      message.value = `Recurring series saved with ${created.occurrenceCount} linked ${
+        created.occurrenceCount === 1 ? 'transaction' : 'transactions'
+      }.`
+      await load()
+      return created
+    } catch (caught) {
+      error.value = errorMessage(caught)
+      return null
+    } finally {
+      submitting.value = false
+    }
+  }
+
+  function clearManualPreview(): void {
+    manualPreview.value = null
+  }
+
   async function submit(action: () => Promise<void>): Promise<void> {
     submitting.value = true
     error.value = null
@@ -90,6 +135,7 @@ export const useRecurringStore = defineStore('recurring', () => {
   return {
     series,
     selected,
+    manualPreview,
     lastScan,
     loading,
     submitting,
@@ -99,6 +145,9 @@ export const useRecurringStore = defineStore('recurring', () => {
     scan,
     open,
     confirm,
-    reject
+    reject,
+    previewManual,
+    createManual,
+    clearManualPreview
   }
 })

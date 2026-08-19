@@ -4,12 +4,15 @@ import { formatCents, formatDate } from '../formatters'
 import { useAccountsStore } from '../stores/accounts'
 import { useAiStore } from '../stores/ai'
 import { useClassificationStore } from '../stores/classification'
+import { useRecurringStore } from '../stores/recurring'
 import { useTransactionsStore } from '../stores/transactions'
 import type { AiSuggestionDto, TransactionListQueryDto } from '../../../shared/dtos'
+import ManualRecurringForm from '../components/ManualRecurringForm.vue'
 
 const accounts = useAccountsStore()
 const ai = useAiStore()
 const classification = useClassificationStore()
+const recurring = useRecurringStore()
 const transactions = useTransactionsStore()
 const filters = reactive({
   search: '',
@@ -33,7 +36,9 @@ const filters = reactive({
 })
 const selectedTransactionIds = ref<string[]>([])
 const editorTransactionId = ref<string | null>(null)
+const recurringTransactionId = ref<string | null>(null)
 const editorPanel = ref<HTMLElement | null>(null)
+const recurringPanel = ref<HTMLElement | null>(null)
 const newMerchantName = ref('')
 const manualForm = reactive({
   merchantId: '',
@@ -336,6 +341,12 @@ async function openEditor(transactionId: string): Promise<void> {
   }
 }
 
+async function openRecurringCreator(transactionId: string): Promise<void> {
+  recurringTransactionId.value = transactionId
+  await nextTick()
+  recurringPanel.value?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+}
+
 async function saveManual(): Promise<void> {
   if (!editorTransactionId.value) return
   await classification.saveManual(editorClassificationInput())
@@ -365,6 +376,11 @@ function closeEditor(): void {
 
   if (!transactionId) return
   selectedTransactionIds.value = selectedTransactionIds.value.filter((id) => id !== transactionId)
+}
+
+function closeRecurringCreator(): void {
+  recurringTransactionId.value = null
+  recurring.clearManualPreview()
 }
 
 async function refreshMatchingSummary(): Promise<void> {
@@ -506,6 +522,10 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
     </p>
     <p v-if="ai.error" class="error-message" aria-live="polite">{{ ai.error }}</p>
     <p v-if="ai.message" class="status-message" aria-live="polite">{{ ai.message }}</p>
+    <p v-if="recurring.error" class="error-message" aria-live="polite">{{ recurring.error }}</p>
+    <p v-if="recurring.message" class="status-message" aria-live="polite">
+      {{ recurring.message }}
+    </p>
 
     <div class="panel">
       <h3>Filters</h3>
@@ -905,7 +925,12 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
               <td>{{ transaction.classification?.costBehaviour ?? 'unspecified' }}</td>
               <td>{{ transaction.classification?.necessity ?? 'unspecified' }}</td>
               <td>
-                <button type="button" @click="openEditor(transaction.id)">Edit</button>
+                <div class="button-row">
+                  <button type="button" @click="openEditor(transaction.id)">Edit</button>
+                  <button type="button" @click="openRecurringCreator(transaction.id)">
+                    Mark as recurring
+                  </button>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -927,6 +952,15 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
           Next
         </button>
       </div>
+    </div>
+
+    <div v-if="recurringTransactionId" ref="recurringPanel" class="panel">
+      <h3>Mark as recurring</h3>
+      <ManualRecurringForm
+        :transaction-id="recurringTransactionId"
+        @close="closeRecurringCreator"
+        @saved="closeRecurringCreator"
+      />
     </div>
 
     <div v-if="editorTransactionId" ref="editorPanel" class="panel">

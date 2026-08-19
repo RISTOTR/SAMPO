@@ -8,6 +8,7 @@ export type RecurringSeriesType =
 export type RecurringCadence = 'monthly' | 'quarterly' | 'yearly' | 'irregular'
 export type RecurringConfidence = 'low' | 'medium' | 'high'
 export type RecurringMatchingBasis = 'merchant' | 'description'
+export type RecurringSeriesSource = 'automatic' | 'manual'
 
 export type RecurringSeries = {
   id: string
@@ -19,6 +20,7 @@ export type RecurringSeries = {
   recurrenceType: RecurringSeriesType
   cadence: RecurringCadence
   status: RecurringSeriesStatus
+  source: RecurringSeriesSource
   typicalAmountCents: number
   minAmountCents: number
   maxAmountCents: number
@@ -111,6 +113,10 @@ export class RecurringSeriesRepository {
     const now = new Date().toISOString()
     const id = existing?.id ?? randomUUID()
     const status = existing?.status ?? input.status
+    const source = existing?.source ?? 'automatic'
+    const canonicalDescription =
+      existing?.source === 'manual' ? existing.canonicalDescription : input.canonicalDescription
+    const cadence = existing?.source === 'manual' ? existing.cadence : input.cadence
     const recurrenceType =
       existing?.status === 'confirmed' || existing?.status === 'rejected'
         ? existing.recurrenceType
@@ -127,6 +133,7 @@ export class RecurringSeriesRepository {
                 recurrence_type = @recurrenceType,
                 cadence = @cadence,
                 status = @status,
+                source = @source,
                 typical_amount_cents = @typicalAmountCents,
                 min_amount_cents = @minAmountCents,
                 max_amount_cents = @maxAmountCents,
@@ -144,6 +151,9 @@ export class RecurringSeriesRepository {
           ...input,
           id,
           status,
+          source,
+          canonicalDescription,
+          cadence,
           recurrenceType,
           merchantId: input.merchantId ?? null,
           updatedAt: now
@@ -154,13 +164,13 @@ export class RecurringSeriesRepository {
           `
             INSERT INTO recurring_series (
               id, series_key, matching_basis, merchant_id, canonical_description,
-              recurrence_type, cadence, status, typical_amount_cents, min_amount_cents,
+              recurrence_type, cadence, status, source, typical_amount_cents, min_amount_cents,
               max_amount_cents, amount_variability_basis_points, first_seen, last_seen,
               occurrence_count, confidence, confidence_score, created_at, updated_at
             )
             VALUES (
               @id, @seriesKey, @matchingBasis, @merchantId, @canonicalDescription,
-              @recurrenceType, @cadence, @status, @typicalAmountCents, @minAmountCents,
+              @recurrenceType, @cadence, @status, @source, @typicalAmountCents, @minAmountCents,
               @maxAmountCents, @amountVariabilityBasisPoints, @firstSeen, @lastSeen,
               @occurrenceCount, @confidence, @confidenceScore, @createdAt, @updatedAt
             )
@@ -170,7 +180,81 @@ export class RecurringSeriesRepository {
           ...input,
           id,
           status,
+          source,
+          canonicalDescription,
+          cadence,
           recurrenceType,
+          merchantId: input.merchantId ?? null,
+          createdAt: now,
+          updatedAt: now
+        })
+    }
+
+    this.replaceTransactions(id, input.transactionIds)
+    return this.findById(id)
+  }
+
+  upsertManual(
+    input: RecurringSeriesInput & {
+      recurrenceType: Exclude<RecurringSeriesType, 'unknown' | 'not_recurring'>
+    }
+  ): RecurringSeries {
+    const existing = this.findBySeriesKey(input.seriesKey)
+    const now = new Date().toISOString()
+    const id = existing?.id ?? randomUUID()
+
+    if (existing) {
+      this.database
+        .prepare(
+          `
+            UPDATE recurring_series
+            SET matching_basis = @matchingBasis,
+                merchant_id = @merchantId,
+                canonical_description = @canonicalDescription,
+                recurrence_type = @recurrenceType,
+                cadence = @cadence,
+                status = 'confirmed',
+                source = 'manual',
+                typical_amount_cents = @typicalAmountCents,
+                min_amount_cents = @minAmountCents,
+                max_amount_cents = @maxAmountCents,
+                amount_variability_basis_points = @amountVariabilityBasisPoints,
+                first_seen = @firstSeen,
+                last_seen = @lastSeen,
+                occurrence_count = @occurrenceCount,
+                confidence = 'high',
+                confidence_score = 100,
+                updated_at = @updatedAt
+            WHERE id = @id
+          `
+        )
+        .run({
+          ...input,
+          id,
+          merchantId: input.merchantId ?? null,
+          updatedAt: now
+        })
+    } else {
+      this.database
+        .prepare(
+          `
+            INSERT INTO recurring_series (
+              id, series_key, matching_basis, merchant_id, canonical_description,
+              recurrence_type, cadence, status, source, typical_amount_cents, min_amount_cents,
+              max_amount_cents, amount_variability_basis_points, first_seen, last_seen,
+              occurrence_count, confidence, confidence_score, created_at, updated_at
+            )
+            VALUES (
+              @id, @seriesKey, @matchingBasis, @merchantId, @canonicalDescription,
+              @recurrenceType, @cadence, 'confirmed', 'manual', @typicalAmountCents,
+              @minAmountCents, @maxAmountCents, @amountVariabilityBasisPoints, @firstSeen,
+              @lastSeen, @occurrenceCount, 'high', 100, @createdAt, @updatedAt
+            )
+          `
+        )
+        .run({
+          ...input,
+          id,
           merchantId: input.merchantId ?? null,
           createdAt: now,
           updatedAt: now
@@ -308,6 +392,7 @@ function mapSeries(row: Row): RecurringSeries {
     recurrenceType: row['recurrence_type'] as RecurringSeriesType,
     cadence: row['cadence'] as RecurringCadence,
     status: row['status'] as RecurringSeriesStatus,
+    source: (optionalString(row['source']) ?? 'automatic') as RecurringSeriesSource,
     typicalAmountCents: Number(row['typical_amount_cents']),
     minAmountCents: Number(row['min_amount_cents']),
     maxAmountCents: Number(row['max_amount_cents']),

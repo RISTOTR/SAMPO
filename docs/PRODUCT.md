@@ -18,7 +18,7 @@ Bank exports are fragmented: Visa purchases, pending movements, card settlements
 - Visible reconciliation between card purchases and card settlement payments
 - Deterministic merchant and category enrichment for imported transactions
 - Optional AI merchant and category suggestions for explicit review
-- Deterministic recurring-payment candidates for user confirmation
+- Deterministic recurring-payment candidates and manual recurring-series creation
 - Better location, date, and weekday analysis later
 - Optional explanations later, without treating AI as authoritative
 
@@ -37,7 +37,7 @@ Bank exports are fragmented: Visa purchases, pending movements, card settlements
 - Deterministic reporting and reconciliation
 - Manual review of uncertain import and reconciliation results
 - Optional descriptor-only AI categorisation suggestions
-- Deterministic recurring-series scanning and confirmation
+- Deterministic recurring-series scanning, confirmation, and manual creation from transactions
 
 ## Explicit Exclusions From V1
 

@@ -188,6 +188,146 @@ describe('recurring detection service', () => {
     })
   })
 
+  it('manually creates a confirmed recurring series from a merchant transaction', () => {
+    const seeded = seedMerchantTransactions('Synthetic Manual Rent', [
+      ['2026-01-01', -90000],
+      ['2026-02-01', -90000],
+      ['2026-03-01', -90000]
+    ])
+    seedMerchantTransactions('Synthetic Different Payee', [['2026-01-01', -90000]])
+
+    const preview = recurring.previewManual(seeded.transactionIds[0]!)
+    const created = recurring.createManual({
+      transactionId: seeded.transactionIds[0]!,
+      displayName: 'Synthetic Rent - Payee',
+      recurrenceType: 'recurring_payment',
+      cadence: 'monthly'
+    })
+
+    expect(preview).toMatchObject({
+      matchingBasis: 'merchant',
+      merchantId: seeded.merchantId,
+      matchingTransactionCount: 3
+    })
+    expect(created).toMatchObject({
+      status: 'confirmed',
+      source: 'manual',
+      recurrenceType: 'recurring_payment',
+      cadence: 'monthly',
+      canonicalDescription: 'Synthetic Rent - Payee',
+      occurrenceCount: 3
+    })
+    expect(created.occurrences.map((occurrence) => occurrence.transactionId)).toEqual(
+      seeded.transactionIds
+    )
+  })
+
+  it('manually falls back to exact description and excludes unrelated transactions', () => {
+    const matching = commit('manual-description-matches', [
+      makeTransaction('2026-01-05', 'Synthetic Exact Descriptor', -2500, 'expense', 0),
+      makeTransaction('2026-02-05', 'Synthetic Exact Descriptor', -2500, 'expense', 1),
+      makeTransaction('2026-02-05', 'Synthetic Other Descriptor', -2500, 'expense', 2)
+    ])
+
+    const created = recurring.createManual({
+      transactionId: matching.transactions[0]!.id,
+      displayName: 'Synthetic exact recurring',
+      recurrenceType: 'subscription',
+      cadence: 'monthly'
+    })
+
+    expect(created).toMatchObject({
+      matchingBasis: 'description',
+      merchantId: undefined,
+      status: 'confirmed',
+      source: 'manual',
+      occurrenceCount: 2
+    })
+    expect(created.occurrences.map((occurrence) => occurrence.description)).toEqual([
+      'Synthetic Exact Descriptor',
+      'Synthetic Exact Descriptor'
+    ])
+  })
+
+  it('does not duplicate an existing manual series when created repeatedly', () => {
+    const seeded = seedMerchantTransactions('Synthetic Manual Repeat', [
+      ['2026-01-08', -1200],
+      ['2026-02-07', -1200]
+    ])
+
+    const first = recurring.createManual({
+      transactionId: seeded.transactionIds[0]!,
+      displayName: 'Synthetic first name',
+      recurrenceType: 'subscription',
+      cadence: 'monthly'
+    })
+    const second = recurring.createManual({
+      transactionId: seeded.transactionIds[1]!,
+      displayName: 'Synthetic second name',
+      recurrenceType: 'recurring_bill',
+      cadence: 'quarterly'
+    })
+
+    expect(second.id).toBe(first.id)
+    expect(
+      recurring.list().filter((series) => series.merchantId === seeded.merchantId)
+    ).toHaveLength(1)
+    expect(second).toMatchObject({
+      source: 'manual',
+      status: 'confirmed',
+      recurrenceType: 'recurring_bill',
+      cadence: 'quarterly',
+      canonicalDescription: 'Synthetic second name'
+    })
+  })
+
+  it('rescans preserve and extend manual recurring series without downgrading them', () => {
+    const seeded = seedMerchantTransactions('Synthetic Manual Extend', [
+      ['2026-01-10', -3300],
+      ['2026-02-09', -3300]
+    ])
+    const manual = recurring.createManual({
+      transactionId: seeded.transactionIds[0]!,
+      displayName: 'Synthetic manual preserved',
+      recurrenceType: 'recurring_payment',
+      cadence: 'irregular'
+    })
+
+    recurring.scan()
+
+    expect(
+      recurring.list().filter((series) => series.merchantId === seeded.merchantId)
+    ).toHaveLength(1)
+    expect(recurring.list().find((series) => series.id === manual.id)).toMatchObject({
+      source: 'manual',
+      status: 'confirmed',
+      recurrenceType: 'recurring_payment',
+      cadence: 'irregular',
+      canonicalDescription: 'Synthetic manual preserved',
+      occurrenceCount: 2
+    })
+
+    seedMerchantTransactions(
+      'Synthetic Manual Extend',
+      [['2026-03-11', -3300]],
+      seeded.merchantId,
+      'manual-extend-new'
+    )
+    recurring.scan()
+
+    expect(
+      recurring.list().filter((series) => series.merchantId === seeded.merchantId)
+    ).toHaveLength(1)
+    expect(recurring.get(manual.id)).toMatchObject({
+      source: 'manual',
+      status: 'confirmed',
+      recurrenceType: 'recurring_payment',
+      cadence: 'irregular',
+      canonicalDescription: 'Synthetic manual preserved',
+      occurrenceCount: 3
+    })
+  })
+
   it('does not recreate rejected exact-description candidates on repeated scans', () => {
     commit('descriptor', [
       makeTransaction('2026-01-10', 'Synthetic Descriptor', -1000),
@@ -214,6 +354,15 @@ describe('recurring detection service', () => {
     existingMerchantId?: string,
     hashSuffix = merchantName
   ): string {
+    return seedMerchantTransactions(merchantName, rows, existingMerchantId, hashSuffix).merchantId
+  }
+
+  function seedMerchantTransactions(
+    merchantName: string,
+    rows: Array<[string, number]>,
+    existingMerchantId?: string,
+    hashSuffix = merchantName
+  ): { merchantId: string; transactionIds: string[] } {
     const merchantId = existingMerchantId ?? merchants.create({ name: merchantName }).id
     const result = commit(
       hashSuffix,
@@ -232,7 +381,7 @@ describe('recurring detection service', () => {
         })
       }
     }
-    return merchantId
+    return { merchantId, transactionIds: result.transactions.map((transaction) => transaction.id) }
   }
 
   function commit(

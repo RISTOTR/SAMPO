@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { formatCents, formatDate } from '../formatters'
 import { useRecurringStore } from '../stores/recurring'
 import type { RecurringSeriesDto } from '../../../shared/dtos'
+import ManualRecurringForm from '../components/ManualRecurringForm.vue'
 
 const recurring = useRecurringStore()
+const addingManual = ref(false)
 
 const candidates = computed(() =>
   recurring.series.filter((series) => series.status === 'candidate')
@@ -58,9 +60,12 @@ function rangeLabel(series: RecurringSeriesDto): string {
           <h3>Recurring payments</h3>
           <p>Deterministic candidates from transaction cadence, merchant identity, and amounts.</p>
         </div>
-        <button type="button" :disabled="recurring.submitting" @click="recurring.scan">
-          {{ recurring.submitting ? 'Scanning...' : 'Scan for recurring payments' }}
-        </button>
+        <div class="button-row">
+          <button type="button" @click="addingManual = true">+ Add recurring payment</button>
+          <button type="button" :disabled="recurring.submitting" @click="recurring.scan">
+            {{ recurring.submitting ? 'Scanning...' : 'Scan for recurring payments' }}
+          </button>
+        </div>
       </div>
       <p v-if="recurring.error" class="error-message" aria-live="polite">
         {{ recurring.error }}
@@ -68,6 +73,15 @@ function rangeLabel(series: RecurringSeriesDto): string {
       <p v-if="recurring.message" class="status-message" aria-live="polite">
         {{ recurring.message }}
       </p>
+    </div>
+
+    <div v-if="addingManual" class="panel">
+      <h3>Add recurring payment</h3>
+      <ManualRecurringForm
+        allow-search
+        @close="addingManual = false"
+        @saved="addingManual = false"
+      />
     </div>
 
     <div class="panel">
@@ -80,7 +94,7 @@ function rangeLabel(series: RecurringSeriesDto): string {
             <span>{{ typeLabel(series.recurrenceType) }} · {{ amountLabel(series) }}</span>
             <span>
               Last payment {{ formatDate(series.lastSeen) }} ·
-              {{ series.occurrenceCount }} occurrences
+              {{ series.occurrenceCount }} occurrences · {{ series.source }}
             </span>
           </button>
         </article>

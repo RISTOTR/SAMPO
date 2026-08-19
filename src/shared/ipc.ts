@@ -54,5 +54,7 @@ export const IPC_CHANNELS = {
   recurringList: 'sampo:recurring:list',
   recurringGet: 'sampo:recurring:get',
   recurringConfirm: 'sampo:recurring:confirm',
-  recurringReject: 'sampo:recurring:reject'
+  recurringReject: 'sampo:recurring:reject',
+  recurringPreviewManual: 'sampo:recurring:preview-manual',
+  recurringCreateManual: 'sampo:recurring:create-manual'
 } as const

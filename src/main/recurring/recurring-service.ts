@@ -15,8 +15,11 @@ type CandidateTransaction = {
   transactionDate: string
   originalDescription: string
   amountCents: number
+  currency?: string
   merchantId?: string
   merchantName?: string
+  categoryName?: string
+  parentCategoryName?: string
 }
 
 type CandidateGroup = {
@@ -33,6 +36,25 @@ export type RecurringScanSummary = {
   rejectedCount: number
   scannedGroupCount: number
   linkedTransactionCount: number
+}
+
+export type ManualRecurringPreview = {
+  transactionId: string
+  seriesKey: string
+  matchingBasis: RecurringMatchingBasis
+  merchantId?: string
+  merchantName?: string
+  canonicalDescription: string
+  suggestedDisplayName: string
+  matchingTransactionCount: number
+  matches: RecurringSeriesOccurrence[]
+}
+
+export type CreateManualRecurringInput = {
+  transactionId: string
+  displayName: string
+  recurrenceType: Exclude<RecurringSeriesType, 'unknown' | 'not_recurring'>
+  cadence: RecurringCadence
 }
 
 const cadenceRanges: Record<
@@ -95,6 +117,34 @@ export class RecurringDetectionService {
     return this.series.reject(id)
   }
 
+  previewManual(transactionId: string): ManualRecurringPreview {
+    const group = this.manualGroup(transactionId)
+
+    return {
+      transactionId,
+      seriesKey: group.seriesKey,
+      matchingBasis: group.matchingBasis,
+      merchantId: group.merchantId,
+      merchantName: group.transactions[0]?.merchantName,
+      canonicalDescription: group.canonicalDescription,
+      suggestedDisplayName: group.canonicalDescription,
+      matchingTransactionCount: group.transactions.length,
+      matches: group.transactions.map(transactionToOccurrence)
+    }
+  }
+
+  createManual(
+    input: CreateManualRecurringInput
+  ): RecurringSeries & { occurrences: RecurringSeriesOccurrence[] } {
+    const created = this.database.transaction(() => {
+      const group = this.manualGroup(input.transactionId)
+      const seriesInput = buildManualSeriesInput(group, input)
+      return this.series.upsertManual(seriesInput)
+    })()
+
+    return this.get(created.id)
+  }
+
   private candidateGroups(): CandidateGroup[] {
     const rows = this.database
       .prepare(
@@ -145,6 +195,148 @@ export class RecurringDetectionService {
 
     return [...groups.values()].filter((group) => group.transactions.length >= 2)
   }
+
+  private manualGroup(transactionId: string): CandidateGroup {
+    const transaction = this.database
+      .prepare(
+        `
+          SELECT
+            transactions.id,
+            transactions.transaction_date AS transactionDate,
+            transactions.original_description AS originalDescription,
+            transactions.amount_cents AS amountCents,
+            transactions.currency,
+            classification.merchant_id AS merchantId,
+            merchants.name AS merchantName
+          FROM transactions transactions
+          LEFT JOIN transaction_classifications classification
+            ON classification.transaction_id = transactions.id
+            AND classification.classification_status = 'confirmed'
+            AND classification.merchant_id IS NOT NULL
+          LEFT JOIN merchants ON merchants.id = classification.merchant_id
+          WHERE transactions.id = ?
+        `
+      )
+      .get(transactionId) as CandidateTransaction | undefined
+
+    if (!transaction) {
+      throw new Error('Transaction could not be loaded.')
+    }
+
+    const merchantId = optionalString(transaction.merchantId)
+    const merchantName = optionalString(transaction.merchantName)
+    const descriptor = normaliseMatchText(transaction.originalDescription)
+    const group: CandidateGroup = {
+      seriesKey: merchantId ? `merchant:${merchantId}` : `description:${descriptor}`,
+      matchingBasis: merchantId ? 'merchant' : 'description',
+      merchantId,
+      canonicalDescription: merchantName ?? descriptor,
+      transactions: []
+    }
+
+    const rows = this.database
+      .prepare(
+        `
+          SELECT
+            transactions.id,
+            transactions.transaction_date AS transactionDate,
+            transactions.original_description AS originalDescription,
+            transactions.amount_cents AS amountCents,
+            transactions.currency,
+            classification.merchant_id AS merchantId,
+            merchants.name AS merchantName,
+            category.name AS categoryName,
+            parent.name AS parentCategoryName
+          FROM transactions transactions
+          JOIN import_batches batches ON batches.id = transactions.import_batch_id
+          LEFT JOIN transaction_classifications classification
+            ON classification.transaction_id = transactions.id
+            AND classification.classification_status = 'confirmed'
+          LEFT JOIN merchants ON merchants.id = classification.merchant_id
+          LEFT JOIN categories category ON category.id = classification.category_id
+          LEFT JOIN categories parent ON parent.id = category.parent_id
+          WHERE batches.status = 'committed'
+            AND transactions.is_pending = 0
+            AND transactions.amount_cents < 0
+            AND transactions.transaction_type NOT IN ('refund', 'card_settlement', 'income', 'cash_withdrawal')
+          ORDER BY transactions.transaction_date ASC, transactions.created_at ASC
+        `
+      )
+      .all() as CandidateTransaction[]
+
+    group.transactions = uniqueByStableOccurrence(
+      rows
+        .map((row) => ({
+          ...row,
+          merchantId: optionalString(row.merchantId),
+          merchantName: optionalString(row.merchantName),
+          categoryName: optionalString(row.categoryName),
+          parentCategoryName: optionalString(row.parentCategoryName)
+        }))
+        .filter((row) => {
+          if (merchantId) return row.merchantId === merchantId
+          return normaliseMatchText(row.originalDescription) === descriptor
+        })
+    )
+
+    if (!group.transactions.some((row) => row.id === transactionId)) {
+      throw new Error('Transaction is not eligible for recurring matching.')
+    }
+
+    return group
+  }
+}
+
+function buildManualSeriesInput(
+  group: CandidateGroup,
+  input: CreateManualRecurringInput
+): Parameters<RecurringSeriesRepository['upsertManual']>[0] {
+  const transactions = uniqueByStableOccurrence(group.transactions)
+  const amounts = transactions
+    .map((transaction) => Math.abs(transaction.amountCents))
+    .sort((a, b) => a - b)
+  const typicalAmountCents = median(amounts)
+  const minAmountCents = amounts[0]!
+  const maxAmountCents = amounts.at(-1)!
+  const amountVariabilityBasisPoints =
+    typicalAmountCents === 0
+      ? 0
+      : Math.round(((maxAmountCents - minAmountCents) / typicalAmountCents) * 10_000)
+
+  return {
+    seriesKey: group.seriesKey,
+    matchingBasis: group.matchingBasis,
+    merchantId: group.merchantId,
+    canonicalDescription: input.displayName.trim(),
+    recurrenceType: input.recurrenceType,
+    cadence: input.cadence,
+    status: 'confirmed',
+    source: 'manual',
+    typicalAmountCents,
+    minAmountCents,
+    maxAmountCents,
+    amountVariabilityBasisPoints,
+    firstSeen: transactions[0]!.transactionDate,
+    lastSeen: transactions.at(-1)!.transactionDate,
+    occurrenceCount: transactions.length,
+    confidence: 'high',
+    confidenceScore: 100,
+    transactionIds: transactions.map((transaction) => transaction.id)
+  }
+}
+
+function transactionToOccurrence(transaction: CandidateTransaction): RecurringSeriesOccurrence {
+  const parent = optionalString(transaction.parentCategoryName)
+  const category = optionalString(transaction.categoryName)
+  return {
+    transactionId: transaction.id,
+    transactionDate: transaction.transactionDate,
+    description: transaction.originalDescription,
+    amountCents: transaction.amountCents,
+    currency: transaction.currency ?? 'EUR',
+    merchantName: optionalString(transaction.merchantName),
+    categoryPath: category ? (parent ? [parent, category] : [category]) : undefined
+  }
 }
 
 function buildCandidate(
@@ -184,6 +376,7 @@ function buildCandidate(
     recurrenceType: 'unknown',
     cadence,
     status: 'candidate',
+    source: 'automatic',
     typicalAmountCents,
     minAmountCents,
     maxAmountCents,

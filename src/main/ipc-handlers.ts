@@ -151,6 +151,12 @@ export function registerApplicationIpcHandlers(
   handle(IPC_CHANNELS.recurringReject, isTrustedSender, (input) =>
     workflow.rejectRecurringSeries(input)
   )
+  handle(IPC_CHANNELS.recurringPreviewManual, isTrustedSender, (input) =>
+    workflow.previewManualRecurringSeries(input)
+  )
+  handle(IPC_CHANNELS.recurringCreateManual, isTrustedSender, (input) =>
+    workflow.createManualRecurringSeries(input)
+  )
 }
 
 function handle<T>(

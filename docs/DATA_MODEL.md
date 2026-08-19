@@ -44,7 +44,7 @@ Overlapping statement files are handled without a permanent transaction identity
 
 `ai_suggestion_sources` stores HTTPS sources attached to web-derived AI suggestions.
 
-`recurring_series` stores deterministic recurring-payment candidates and user decisions. Each row has a stable `series_key`, matching basis (`merchant` or exact `description`), optional merchant, canonical display description, recurrence type (`subscription`, `recurring_bill`, `recurring_payment`, `unknown`, or `not_recurring`), cadence (`monthly`, `quarterly`, `yearly`, or `irregular`), status (`candidate`, `confirmed`, or `rejected`), median typical amount, amount range, amount variability in basis points, first/latest occurrence dates, occurrence count, transparent confidence, and timestamps.
+`recurring_series` stores deterministic recurring-payment candidates and user decisions. Each row has a stable `series_key`, matching basis (`merchant` or exact `description`), optional merchant, canonical display description, recurrence type (`subscription`, `recurring_bill`, `recurring_payment`, `unknown`, or `not_recurring`), cadence (`monthly`, `quarterly`, `yearly`, or `irregular`), status (`candidate`, `confirmed`, or `rejected`), source (`automatic` or `manual`), median typical amount, amount range, amount variability in basis points, first/latest occurrence dates, occurrence count, transparent confidence, and timestamps.
 
 `recurring_series_transactions` links a recurring series to the imported transactions that explain the candidate. The links are recalculated on scan and are deleted by cascade if either the series or linked transaction is deleted.
 
@@ -161,4 +161,6 @@ The scanner currently focuses on outgoing committed transactions and excludes re
 
 Typical amount is the median absolute outgoing amount. Amount variability is stored separately from cadence confidence as `(max - min) / median` in basis points. This allows fixed subscriptions and variable recurring bills to be represented without forcing utility bills to look like fixed-price subscriptions.
 
-User decisions are authoritative for recurring semantics. Candidates start with `recurrence_type = unknown`; users can confirm them as subscriptions, recurring bills, recurring payments, or reject them as not recurring. Repeated scans update the same `series_key` and associated transactions rather than creating duplicate records. Rejected records remain rejected on immediate rediscovery.
+User decisions are authoritative for recurring semantics. Candidates start with `recurrence_type = unknown`; users can confirm them as subscriptions, recurring bills, recurring payments, or reject them as not recurring. Users can also create a manual confirmed series from a transaction after reviewing matching historical transactions. Manual creation uses confirmed merchant identity when available and exact normalised description otherwise; it does not use pending AI suggestions or fuzzy matching.
+
+Repeated scans update the same `series_key` and associated transactions rather than creating duplicate records. Rejected records remain rejected on immediate rediscovery. Manual series remain confirmed and keep the user-selected type, cadence, and display name while scans refresh their metrics and extend links when new matching transactions appear.

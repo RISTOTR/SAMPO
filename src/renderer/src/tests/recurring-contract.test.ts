@@ -3,6 +3,11 @@ import { describe, expect, it } from 'vitest'
 
 const recurringView = readFileSync('src/renderer/src/views/SubscriptionsView.vue', 'utf8')
 const recurringStore = readFileSync('src/renderer/src/stores/recurring.ts', 'utf8')
+const manualRecurringForm = readFileSync(
+  'src/renderer/src/components/ManualRecurringForm.vue',
+  'utf8'
+)
+const transactionsView = readFileSync('src/renderer/src/views/TransactionsView.vue', 'utf8')
 const appShell = readFileSync('src/renderer/src/App.vue', 'utf8')
 const router = readFileSync('src/renderer/src/router/index.ts', 'utf8')
 const preload = readFileSync('src/preload/index.ts', 'utf8')
@@ -13,8 +18,12 @@ describe('recurring renderer contract', () => {
     expect(appShell).toContain("{ path: '/recurring', label: 'Recurring' }")
     expect(router).toContain("{ path: '/recurring', name: 'recurring'")
     expect(ipc).toContain("recurringScan: 'sampo:recurring:scan'")
+    expect(ipc).toContain("recurringPreviewManual: 'sampo:recurring:preview-manual'")
+    expect(ipc).toContain("recurringCreateManual: 'sampo:recurring:create-manual'")
     expect(preload).toContain('recurring: {')
     expect(preload).toContain('scan: () => ipcRenderer.invoke(IPC_CHANNELS.recurringScan)')
+    expect(preload).toContain('previewManual: (input) =>')
+    expect(preload).toContain('createManual: (input) =>')
   })
 
   it('renders candidate and confirmed sections', () => {
@@ -34,6 +43,27 @@ describe('recurring renderer contract', () => {
     expect(recurringStore).toContain('window.sampo.recurring.scan()')
     expect(recurringStore).toContain('window.sampo.recurring.confirm')
     expect(recurringStore).toContain('window.sampo.recurring.reject')
+  })
+
+  it('exposes manual recurring creation from recurring and transactions views', () => {
+    expect(recurringView).toContain('+ Add recurring payment')
+    expect(recurringView).toContain('ManualRecurringForm')
+    expect(transactionsView).toContain('Mark as recurring')
+    expect(transactionsView).toContain('openRecurringCreator(transaction.id)')
+    expect(transactionsView).toContain(':transaction-id="recurringTransactionId"')
+  })
+
+  it('lets users review matches and select type and cadence before manual save', () => {
+    expect(manualRecurringForm).toContain('matchingTransactionCount')
+    expect(manualRecurringForm).toContain('matching historical transactions')
+    expect(manualRecurringForm).toContain('value="subscription"')
+    expect(manualRecurringForm).toContain('value="recurring_bill"')
+    expect(manualRecurringForm).toContain('value="recurring_payment"')
+    expect(manualRecurringForm).toContain('value="monthly"')
+    expect(manualRecurringForm).toContain('value="quarterly"')
+    expect(manualRecurringForm).toContain('value="yearly"')
+    expect(manualRecurringForm).toContain('value="irregular"')
+    expect(manualRecurringForm).toContain('recurring.createManual')
   })
 
   it('shows series details and linked occurrences', () => {

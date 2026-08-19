@@ -520,13 +520,14 @@ export const migrations: Migration[] = [
           ),
           cadence TEXT NOT NULL CHECK (cadence IN ('monthly', 'quarterly', 'yearly', 'irregular')),
           status TEXT NOT NULL CHECK (status IN ('candidate', 'confirmed', 'rejected')),
+          source TEXT NOT NULL DEFAULT 'automatic' CHECK (source IN ('automatic', 'manual')),
           typical_amount_cents INTEGER NOT NULL,
           min_amount_cents INTEGER NOT NULL,
           max_amount_cents INTEGER NOT NULL,
           amount_variability_basis_points INTEGER NOT NULL CHECK (amount_variability_basis_points >= 0),
           first_seen TEXT NOT NULL,
           last_seen TEXT NOT NULL,
-          occurrence_count INTEGER NOT NULL CHECK (occurrence_count >= 2),
+          occurrence_count INTEGER NOT NULL CHECK (occurrence_count >= 1),
           confidence TEXT NOT NULL CHECK (confidence IN ('low', 'medium', 'high')),
           confidence_score INTEGER NOT NULL CHECK (confidence_score BETWEEN 0 AND 100),
           created_at TEXT NOT NULL,
@@ -547,6 +548,85 @@ export const migrations: Migration[] = [
           FOREIGN KEY (recurring_series_id) REFERENCES recurring_series(id) ON DELETE CASCADE,
           FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE
         );
+
+        CREATE INDEX recurring_series_transactions_transaction_idx
+          ON recurring_series_transactions(transaction_id);
+      `)
+    }
+  },
+  {
+    version: 11,
+    name: 'add_recurring_series_source_and_allow_manual_single_occurrence',
+    disableForeignKeys: true,
+    up: (database) => {
+      database.exec(`
+        DROP INDEX IF EXISTS recurring_series_status_cadence_idx;
+        DROP INDEX IF EXISTS recurring_series_merchant_idx;
+        DROP INDEX IF EXISTS recurring_series_transactions_transaction_idx;
+
+        ALTER TABLE recurring_series_transactions RENAME TO recurring_series_transactions_old;
+        ALTER TABLE recurring_series RENAME TO recurring_series_old;
+
+        CREATE TABLE recurring_series (
+          id TEXT PRIMARY KEY,
+          series_key TEXT NOT NULL UNIQUE,
+          matching_basis TEXT NOT NULL CHECK (matching_basis IN ('merchant', 'description')),
+          merchant_id TEXT,
+          canonical_description TEXT NOT NULL CHECK (length(trim(canonical_description)) > 0),
+          recurrence_type TEXT NOT NULL CHECK (
+            recurrence_type IN ('subscription', 'recurring_bill', 'recurring_payment', 'unknown', 'not_recurring')
+          ),
+          cadence TEXT NOT NULL CHECK (cadence IN ('monthly', 'quarterly', 'yearly', 'irregular')),
+          status TEXT NOT NULL CHECK (status IN ('candidate', 'confirmed', 'rejected')),
+          source TEXT NOT NULL DEFAULT 'automatic' CHECK (source IN ('automatic', 'manual')),
+          typical_amount_cents INTEGER NOT NULL,
+          min_amount_cents INTEGER NOT NULL,
+          max_amount_cents INTEGER NOT NULL,
+          amount_variability_basis_points INTEGER NOT NULL CHECK (amount_variability_basis_points >= 0),
+          first_seen TEXT NOT NULL,
+          last_seen TEXT NOT NULL,
+          occurrence_count INTEGER NOT NULL CHECK (occurrence_count >= 1),
+          confidence TEXT NOT NULL CHECK (confidence IN ('low', 'medium', 'high')),
+          confidence_score INTEGER NOT NULL CHECK (confidence_score BETWEEN 0 AND 100),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          FOREIGN KEY (merchant_id) REFERENCES merchants(id) ON DELETE SET NULL
+        );
+
+        INSERT INTO recurring_series (
+          id, series_key, matching_basis, merchant_id, canonical_description,
+          recurrence_type, cadence, status, source, typical_amount_cents, min_amount_cents,
+          max_amount_cents, amount_variability_basis_points, first_seen, last_seen,
+          occurrence_count, confidence, confidence_score, created_at, updated_at
+        )
+        SELECT
+          id, series_key, matching_basis, merchant_id, canonical_description,
+          recurrence_type, cadence, status, 'automatic', typical_amount_cents, min_amount_cents,
+          max_amount_cents, amount_variability_basis_points, first_seen, last_seen,
+          occurrence_count, confidence, confidence_score, created_at, updated_at
+        FROM recurring_series_old;
+
+        DROP TABLE recurring_series_old;
+
+        CREATE TABLE recurring_series_transactions (
+          recurring_series_id TEXT NOT NULL,
+          transaction_id TEXT NOT NULL,
+          PRIMARY KEY (recurring_series_id, transaction_id),
+          FOREIGN KEY (recurring_series_id) REFERENCES recurring_series(id) ON DELETE CASCADE,
+          FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE
+        );
+
+        INSERT INTO recurring_series_transactions (recurring_series_id, transaction_id)
+        SELECT recurring_series_id, transaction_id
+        FROM recurring_series_transactions_old;
+
+        DROP TABLE recurring_series_transactions_old;
+
+        CREATE INDEX recurring_series_status_cadence_idx
+          ON recurring_series(status, cadence, confidence_score);
+
+        CREATE INDEX recurring_series_merchant_idx
+          ON recurring_series(merchant_id);
 
         CREATE INDEX recurring_series_transactions_transaction_idx
           ON recurring_series_transactions(transaction_id);

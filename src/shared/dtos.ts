@@ -68,6 +68,7 @@ export const recurringSeriesCadenceDtoSchema = z.enum([
 export const recurringSeriesStatusDtoSchema = z.enum(['candidate', 'confirmed', 'rejected'])
 export const recurringSeriesConfidenceDtoSchema = z.enum(['low', 'medium', 'high'])
 export const recurringSeriesMatchingBasisDtoSchema = z.enum(['merchant', 'description'])
+export const recurringSeriesSourceDtoSchema = z.enum(['automatic', 'manual'])
 
 export const uuidDtoSchema = z.string().uuid()
 export const isoDateDtoSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -714,13 +715,14 @@ export const recurringSeriesDtoSchema = z.object({
   recurrenceType: recurringSeriesTypeDtoSchema,
   cadence: recurringSeriesCadenceDtoSchema,
   status: recurringSeriesStatusDtoSchema,
+  source: recurringSeriesSourceDtoSchema,
   typicalAmountCents: z.number().int(),
   minAmountCents: z.number().int(),
   maxAmountCents: z.number().int(),
   amountVariabilityBasisPoints: z.number().int().min(0),
   firstSeen: isoDateDtoSchema,
   lastSeen: isoDateDtoSchema,
-  occurrenceCount: z.number().int().min(2),
+  occurrenceCount: z.number().int().min(1),
   confidence: recurringSeriesConfidenceDtoSchema,
   confidenceScore: z.number().int().min(0).max(100),
   createdAt: utcTimestampDtoSchema,
@@ -746,6 +748,29 @@ export const recurringConfirmInputDtoSchema = z.object({
 
 export const recurringRejectInputDtoSchema = z.object({
   seriesId: uuidDtoSchema
+})
+
+export const recurringManualPreviewInputDtoSchema = z.object({
+  transactionId: uuidDtoSchema
+})
+
+export const recurringManualPreviewDtoSchema = z.object({
+  transactionId: uuidDtoSchema,
+  seriesKey: z.string().min(1),
+  matchingBasis: recurringSeriesMatchingBasisDtoSchema,
+  merchantId: uuidDtoSchema.optional(),
+  merchantName: z.string().min(1).optional(),
+  canonicalDescription: z.string().min(1),
+  suggestedDisplayName: z.string().min(1),
+  matchingTransactionCount: z.number().int().min(1),
+  matches: z.array(recurringSeriesOccurrenceDtoSchema)
+})
+
+export const createManualRecurringInputDtoSchema = z.object({
+  transactionId: uuidDtoSchema,
+  displayName: z.string().trim().min(1),
+  recurrenceType: recurringSeriesTypeDtoSchema.exclude(['unknown', 'not_recurring']),
+  cadence: recurringSeriesCadenceDtoSchema
 })
 
 export type AccountSummaryDto = z.infer<typeof accountSummaryDtoSchema>
@@ -815,4 +840,7 @@ export type RecurringSeriesOccurrenceDto = z.infer<typeof recurringSeriesOccurre
 export type RecurringScanSummaryDto = z.infer<typeof recurringScanSummaryDtoSchema>
 export type RecurringConfirmInputDto = z.input<typeof recurringConfirmInputDtoSchema>
 export type RecurringRejectInputDto = z.input<typeof recurringRejectInputDtoSchema>
+export type RecurringManualPreviewInputDto = z.input<typeof recurringManualPreviewInputDtoSchema>
+export type RecurringManualPreviewDto = z.infer<typeof recurringManualPreviewDtoSchema>
+export type CreateManualRecurringInputDto = z.input<typeof createManualRecurringInputDtoSchema>
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: OperationErrorDto }

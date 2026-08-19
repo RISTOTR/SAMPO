@@ -109,6 +109,7 @@ describe('financial core migrations', () => {
     const path = tempDatabasePath(directory)
     const phase6 = createDatabase({ path, useWal: false })
 
+    phase6.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(11)
     phase6.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(10)
     phase6.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(9)
     phase6.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(8)
