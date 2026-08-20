@@ -227,7 +227,18 @@ export class TransactionRepository {
 
   countCommittedFingerprintsForAccount(accountId: string): Map<string, number> {
     const counts = new Map<string, number>()
-    const rows = this.database
+    const transactions = this.listCommittedForAccount(accountId)
+
+    for (const transaction of transactions) {
+      const fingerprint = createTransactionFingerprint(transaction)
+      counts.set(fingerprint, (counts.get(fingerprint) ?? 0) + 1)
+    }
+
+    return counts
+  }
+
+  listCommittedForAccount(accountId: string): Transaction[] {
+    return this.database
       .prepare(
         `
           SELECT transactions.*
@@ -239,14 +250,7 @@ export class TransactionRepository {
         `
       )
       .all({ accountId })
-
-    for (const row of rows) {
-      const transaction = transactionSchema.parse(mapTransaction(row as never))
-      const fingerprint = createTransactionFingerprint(transaction)
-      counts.set(fingerprint, (counts.get(fingerprint) ?? 0) + 1)
-    }
-
-    return counts
+      .map((row) => transactionSchema.parse(mapTransaction(row as never)))
   }
 
   insertForImportBatch(input: {
@@ -358,6 +362,40 @@ export class TransactionRepository {
       .run({
         id,
         excludedFromSpending: input.excludedFromSpending ? 1 : 0,
+        reviewStatus: input.reviewStatus,
+        updatedAt: new Date().toISOString()
+      })
+
+    return this.findById(id)
+  }
+
+  promotePendingToCompleted(
+    id: string,
+    input: {
+      transactionType: Transaction['transactionType']
+      reviewStatus: Transaction['reviewStatus']
+    }
+  ): Transaction {
+    const transaction = this.findById(id)
+
+    if (!transaction.isPending) {
+      return transaction
+    }
+
+    this.database
+      .prepare(
+        `
+          UPDATE transactions
+          SET transaction_type = @transactionType,
+              is_pending = 0,
+              review_status = @reviewStatus,
+              updated_at = @updatedAt
+          WHERE id = @id
+        `
+      )
+      .run({
+        id,
+        transactionType: input.transactionType,
         reviewStatus: input.reviewStatus,
         updatedAt: new Date().toISOString()
       })

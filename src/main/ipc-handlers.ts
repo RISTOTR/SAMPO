@@ -35,6 +35,7 @@ export function registerApplicationIpcHandlers(
   handle(IPC_CHANNELS.transactionsList, isTrustedSender, (query) =>
     workflow.listTransactions(query as never)
   )
+  handle(IPC_CHANNELS.dashboardGet, isTrustedSender, (query) => workflow.getDashboard(query))
   handle(IPC_CHANNELS.reconciliationListSettlements, isTrustedSender, () =>
     workflow.listUnreconciledSettlements()
   )

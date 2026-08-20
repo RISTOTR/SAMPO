@@ -8,10 +8,11 @@ const appInfoError = ref<string | null>(null)
 const route = useRoute()
 
 const navigationItems = [
-  { path: '/', label: 'Overview' },
+  { path: '/', label: 'Dashboard' },
   { path: '/transactions', label: 'Transactions' },
   { path: '/recurring', label: 'Recurring' },
   { path: '/imports', label: 'Imports' },
+  { path: '/overview', label: 'Overview' },
   { path: '/settings', label: 'Settings' }
 ]
 

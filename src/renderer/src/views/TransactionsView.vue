@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { formatCents, formatDate } from '../formatters'
 import { useAccountsStore } from '../stores/accounts'
 import { useAiStore } from '../stores/ai'
@@ -14,6 +15,7 @@ const ai = useAiStore()
 const classification = useClassificationStore()
 const recurring = useRecurringStore()
 const transactions = useTransactionsStore()
+const route = useRoute()
 const filters = reactive({
   search: '',
   confirmationFilter: 'all' as 'all' | 'needs_confirmation' | 'confirmed',
@@ -111,8 +113,17 @@ watch(
   () => scheduleFilterReload()
 )
 
+watch(
+  () => route.query,
+  async () => {
+    applyRouteQueryFilters()
+    await loadTransactions()
+  }
+)
+
 onMounted(async () => {
   await Promise.all([accounts.load(), classification.loadReference(), ai.loadSettings()])
+  applyRouteQueryFilters()
   await loadTransactions()
 })
 
@@ -157,6 +168,26 @@ function currentTransactionQuery(): TransactionListQueryDto {
     limit: 50,
     offset: filters.offset
   }
+}
+
+function applyRouteQueryFilters(): void {
+  filters.search = queryString(route.query.search)
+  filters.confirmationFilter =
+    queryString(route.query.confirmationFilter) === 'needs_confirmation'
+      ? 'needs_confirmation'
+      : queryString(route.query.confirmationFilter) === 'confirmed'
+        ? 'confirmed'
+        : 'all'
+  filters.dateFrom = queryString(route.query.dateFrom)
+  filters.dateTo = queryString(route.query.dateTo)
+  filters.categoryId = queryString(route.query.categoryId)
+  filters.merchantId = queryString(route.query.merchantId)
+  filters.unclassifiedOnly = queryString(route.query.unclassifiedOnly) === 'true'
+  filters.offset = 0
+}
+
+function queryString(value: unknown): string {
+  return typeof value === 'string' ? value : ''
 }
 
 function currentSuggestionTransactionQuery(

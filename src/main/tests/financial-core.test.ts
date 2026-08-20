@@ -776,8 +776,8 @@ describe('import service and transaction repository', () => {
     expect(transactions.listForAccount(account.id)).toHaveLength(1)
   })
 
-  it('treats pending-to-completed Visa rows as the same imported transaction', () => {
-    service.commitPreparedImport(
+  it('promotes an exact pending Visa row when the completed representation arrives', () => {
+    const pending = service.commitPreparedImport(
       makePreparedImport(
         account.id,
         [
@@ -795,6 +795,7 @@ describe('import service and transaction repository', () => {
         }
       )
     )
+    const pendingTransactionId = pending.transactions[0]!.id
 
     const completed = service.commitPreparedImport(
       makePreparedImport(
@@ -818,6 +819,58 @@ describe('import service and transaction repository', () => {
     expect(completed.transactions).toHaveLength(0)
     expect(completed.skippedDuplicateTransactionCount).toBe(1)
     expect(transactions.listForAccount(account.id)).toHaveLength(1)
+    expect(transactions.findById(pendingTransactionId)).toMatchObject({
+      id: pendingTransactionId,
+      isPending: false,
+      reviewStatus: 'confirmed'
+    })
+  })
+
+  it('does not downgrade a completed Visa row when a matching pending representation arrives', () => {
+    const completed = service.commitPreparedImport(
+      makePreparedImport(
+        account.id,
+        [
+          makeTransaction(account.id, {
+            sourceRowIndex: 0,
+            transactionDate: '2026-06-10',
+            originalDescription: 'Synthetic completed card merchant',
+            amountCents: -1000,
+            isPending: false
+          })
+        ],
+        {
+          sourceKind: 'evo_visa_xls',
+          fileSha256: 'e'.repeat(64)
+        }
+      )
+    )
+
+    const pending = service.commitPreparedImport(
+      makePreparedImport(
+        account.id,
+        [
+          makeTransaction(account.id, {
+            sourceRowIndex: 0,
+            transactionDate: '2026-06-10',
+            originalDescription: 'Synthetic completed card merchant',
+            amountCents: -1000,
+            isPending: true
+          })
+        ],
+        {
+          sourceKind: 'evo_visa_xls',
+          fileSha256: 'f'.repeat(64)
+        }
+      )
+    )
+
+    expect(pending.transactions).toHaveLength(0)
+    expect(pending.skippedDuplicateTransactionCount).toBe(1)
+    expect(transactions.findById(completed.transactions[0]!.id)).toMatchObject({
+      isPending: false,
+      reviewStatus: 'confirmed'
+    })
   })
 
   it('ignores changed value dates and balances when detecting overlap', () => {
@@ -951,18 +1004,53 @@ describe('import service and transaction repository', () => {
     expect(transactions.listForAccount(account.id)).toHaveLength(3)
   })
 
-  it('preserves genuine identical transactions within one new import', () => {
+  it('imports one excess occurrence when one existing row overlaps two incoming rows', () => {
     const equivalent = {
-      transactionDate: '2026-06-10',
-      originalDescription: 'Synthetic identical purchases',
-      amountCents: -1000
+      transactionDate: '2026-06-13',
+      originalDescription: 'HSL MOBIILI',
+      amountCents: -330
+    }
+    service.commitPreparedImport(
+      makePreparedImport(
+        account.id,
+        [makeTransaction(account.id, { sourceRowIndex: 10, ...equivalent })],
+        {
+          sourceKind: 'evo_visa_xls',
+          fileSha256: '7'.repeat(64)
+        }
+      )
+    )
+    const overlap = service.commitPreparedImport(
+      makePreparedImport(
+        account.id,
+        [
+          makeTransaction(account.id, { sourceRowIndex: 10, ...equivalent }),
+          makeTransaction(account.id, { sourceRowIndex: 11, ...equivalent })
+        ],
+        {
+          sourceKind: 'evo_visa_xls',
+          fileSha256: '8'.repeat(64)
+        }
+      )
+    )
+
+    expect(overlap.transactions).toHaveLength(1)
+    expect(overlap.skippedDuplicateTransactionCount).toBe(1)
+    expect(transactions.listForAccount(account.id)).toHaveLength(2)
+  })
+
+  it('preserves genuine identical Visa rows within one fresh import', () => {
+    const equivalent = {
+      transactionDate: '2026-06-13',
+      originalDescription: 'HSL MOBIILI',
+      amountCents: -330
     }
     const result = service.commitPreparedImport(
       makePreparedImport(
         account.id,
         [
-          makeTransaction(account.id, { sourceRowIndex: 0, ...equivalent }),
-          makeTransaction(account.id, { sourceRowIndex: 1, ...equivalent })
+          makeTransaction(account.id, { sourceRowIndex: 13, ...equivalent }),
+          makeTransaction(account.id, { sourceRowIndex: 14, ...equivalent })
         ],
         {
           sourceKind: 'evo_visa_xls',
@@ -973,6 +1061,55 @@ describe('import service and transaction repository', () => {
 
     expect(result.transactions).toHaveLength(2)
     expect(result.skippedDuplicateTransactionCount).toBe(0)
+    expect(result.transactions.map((transaction) => transaction.sourceRowIndex)).toEqual([13, 14])
+    expect(result.transactions.reduce((sum, transaction) => sum + transaction.amountCents, 0)).toBe(
+      -660
+    )
+    expect(transactions.listForAccount(account.id)).toHaveLength(2)
+  })
+
+  it('preserves real-shape duplicate July Visa purchases and skips them on overlapping reimport', () => {
+    const equivalent = {
+      transactionDate: '2026-07-04',
+      originalDescription: 'KAMIãOKO JATETXEA',
+      amountCents: -560
+    }
+    const firstPrepared = makePreparedImport(
+      account.id,
+      [
+        makeTransaction(account.id, { sourceRowIndex: 32, ...equivalent }),
+        makeTransaction(account.id, { sourceRowIndex: 33, ...equivalent })
+      ],
+      {
+        sourceKind: 'evo_visa_xls',
+        fileSha256: 'a'.repeat(64)
+      }
+    )
+    const firstPreview = service.previewPreparedImportDeduplication(firstPrepared)
+    const first = service.commitPreparedImport(firstPrepared)
+    const secondPreview = service.previewPreparedImportDeduplication({
+      ...firstPrepared,
+      fileSha256: 'b'.repeat(64)
+    })
+    const second = service.commitPreparedImport({
+      ...firstPrepared,
+      fileSha256: 'b'.repeat(64)
+    })
+
+    expect(firstPreview).toMatchObject({
+      newTransactionCount: 2,
+      duplicateTransactionCount: 0
+    })
+    expect(first.transactions).toHaveLength(2)
+    expect(first.transactions.reduce((sum, transaction) => sum + transaction.amountCents, 0)).toBe(
+      -1120
+    )
+    expect(secondPreview).toMatchObject({
+      newTransactionCount: 0,
+      duplicateTransactionCount: 2
+    })
+    expect(second.transactions).toHaveLength(0)
+    expect(second.skippedDuplicateTransactionCount).toBe(2)
     expect(transactions.listForAccount(account.id)).toHaveLength(2)
   })
 

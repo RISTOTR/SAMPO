@@ -18,6 +18,8 @@ import {
   createCategoryInputDtoSchema,
   createMerchantAliasInputDtoSchema,
   createMerchantInputDtoSchema,
+  dashboardDataDtoSchema,
+  dashboardQueryDtoSchema,
   importBatchSummaryDtoSchema,
   listAiSuggestionsInputDtoSchema,
   matchingClassificationSummaryDtoSchema,
@@ -63,6 +65,7 @@ import {
   type ClassificationProposalDto,
   type CommittedImportDto,
   type CommittedReconciliationDto,
+  type DashboardDataDto,
   type ImportBatchSummaryDto,
   type ImportPreviewSessionDto,
   type MatchingClassificationSummaryDto,
@@ -85,6 +88,7 @@ import {
 } from '../../shared/dtos'
 import type { AiClassificationSuggestion, ImportBatch, Transaction } from '../domain/schemas'
 import { aiModelConfig } from '../ai/config'
+import { DashboardAnalyticsService } from '../dashboard/dashboard-analytics-service'
 import { isDevelopmentRuntime, probeOpenAiModelsEndpoint } from '../ai/diagnostics'
 import { AiNotConfiguredError } from '../ai/errors'
 import {
@@ -151,6 +155,7 @@ export class ApplicationWorkflow {
   private readonly aiSuggestions: AiSuggestionRepository
   private readonly smartClassification: SmartClassificationService
   private readonly recurring: RecurringDetectionService
+  private readonly dashboard: DashboardAnalyticsService
   readonly previews: ImportPreviewWorkflow
 
   constructor(
@@ -179,6 +184,7 @@ export class ApplicationWorkflow {
       aiProvider ?? new OpenAiClassificationProvider(secretStore)
     )
     this.recurring = new RecurringDetectionService(database)
+    this.dashboard = new DashboardAnalyticsService(database)
     this.previews = new ImportPreviewWorkflow(database, dialogAdapter)
   }
 
@@ -297,6 +303,11 @@ export class ApplicationWorkflow {
       limit: query.limit,
       offset: query.offset
     })
+  }
+
+  getDashboard(input: unknown): DashboardDataDto {
+    const parsed = dashboardQueryDtoSchema.parse(input ?? {})
+    return dashboardDataDtoSchema.parse(this.dashboard.getDashboard(parsed))
   }
 
   scanRecurringSeries(): RecurringScanSummaryDto {

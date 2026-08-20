@@ -344,6 +344,73 @@ select:focus-visible,
   justify-content: flex-end;
 }
 
+.dashboard-summary {
+  margin: 0;
+}
+
+.dashboard-summary p {
+  margin: 8px 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #66746b;
+  font-size: 12px;
+}
+
+.analysis-list {
+  display: grid;
+  gap: 10px;
+}
+
+.analysis-row,
+.trend-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 10px 12px;
+  overflow: hidden;
+  border: 1px solid #dce3dc;
+  border-radius: 6px;
+  background: #ffffff;
+  text-align: left;
+}
+
+.analysis-row span,
+.trend-row span,
+.trend-row small {
+  position: relative;
+  z-index: 1;
+}
+
+.analysis-row small,
+.trend-row small {
+  display: block;
+  margin-top: 3px;
+  color: #66746b;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.analysis-row i,
+.trend-row i {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 4px;
+  background: #86a98f;
+}
+
+.trend-row {
+  grid-template-columns: 92px auto;
+}
+
+.trend-row small {
+  grid-column: 1 / -1;
+}
+
 .status-message {
   padding: 10px 12px;
   border-radius: 6px;

@@ -69,6 +69,15 @@ export const recurringSeriesStatusDtoSchema = z.enum(['candidate', 'confirmed', 
 export const recurringSeriesConfidenceDtoSchema = z.enum(['low', 'medium', 'high'])
 export const recurringSeriesMatchingBasisDtoSchema = z.enum(['merchant', 'description'])
 export const recurringSeriesSourceDtoSchema = z.enum(['automatic', 'manual'])
+export const dashboardPeriodPresetDtoSchema = z.enum([
+  'latest_month',
+  'this_month',
+  'previous_month',
+  'last_3_months',
+  'last_6_months',
+  'this_year',
+  'custom'
+])
 
 export const uuidDtoSchema = z.string().uuid()
 export const isoDateDtoSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -793,6 +802,93 @@ export const createManualRecurringInputDtoSchema = z.object({
   cadence: recurringSeriesCadenceDtoSchema
 })
 
+export const dashboardQueryDtoSchema = z
+  .object({
+    preset: dashboardPeriodPresetDtoSchema.default('latest_month'),
+    dateFrom: isoDateDtoSchema.optional(),
+    dateTo: isoDateDtoSchema.optional()
+  })
+  .partial()
+
+export const dashboardComparisonDtoSchema = z.object({
+  amountCents: z.number().int(),
+  percent: z.number().optional(),
+  previousPeriodLabel: z.string().min(1).optional()
+})
+
+export const dashboardMetricDtoSchema = z.object({
+  amountCents: z.number().int(),
+  comparison: dashboardComparisonDtoSchema.optional()
+})
+
+export const dashboardPeriodDtoSchema = z.object({
+  preset: dashboardPeriodPresetDtoSchema,
+  dateFrom: isoDateDtoSchema.optional(),
+  dateTo: isoDateDtoSchema.optional(),
+  label: z.string().min(1),
+  previousDateFrom: isoDateDtoSchema.optional(),
+  previousDateTo: isoDateDtoSchema.optional(),
+  previousLabel: z.string().min(1).optional()
+})
+
+export const dashboardCategorySpendDtoSchema = z.object({
+  categoryId: uuidDtoSchema.optional(),
+  categoryPath: z.array(z.string().min(1)),
+  label: z.string().min(1),
+  amountCents: z.number().int(),
+  percentOfSpending: z.number().min(0).max(100),
+  transactionCount: z.number().int().min(0),
+  previousAmountCents: z.number().int(),
+  differenceCents: z.number().int()
+})
+
+export const dashboardMerchantSpendDtoSchema = z.object({
+  merchantId: uuidDtoSchema.optional(),
+  label: z.string().min(1),
+  amountCents: z.number().int(),
+  transactionCount: z.number().int().min(0),
+  averageAmountCents: z.number().int()
+})
+
+export const dashboardMonthlyTrendDtoSchema = z.object({
+  month: z.string().regex(/^\d{4}-\d{2}$/),
+  spendingCents: z.number().int(),
+  incomeCents: z.number().int(),
+  netCashFlowCents: z.number().int(),
+  recurringSpendCents: z.number().int()
+})
+
+export const dashboardRecurringSummaryDtoSchema = z.object({
+  totalCents: z.number().int(),
+  subscriptionCents: z.number().int(),
+  recurringBillCents: z.number().int(),
+  recurringPaymentCents: z.number().int(),
+  monthlyBaselineCents: z.number().int(),
+  confirmedSeriesCount: z.number().int().min(0)
+})
+
+export const dashboardDataQualityDtoSchema = z.object({
+  classifiedSpendingPercent: z.number().min(0).max(100),
+  needsConfirmationCount: z.number().int().min(0),
+  unclassifiedSpendingCents: z.number().int()
+})
+
+export const dashboardDataDtoSchema = z.object({
+  period: dashboardPeriodDtoSchema,
+  hasData: z.boolean(),
+  totalSpending: dashboardMetricDtoSchema,
+  totalIncome: dashboardMetricDtoSchema,
+  netCashFlow: dashboardMetricDtoSchema,
+  recurringSpending: dashboardMetricDtoSchema,
+  transactionCount: z.number().int().min(0),
+  categories: z.array(dashboardCategorySpendDtoSchema),
+  merchants: z.array(dashboardMerchantSpendDtoSchema),
+  monthlyTrend: z.array(dashboardMonthlyTrendDtoSchema),
+  biggestChanges: z.array(dashboardCategorySpendDtoSchema),
+  recurring: dashboardRecurringSummaryDtoSchema,
+  dataQuality: dashboardDataQualityDtoSchema
+})
+
 export type AccountSummaryDto = z.infer<typeof accountSummaryDtoSchema>
 export type CreateAccountInputDto = z.input<typeof createAccountInputDtoSchema>
 export type UpdateAccountInputDto = z.input<typeof updateAccountInputDtoSchema>
@@ -866,4 +962,9 @@ export type RecurringDeleteInputDto = z.input<typeof recurringDeleteInputDtoSche
 export type RecurringManualPreviewInputDto = z.input<typeof recurringManualPreviewInputDtoSchema>
 export type RecurringManualPreviewDto = z.infer<typeof recurringManualPreviewDtoSchema>
 export type CreateManualRecurringInputDto = z.input<typeof createManualRecurringInputDtoSchema>
+export type DashboardPeriodPresetDto = z.infer<typeof dashboardPeriodPresetDtoSchema>
+export type DashboardQueryDto = z.input<typeof dashboardQueryDtoSchema>
+export type DashboardDataDto = z.infer<typeof dashboardDataDtoSchema>
+export type DashboardCategorySpendDto = z.infer<typeof dashboardCategorySpendDtoSchema>
+export type DashboardMerchantSpendDto = z.infer<typeof dashboardMerchantSpendDtoSchema>
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: OperationErrorDto }

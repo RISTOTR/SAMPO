@@ -19,6 +19,8 @@ import type {
   CreateCategoryInputDto,
   CreateMerchantAliasInputDto,
   CreateMerchantInputDto,
+  DashboardDataDto,
+  DashboardQueryDto,
   ImportBatchSummaryDto,
   ImportPreviewSessionDto,
   ListAiSuggestionsInputDto,
@@ -85,6 +87,9 @@ export type SampoApi = {
   }
   transactions: {
     list: (query: TransactionListQueryDto) => Promise<ApiResult<TransactionPageDto>>
+  }
+  dashboard: {
+    get: (query?: DashboardQueryDto) => Promise<ApiResult<DashboardDataDto>>
   }
   reconciliation: {
     listUnreconciledSettlements: () => Promise<ApiResult<SettlementSummaryDto[]>>

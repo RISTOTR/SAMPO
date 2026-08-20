@@ -79,24 +79,31 @@ Current milestone: Phase 8 - Recurring Payments and Subscriptions in progress.
 - Optional web lookup setting - complete
 - Post-import AI classification when enabled - complete
 
-## Phase 8 - Subscriptions and Analysis
+## Phase 8 - Subscriptions
 
 - Deterministic recurring-series detection - complete
 - Subscription, recurring bill, recurring payment review - complete
 - Manual recurring-series creation from transactions - complete
 - Candidate rejection persistence - complete
 - Recurring series detail with linked transactions - complete
-- Monthly comparisons
-- Weekday analysis
-- Merchant and location analysis
 
-## Phase 9 - AI Analysis Extensions
+## Phase 9 - Dashboard and Financial Analysis
+
+- Dashboard period selector - complete
+- Summary spending, income, net cash flow, recurring spend, and transaction count - complete
+- Category and merchant spending analysis - complete
+- Monthly trend and biggest category changes - complete
+- Data-quality indicator and drill-downs to Transactions - complete
+- Weekday analysis
+- Merchant location analysis
+
+## Phase 10 - AI Analysis Extensions
 
 - Monthly explanations
 - Natural-language questions
 - Strict data minimisation for any expanded AI use
 
-## Phase 10 - Distribution
+## Phase 11 - Distribution
 
 - Signing
 - Notarisation

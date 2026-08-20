@@ -25,6 +25,9 @@ const sampo: SampoApi = {
   transactions: {
     list: (query) => ipcRenderer.invoke(IPC_CHANNELS.transactionsList, query)
   },
+  dashboard: {
+    get: (query) => ipcRenderer.invoke(IPC_CHANNELS.dashboardGet, query)
+  },
   reconciliation: {
     listUnreconciledSettlements: () =>
       ipcRenderer.invoke(IPC_CHANNELS.reconciliationListSettlements),

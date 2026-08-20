@@ -8,6 +8,7 @@ import {
 import {
   preparedImportSchema,
   type ImportBatch,
+  type NewTransaction,
   type PreparedImport,
   type Transaction
 } from '../domain/schemas'
@@ -29,6 +30,15 @@ export type PreparedImportDuplicatePreview = {
   originalTransactionCount: number
   newTransactionCount: number
   duplicateTransactionCount: number
+}
+
+type PendingPromotion = {
+  existingTransactionId: string
+  incomingTransaction: NewTransaction
+}
+
+type DeduplicatedPreparedImport = PreparedImportDuplicatePreview & {
+  pendingPromotions: PendingPromotion[]
 }
 
 export class ImportService {
@@ -80,12 +90,19 @@ export class ImportService {
           transaction
         })
       })
+      const promotedTransactions = deduplicated.pendingPromotions.map((promotion) =>
+        this.transactions.promotePendingToCompleted(promotion.existingTransactionId, {
+          transactionType: promotion.incomingTransaction.transactionType,
+          reviewStatus: promotion.incomingTransaction.reviewStatus ?? 'confirmed'
+        })
+      )
 
       const committedBatch = this.importBatches.markCommitted(batch.id, transactions.length)
 
       return {
         batch: committedBatch,
         transactions,
+        promotedTransactions,
         skippedDuplicateTransactionCount: deduplicated.duplicateTransactionCount
       }
     })
@@ -94,7 +111,9 @@ export class ImportService {
 
     try {
       new ClassificationService(this.database).applyToTransactions(
-        result.transactions.map((transaction) => transaction.id)
+        [...result.transactions, ...result.promotedTransactions].map(
+          (transaction) => transaction.id
+        )
       )
     } catch {
       // Classification enrichment must not invalidate a committed financial import.
@@ -103,19 +122,39 @@ export class ImportService {
     return result
   }
 
-  private filterDuplicateTransactions(
-    preparedImport: PreparedImport
-  ): PreparedImportDuplicatePreview {
-    const existingCounts = this.transactions.countCommittedFingerprintsForAccount(
-      preparedImport.accountId
-    )
+  private filterDuplicateTransactions(preparedImport: PreparedImport): DeduplicatedPreparedImport {
+    const existingTransactions = this.transactions.listCommittedForAccount(preparedImport.accountId)
+    const existingBuckets = new Map<string, Transaction[]>()
+
+    for (const transaction of existingTransactions) {
+      const fingerprint = createTransactionFingerprint(transaction)
+      existingBuckets.set(fingerprint, [...(existingBuckets.get(fingerprint) ?? []), transaction])
+    }
+    for (const bucket of existingBuckets.values()) {
+      bucket.sort((left, right) => Number(right.isPending) - Number(left.isPending))
+    }
+
     const incomingCounts = new Map<string, number>()
+    const pendingPromotions: PendingPromotion[] = []
     const transactions = preparedImport.transactions.filter((transaction) => {
       const fingerprint = createTransactionFingerprint(transaction)
       const seen = (incomingCounts.get(fingerprint) ?? 0) + 1
       incomingCounts.set(fingerprint, seen)
+      const existingBucket = existingBuckets.get(fingerprint) ?? []
+      const representedTransaction = existingBucket[seen - 1]
 
-      return seen > (existingCounts.get(fingerprint) ?? 0)
+      if (!representedTransaction) {
+        return true
+      }
+
+      if (!transaction.isPending && representedTransaction.isPending) {
+        pendingPromotions.push({
+          existingTransactionId: representedTransaction.id,
+          incomingTransaction: transaction
+        })
+      }
+
+      return false
     })
 
     const filteredPreparedImport = preparedImportSchema.parse({
@@ -127,7 +166,8 @@ export class ImportService {
       preparedImport: filteredPreparedImport,
       originalTransactionCount: preparedImport.transactions.length,
       newTransactionCount: transactions.length,
-      duplicateTransactionCount: preparedImport.transactions.length - transactions.length
+      duplicateTransactionCount: preparedImport.transactions.length - transactions.length,
+      pendingPromotions
     }
   }
 

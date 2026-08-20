@@ -3,6 +3,7 @@ import {
   createAccountInputDtoSchema,
   aiSettingsDtoSchema,
   bulkClassificationInputDtoSchema,
+  dashboardDataDtoSchema,
   importPreviewSessionDtoSchema,
   ruleInputDtoSchema,
   saveOpenAiApiKeyInputDtoSchema,
@@ -34,6 +35,48 @@ describe('shared renderer DTO schemas', () => {
       offset: 0
     })
     expect(() => transactionListQueryDtoSchema.parse({ limit: 500 })).toThrow()
+  })
+
+  it('parses dashboard DTOs without raw database rows', () => {
+    const data = dashboardDataDtoSchema.parse({
+      period: { preset: 'latest_month', label: 'Jan 2026' },
+      hasData: true,
+      totalSpending: { amountCents: 1000 },
+      totalIncome: { amountCents: 2000 },
+      netCashFlow: { amountCents: 1000 },
+      recurringSpending: { amountCents: 300 },
+      transactionCount: 3,
+      categories: [
+        {
+          categoryPath: ['Unclassified'],
+          label: 'Unclassified',
+          amountCents: 1000,
+          percentOfSpending: 100,
+          transactionCount: 1,
+          previousAmountCents: 0,
+          differenceCents: 1000
+        }
+      ],
+      merchants: [],
+      monthlyTrend: [],
+      biggestChanges: [],
+      recurring: {
+        totalCents: 300,
+        subscriptionCents: 0,
+        recurringBillCents: 300,
+        recurringPaymentCents: 0,
+        monthlyBaselineCents: 300,
+        confirmedSeriesCount: 1
+      },
+      dataQuality: {
+        classifiedSpendingPercent: 0,
+        needsConfirmationCount: 1,
+        unclassifiedSpendingCents: 1000
+      }
+    })
+
+    expect(data.categories[0]?.label).toBe('Unclassified')
+    expect(data).not.toHaveProperty('amount_cents')
   })
 
   it('preserves transaction search and confirmation filter query fields', () => {

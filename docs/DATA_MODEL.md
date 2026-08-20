@@ -164,3 +164,13 @@ Typical amount is the median absolute outgoing amount. Amount variability is sto
 User decisions are authoritative for recurring semantics. Candidates start with `recurrence_type = unknown`; users can confirm them as subscriptions, recurring bills, recurring payments, or reject them as not recurring. Users can also create a manual confirmed series from a transaction after reviewing matching historical transactions. Manual creation uses confirmed merchant identity when available and exact normalised description otherwise; it does not use pending AI suggestions or fuzzy matching.
 
 Repeated scans update the same `series_key` and associated transactions rather than creating duplicate records. Rejected records remain rejected on immediate rediscovery. Manual series remain confirmed and keep the user-selected type, cadence, and display name while scans refresh their metrics and extend links when new matching transactions appear.
+
+## Dashboard Analytics Semantics
+
+Dashboard analytics do not add new persistence tables. They aggregate existing committed, non-pending `transactions`, confirmed `transaction_classifications`, `transaction_links`, and confirmed `recurring_series` links in the Electron main process.
+
+Dashboard spending is positive integer cents. Normal expenses increase spending. Refund transactions reduce spending instead of becoming ordinary income. Reconciled account-side card settlements are excluded from dashboard spending because their linked Visa purchases remain counted; unreconciled card settlements remain included until reconciliation provides authoritative links. Income uses `income` transactions only. Net cash flow follows the same double-counting rules.
+
+Category dashboard rows use confirmed category IDs and preserve the two-level category path. Unclassified spending is grouped as `Unclassified` and remains visible. Merchant dashboard rows use confirmed canonical merchant IDs and fall back to original descriptions only when no confirmed merchant exists. Pending AI suggestions do not affect dashboard totals.
+
+Recurring dashboard totals use only confirmed recurring series linked through `recurring_series_transactions`; candidates and rejected series are ignored. Monthly recurring baseline is approximate and derived from confirmed series typical amounts by cadence. Own-account transfer detection remains intentionally unresolved, so unresolved transfers can affect dashboard totals until Phase 10 introduces authoritative transfer semantics.
