@@ -64,6 +64,7 @@ Current milestone: Phase 7 smart AI categorisation complete.
 ## Visa XLS Importer Rules
 
 - Completed movements and pending movements are parsed as separate sections.
+- The pending-movements section is optional; completed-only exports are supported. If a pending section is present, its required column header must be valid, even when it contains no movements.
 - Pending movements are imported as transaction candidates with `isPending: true` and `reviewStatus: needs_review`.
 - Preparation fails if any transaction-like row cannot be safely converted.
 - Decorative rows, section labels, headers, totals, and blank rows are recognised and are not imported as transactions.

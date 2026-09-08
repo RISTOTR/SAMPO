@@ -36,26 +36,34 @@ describe('ImportPreviewWorkflow', () => {
     rmSync(directory, { recursive: true, force: true })
   })
 
-  it('creates and commits a basename-only Visa preview without writing before commit', async () => {
-    const account = accounts.create({ name: 'Synthetic Visa', kind: 'credit_card' })
-    selectedFilePath = writeVisaWorkbook(directory, 'synthetic-visa.xls')
+  it.each([false, true])(
+    'creates and commits a Visa preview with pending section present: %s',
+    async (includePendingSection) => {
+      const account = accounts.create({ name: 'Synthetic Visa', kind: 'credit_card' })
+      selectedFilePath = writeVisaWorkbook(
+        directory,
+        'synthetic-visa.xls',
+        'Synthetic Visa movements',
+        includePendingSection
+      )
 
-    const preview = await workflow.selectAndInspectImport(account.id)
+      const preview = await workflow.selectAndInspectImport(account.id)
 
-    expect(preview).toMatchObject({
-      accountId: account.id,
-      sourceKind: 'evo_visa_xls',
-      sourceFileName: 'synthetic-visa.xls'
-    })
-    expect(JSON.stringify(preview)).not.toContain(directory)
-    expect(preview?.transactions).toHaveLength(2)
-    expect(transactions.listForAccount(account.id)).toHaveLength(0)
+      expect(preview).toMatchObject({
+        accountId: account.id,
+        sourceKind: 'evo_visa_xls',
+        sourceFileName: 'synthetic-visa.xls'
+      })
+      expect(JSON.stringify(preview)).not.toContain(directory)
+      expect(preview?.transactions).toHaveLength(2)
+      expect(transactions.listForAccount(account.id)).toHaveLength(0)
 
-    const committed = await workflow.commitImportPreview(preview?.id ?? '')
-    expect(committed.transactionCount).toBe(2)
-    expect(transactions.listForAccount(account.id)).toHaveLength(2)
-    await expect(workflow.commitImportPreview(preview?.id ?? '')).rejects.toThrow()
-  })
+      const committed = await workflow.commitImportPreview(preview?.id ?? '')
+      expect(committed.transactionCount).toBe(2)
+      expect(transactions.listForAccount(account.id)).toHaveLength(2)
+      await expect(workflow.commitImportPreview(preview?.id ?? '')).rejects.toThrow()
+    }
+  )
 
   it('creates an account PDF preview for current accounts', async () => {
     const account = accounts.create({ name: 'Synthetic current', kind: 'current' })
@@ -152,17 +160,19 @@ describe('ImportPreviewWorkflow', () => {
 function writeVisaWorkbook(
   directory: string,
   fileName: string,
-  heading = 'Synthetic Visa movements'
+  heading = 'Synthetic Visa movements',
+  includePendingSection = true
 ): string {
   const rows = [
     [heading],
     ['FECHA', 'COMERCIO/CAJERO', 'IMPORTE'],
     [excelSerial('2026-02-01'), 'NORTH MARKET', -10],
     [excelSerial('2026-02-02'), 'TEST REFUND', 2],
-    ['Total Movimientos', -8],
-    ['MOVIMIENTOS PENDIENTES'],
-    ['FECHA', 'COMERCIO/CAJERO', 'IMPORTE']
+    ['Total Movimientos', -8]
   ]
+  if (includePendingSection) {
+    rows.push(['MOVIMIENTOS PENDIENTES'], ['FECHA', 'COMERCIO/CAJERO', 'IMPORTE'])
+  }
   const worksheet = XLSX.utils.aoa_to_sheet(rows)
   const workbook = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Movimientos')

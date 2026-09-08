@@ -50,8 +50,7 @@ export class EvoVisaXlsImporter implements TransactionImporter {
       return (
         result.detectedFormat === detectedFormat &&
         result.completedHeaderFound &&
-        result.pendingSectionFound &&
-        result.pendingHeaderFound
+        (!result.pendingSectionFound || result.pendingHeaderFound)
       )
     } catch {
       return false
@@ -329,10 +328,10 @@ function missingStructureWarnings(result: ParseResult): ImportWarning[] {
     })
   }
 
-  if (!result.pendingSectionFound || !result.pendingHeaderFound) {
+  if (result.pendingSectionFound && !result.pendingHeaderFound) {
     warnings.push({
-      code: result.pendingSectionFound ? 'missing_required_column' : 'missing_section',
-      message: 'Pending movements section was not found.',
+      code: 'missing_required_column',
+      message: 'Pending movements section is missing its required column header.',
       blocking: true
     })
   }

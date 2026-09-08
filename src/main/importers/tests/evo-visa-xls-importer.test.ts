@@ -33,6 +33,74 @@ describe('EvoVisaXlsImporter', () => {
     await expect(importer.canHandle(input(filePath))).resolves.toBe(true)
   })
 
+  it.each([false, true])(
+    'imports completed movements with an empty pending section present: %s',
+    async (includePendingSection) => {
+      const rows: unknown[][] = [
+        ['FECHA', 'COMERCIO/CAJERO', 'IMPORTE'],
+        [excelSerial('2026-03-01'), 'SYNTHETIC SHOP', -12.34],
+        ['Total Movimientos', -12.34]
+      ]
+      if (includePendingSection) {
+        rows.push(['MOVIMIENTOS PENDIENTES'], ['FECHA', 'COMERCIO/CAJERO', 'IMPORTE'])
+      }
+      const filePath = writeVisaWorkbook(directory, 'completed.xls', rows)
+
+      await expect(importer.canHandle(input(filePath))).resolves.toBe(true)
+      expect(await importer.inspect(input(filePath))).toMatchObject({
+        completedCount: 1,
+        pendingCount: 0,
+        warningCount: 0,
+        canImport: true
+      })
+      const prepared = await importer.prepare(input(filePath), { accountId })
+      expect(prepared.transactions).toHaveLength(1)
+      expect(prepared.transactions[0]).toMatchObject({
+        transactionDate: '2026-03-01',
+        amountCents: -1234,
+        isPending: false,
+        reviewStatus: 'confirmed'
+      })
+    }
+  )
+
+  it.each([{ pendingRows: [] }, { pendingRows: [['FECHA', 'COMERCIO/CAJERO']] }])(
+    'rejects a present pending section without a valid header: %j',
+    async ({ pendingRows }) => {
+      const filePath = writeVisaWorkbook(directory, 'malformed-pending.xls', [
+        ['FECHA', 'COMERCIO/CAJERO', 'IMPORTE'],
+        [excelSerial('2026-03-01'), 'SYNTHETIC SHOP', -12.34],
+        ['MOVIMIENTOS PENDIENTES'],
+        ...pendingRows
+      ])
+
+      await expect(importer.canHandle(input(filePath))).resolves.toBe(false)
+      const inspection = await importer.inspect(input(filePath))
+      expect(inspection.canImport).toBe(false)
+      expect(inspection.warnings).toContainEqual(
+        expect.objectContaining({ code: 'missing_required_column', blocking: true })
+      )
+      await expect(importer.prepare(input(filePath), { accountId })).rejects.toThrow(
+        ImportParseError
+      )
+    }
+  )
+
+  it('still blocks malformed completed rows when the pending section is absent', async () => {
+    const filePath = writeVisaWorkbook(directory, 'invalid-completed.xls', [
+      ['FECHA', 'COMERCIO/CAJERO', 'IMPORTE'],
+      [excelSerial('2026-03-01'), 'SYNTHETIC SHOP', -12.34],
+      ['unexpected content'],
+      [excelSerial('2026-03-02'), 'SYNTHETIC SHOP', 'invalid']
+    ])
+    const inspection = await importer.inspect(input(filePath))
+    expect(inspection.canImport).toBe(false)
+    expect(inspection.warnings.map((warning) => warning.code)).toEqual(
+      expect.arrayContaining(['unrecognised_row', 'invalid_amount'])
+    )
+    await expect(importer.prepare(input(filePath), { accountId })).rejects.toThrow(ImportParseError)
+  })
+
   it('rejects unrelated, corrupt, and unsupported files', async () => {
     const unrelatedPath = join(directory, 'unrelated.xls')
     const corruptPath = join(directory, 'corrupt.xls')
