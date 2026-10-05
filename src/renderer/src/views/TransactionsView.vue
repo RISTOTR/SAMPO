@@ -390,7 +390,6 @@ async function saveManual(): Promise<void> {
   closeEditor()
   await classification.loadReference()
   await loadTransactions()
-  await ai.loadSuggestions(currentSuggestionListInput())
 }
 
 async function saveManualAndConfirmMatches(): Promise<void> {
@@ -401,7 +400,6 @@ async function saveManualAndConfirmMatches(): Promise<void> {
   closeEditor()
   await classification.loadReference()
   await loadTransactions()
-  await ai.loadSuggestions(currentSuggestionListInput())
 }
 
 function closeEditor(): void {
@@ -480,9 +478,9 @@ async function bulkUpdate(): Promise<void> {
     markConfirmed: true,
     overwriteManual: false
   })
+  if (classification.error) return
   selectedTransactionIds.value = []
   await loadTransactions()
-  await ai.loadSuggestions(currentSuggestionListInput())
 }
 
 async function classifySelectedWithAi(): Promise<void> {
@@ -505,10 +503,20 @@ async function acceptAiSuggestion(
     action: acceptAction(options),
     suggestionIdPresent: Boolean(suggestionId)
   })
+  const transactionId = ai.suggestions.find((item) => item.id === suggestionId)?.transactionId
   await ai.acceptSuggestion(suggestionId, options, currentSuggestionListInput())
+  if (ai.error) return
   await classification.loadReference()
   if (editorTransactionId.value) {
     await classification.loadClassification(editorTransactionId.value)
+    if (editorTransactionId.value === transactionId) {
+      if (options.acceptMerchant) {
+        manualForm.merchantId = classification.current?.merchantId ?? ''
+        newMerchantName.value = ''
+      }
+      if (options.acceptCategory) manualForm.categoryId = classification.current?.categoryId ?? ''
+      await refreshMatchingSummary()
+    }
   }
   await loadTransactions()
 }
@@ -524,6 +532,8 @@ async function rejectAiSuggestion(suggestionId: string): Promise<void> {
 
 async function acceptHighConfidenceCategories(): Promise<void> {
   await ai.acceptHighConfidenceCategories(currentSuggestionListInput())
+  if (ai.error) return
+  if (editorTransactionId.value) await openEditor(editorTransactionId.value)
   await loadTransactions()
 }
 

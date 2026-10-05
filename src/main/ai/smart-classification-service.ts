@@ -85,7 +85,14 @@ export class SmartClassificationService {
         continue
       }
       const proposal = this.deterministic.evaluateTransaction(transaction.id)
-      if (proposal.status === 'confirmed' && proposal.source !== 'unclassified') {
+      const current = this.classifications.findByTransactionId(transaction.id)
+      const resolved = current?.classificationStatus === 'confirmed' ? current : proposal
+      if (
+        proposal.status === 'confirmed' &&
+        proposal.source !== 'unclassified' &&
+        Boolean(resolved.merchantId && resolved.categoryId) &&
+        proposal.conflicts.length === 0
+      ) {
         skippedDeterministicOrManual += 1
         continue
       }
@@ -182,12 +189,17 @@ export class SmartClassificationService {
           }
 
           for (const transaction of group.transactions) {
+            const current = this.classifications.findByTransactionId(transaction.id)
+            const confirmed = current?.classificationStatus === 'confirmed' ? current : undefined
+            if (confirmed?.merchantId && confirmed.categoryId) continue
             const suggestion = this.suggestions.create({
               transactionId: transaction.id,
               provider: 'openai',
               model,
-              suggestedMerchantName: result.merchant?.canonicalName,
-              suggestedCategoryId: result.category.categoryId,
+              suggestedMerchantName: confirmed?.merchantId
+                ? undefined
+                : result.merchant?.canonicalName,
+              suggestedCategoryId: confirmed?.categoryId ? undefined : result.category.categoryId,
               merchantConfidence: Math.round((result.merchant?.confidence ?? 0) * 1000),
               categoryConfidence: Math.round(result.category.confidence * 1000),
               needsWebLookup: webLookupFailed
@@ -383,15 +395,22 @@ export class SmartClassificationService {
     const suggestion = this.suggestions.findById(suggestionId)
     const existing = this.classifications.findByTransactionId(suggestion.transactionId)
     const categoryPending = Boolean(
-      suggestion.suggestedCategoryId && existing?.categoryId !== suggestion.suggestedCategoryId
+      suggestion.suggestedCategoryId &&
+      !(existing?.classificationStatus === 'confirmed' && existing.categoryId)
     )
     const merchantPending = Boolean(
       suggestion.suggestedMerchantName &&
-      !sameMerchantName(this.currentMerchantName(existing), suggestion.suggestedMerchantName)
+      !(existing?.classificationStatus === 'confirmed' && existing.merchantId)
     )
 
     if (!categoryPending && !merchantPending) {
-      return this.suggestions.mark(suggestion.id, 'accepted')
+      return this.suggestions.mark(
+        suggestion.id,
+        (suggestion.suggestedMerchantName && existing?.merchantSource === 'manual') ||
+          (suggestion.suggestedCategoryId && existing?.categorySource === 'manual')
+          ? 'superseded'
+          : 'accepted'
+      )
     }
 
     return suggestion
@@ -432,10 +451,7 @@ function reviewCategoryStatus(
   existing: TransactionClassification | undefined
 ): AiSuggestionReviewComponentStatus {
   if (!input.acceptCategory || !suggestion.suggestedCategoryId) return 'not_suggested'
-  if (
-    existing?.categoryId === suggestion.suggestedCategoryId &&
-    existing.classificationStatus === 'confirmed'
-  ) {
+  if (existing?.categoryId && existing.classificationStatus === 'confirmed') {
     return existing.categorySource === 'manual' ? 'preserved_manual' : 'preserved_confirmed'
   }
   return 'accepted'
@@ -448,18 +464,10 @@ function reviewMerchantStatus(
   merchantName?: string
 ): AiSuggestionReviewComponentStatus {
   if (!input.acceptMerchant || !suggestion.suggestedMerchantName) return 'not_suggested'
-  if (
-    sameMerchantName(merchantName, suggestion.suggestedMerchantName) &&
-    existing?.classificationStatus === 'confirmed'
-  ) {
+  if (merchantName && existing?.classificationStatus === 'confirmed') {
     return existing.merchantSource === 'manual' ? 'preserved_manual' : 'preserved_confirmed'
   }
   return 'accepted'
-}
-
-function sameMerchantName(left: string | undefined, right: string | undefined): boolean {
-  if (!left || !right) return false
-  return normaliseMatchText(left) === normaliseMatchText(right)
 }
 
 function mergedClassificationSource(input: {

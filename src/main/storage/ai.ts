@@ -196,6 +196,25 @@ export class AiSuggestionRepository {
       .run(randomUUID(), suggestionId, input.title, url.toString(), new Date().toISOString())
   }
 
+  supersedeResolvedForTransaction(transactionId: string): void {
+    this.database
+      .prepare(
+        `
+      UPDATE ai_classification_suggestions
+      SET status = 'superseded', reviewed_at = ?
+      WHERE transaction_id = ? AND status = 'pending'
+        AND EXISTS (
+          SELECT 1 FROM transaction_classifications c
+          WHERE c.transaction_id = ai_classification_suggestions.transaction_id
+            AND c.classification_status = 'confirmed'
+            AND (suggested_merchant_name IS NULL OR c.merchant_id IS NOT NULL)
+            AND (suggested_category_id IS NULL OR c.category_id IS NOT NULL)
+        )
+    `
+      )
+      .run(new Date().toISOString(), transactionId)
+  }
+
   private supersedePendingForTransaction(transactionId: string): void {
     this.database
       .prepare(

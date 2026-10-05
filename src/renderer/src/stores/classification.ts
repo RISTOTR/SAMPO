@@ -28,10 +28,10 @@ export const useClassificationStore = defineStore('classification', () => {
   const submitting = ref(false)
   const error = ref<string | null>(null)
   const message = ref<string | null>(null)
+  let latestClassificationLoadId = 0
 
   async function loadReference(): Promise<void> {
     loading.value = true
-    error.value = null
     try {
       const [categoryResult, merchantResult, aliasResult, ruleResult] = await Promise.all([
         window.sampo.categories.list(),
@@ -44,7 +44,7 @@ export const useClassificationStore = defineStore('classification', () => {
       aliases.value = unwrapResult(aliasResult)
       rules.value = unwrapResult(ruleResult)
     } catch (caught) {
-      error.value = errorMessage(caught)
+      error.value ??= errorMessage(caught)
     } finally {
       loading.value = false
     }
@@ -90,7 +90,9 @@ export const useClassificationStore = defineStore('classification', () => {
   }
 
   async function loadClassification(transactionId: string): Promise<void> {
-    current.value = unwrapResult(await window.sampo.classification.get(transactionId))
+    const loadId = ++latestClassificationLoadId
+    const result = unwrapResult(await window.sampo.classification.get(transactionId))
+    if (loadId === latestClassificationLoadId) current.value = result
   }
 
   async function saveManual(input: SaveManualClassificationInputDto): Promise<void> {
@@ -159,6 +161,7 @@ export const useClassificationStore = defineStore('classification', () => {
   async function submit(action: () => Promise<void>): Promise<void> {
     if (submitting.value) return
     submitting.value = true
+    ++latestClassificationLoadId
     error.value = null
     message.value = null
     try {

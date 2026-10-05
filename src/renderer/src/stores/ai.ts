@@ -20,35 +20,37 @@ export const useAiStore = defineStore('ai', () => {
   const submitting = ref(false)
   const error = ref<string | null>(null)
   const message = ref<string | null>(null)
+  let latestSuggestionLoadId = 0
 
   const highConfidenceSuggestions = computed(() =>
     suggestions.value.filter(
-      (suggestion) =>
-        suggestion.categoryConfidenceBand === 'high' && Boolean(suggestion.suggestedCategoryId)
+      (suggestion) => suggestion.categoryConfidenceBand === 'high' && suggestion.canAcceptCategory
     )
   )
 
   async function loadSettings(): Promise<void> {
     loading.value = true
-    error.value = null
     try {
       settings.value = unwrapResult(await window.sampo.ai.getSettings())
     } catch (caught) {
-      error.value = errorMessage(caught)
+      error.value ??= errorMessage(caught)
     } finally {
       loading.value = false
     }
   }
 
   async function loadSuggestions(input?: ListAiSuggestionsInputDto): Promise<void> {
+    const loadId = ++latestSuggestionLoadId
     loading.value = true
-    error.value = null
     try {
-      suggestions.value = unwrapResult(await window.sampo.ai.listSuggestions(input))
+      const nextSuggestions = unwrapResult(await window.sampo.ai.listSuggestions(input))
+      if (loadId !== latestSuggestionLoadId) return
+      suggestions.value = nextSuggestions
     } catch (caught) {
-      error.value = errorMessage(caught)
+      if (loadId !== latestSuggestionLoadId) return
+      error.value ??= errorMessage(caught)
     } finally {
-      loading.value = false
+      if (loadId === latestSuggestionLoadId) loading.value = false
     }
   }
 
@@ -143,6 +145,8 @@ export const useAiStore = defineStore('ai', () => {
       action: acceptAction(options)
     })
     await submit(async () => {
+      ++latestSuggestionLoadId
+      loading.value = false
       const review = unwrapResult(
         await window.sampo.ai.acceptSuggestion({ suggestionId, ...options })
       )
@@ -160,6 +164,8 @@ export const useAiStore = defineStore('ai', () => {
       action: 'reject'
     })
     await submit(async () => {
+      ++latestSuggestionLoadId
+      loading.value = false
       const review = unwrapResult(await window.sampo.ai.rejectSuggestion({ suggestionId }))
       await loadSuggestions(listInput)
       message.value =
@@ -178,6 +184,7 @@ export const useAiStore = defineStore('ai', () => {
         { acceptCategory: true, acceptMerchant: false },
         listInput
       )
+      if (error.value) break
     }
   }
 

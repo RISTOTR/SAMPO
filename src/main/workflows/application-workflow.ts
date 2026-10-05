@@ -703,13 +703,17 @@ export class ApplicationWorkflow {
       : this.aiSuggestions.listPending()
 
     return suggestions
-      .map((suggestion) =>
-        aiSuggestionToDto({
+      .map((suggestion) => {
+        const actionability = this.aiSuggestionActionability(suggestion.transactionId, suggestion)
+        if (!actionability.canAcceptCategory && !actionability.canAcceptMerchant) {
+          this.aiSuggestions.mark(suggestion.id, 'superseded')
+        }
+        return aiSuggestionToDto({
           suggestion,
           categoryPath: this.categoryPath(suggestion.suggestedCategoryId),
-          ...this.aiSuggestionActionability(suggestion.transactionId, suggestion)
+          ...actionability
         })
-      )
+      })
       .filter((suggestion) => suggestion.canAcceptCategory || suggestion.canAcceptMerchant)
       .map((suggestion) => aiSuggestionDtoSchema.parse(suggestion))
   }
@@ -849,7 +853,9 @@ export class ApplicationWorkflow {
     transactionId: string,
     proposal: ClassificationProposalDto
   ): NonNullable<ClassificationSummaryDto['merchantDisplay']> {
-    const authoritativeId = this.classifications.findByTransactionId(transactionId)?.merchantId
+    const existing = this.classifications.findByTransactionId(transactionId)
+    const authoritativeId =
+      existing?.classificationStatus === 'confirmed' ? existing.merchantId : undefined
     const authoritativeName = authoritativeId
       ? this.merchants.findById(authoritativeId).name
       : undefined
@@ -872,7 +878,9 @@ export class ApplicationWorkflow {
     transactionId: string,
     proposal: ClassificationProposalDto
   ): NonNullable<ClassificationSummaryDto['categoryDisplay']> {
-    const authoritativeId = this.classifications.findByTransactionId(transactionId)?.categoryId
+    const existing = this.classifications.findByTransactionId(transactionId)
+    const authoritativeId =
+      existing?.classificationStatus === 'confirmed' ? existing.categoryId : undefined
     const authoritativePath = this.categoryPath(authoritativeId)
     const detectedPath =
       proposal.categoryPath && proposal.categoryId !== authoritativeId
@@ -918,22 +926,24 @@ export class ApplicationWorkflow {
     currentMerchantName?: string
     currentCategoryPath?: string[]
   } {
-    const classification = this.classifications.findByTransactionId(transactionId)
+    const existing = this.classifications.findByTransactionId(transactionId)
+    const classification = existing?.classificationStatus === 'confirmed' ? existing : undefined
     const currentMerchantName = classification?.merchantId
       ? this.merchants.findById(classification.merchantId).name
       : undefined
     const currentCategoryPath = this.categoryPath(classification?.categoryId)
-    const suggestedCategoryPath = this.categoryPath(suggestion.suggestedCategoryId)
     return {
       currentMerchantName,
       currentCategoryPath,
       canAcceptCategory: Boolean(
-        suggestion.suggestedCategoryId &&
-        !sameCategoryPath(currentCategoryPath, suggestedCategoryPath)
+        suggestion.status === 'pending' &&
+        !classification?.categoryId &&
+        suggestion.suggestedCategoryId
       ),
       canAcceptMerchant: Boolean(
-        suggestion.suggestedMerchantName &&
-        !sameMerchantName(currentMerchantName, suggestion.suggestedMerchantName)
+        suggestion.status === 'pending' &&
+        !classification?.merchantId &&
+        suggestion.suggestedMerchantName
       )
     }
   }
@@ -984,16 +994,6 @@ function recurringSeriesToDto(series: RecurringSeries): RecurringSeriesDto {
     createdAt: series.createdAt,
     updatedAt: series.updatedAt
   }
-}
-
-function sameMerchantName(left: string | undefined, right: string | undefined): boolean {
-  if (!left || !right) return false
-  return normaliseMatchText(left) === normaliseMatchText(right)
-}
-
-function sameCategoryPath(left: string[] | undefined, right: string[] | undefined): boolean {
-  if (!left || !right || left.length !== right.length) return false
-  return left.every((part, index) => normaliseMatchText(part) === normaliseMatchText(right[index]!))
 }
 
 function logAiReviewDiagnostic(label: string, metadata: Record<string, unknown>): void {

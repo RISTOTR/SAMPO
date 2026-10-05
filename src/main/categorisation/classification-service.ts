@@ -80,7 +80,19 @@ export class ClassificationService {
       existing?.classificationStatus === 'confirmed' &&
       existing.classificationSource !== 'unclassified'
     ) {
-      return this.classificationToProposal(transaction, existing)
+      const confirmed = this.classificationToProposal(transaction, existing)
+      if (existing.merchantId && existing.categoryId) return confirmed
+      const detected = this.evaluateTransactionFacts(transaction, existing)
+      return this.decorateProposal({
+        ...confirmed,
+        merchantId: existing.merchantId ?? detected.merchantId,
+        categoryId: existing.categoryId ?? detected.categoryId,
+        conflicts: detected.conflicts.filter(
+          (conflict) =>
+            (conflict.field === 'merchant' && !existing.merchantId) ||
+            (conflict.field === 'category' && !existing.categoryId)
+        )
+      })
     }
 
     return this.evaluateTransactionFacts(transaction, existing)
@@ -154,6 +166,8 @@ export class ClassificationService {
   applyToTransactions(transactionIds: string[]): void {
     const apply = this.database.transaction(() => {
       for (const id of transactionIds) {
+        const existing = this.classifications.findByTransactionId(id)
+        if (existing?.classificationStatus === 'confirmed') continue
         const proposal = this.evaluateTransaction(id)
         if (proposal.source === 'manual' || proposal.status === 'ambiguous') continue
         if (proposal.source === 'unclassified') continue
@@ -245,7 +259,8 @@ export class ClassificationService {
       ...ruleResult.conflicts
     ]
     const merchantId =
-      existing?.merchantSource === 'manual'
+      existing?.merchantId &&
+      (existing.merchantSource === 'manual' || existing.classificationStatus === 'confirmed')
         ? existing.merchantId
         : (ruleResult.merchantId ?? learnedMerchantId ?? existing?.merchantId)
     const ruleStatus = ruleResult.status
@@ -259,7 +274,8 @@ export class ClassificationService {
             : 'needs_review'
 
     const categoryId =
-      existing?.categorySource === 'manual'
+      existing?.categoryId &&
+      (existing.categorySource === 'manual' || existing.classificationStatus === 'confirmed')
         ? existing.categoryId
         : (ruleResult.categoryId ?? learnedManualCategoryResult.categoryId ?? existing?.categoryId)
 
@@ -300,11 +316,12 @@ export class ClassificationService {
     conflicts: ClassificationConflict[]
   } {
     const text = normaliseMatchText(transaction.originalDescription)
+    const examples = this.classifications
+      .listConfirmedMerchantExamples()
+      .filter((example) => normaliseMatchText(example.originalDescription) === text)
+    const manual = examples.filter((example) => example.source === 'manual')
     const matchingMerchantIds = new Set(
-      this.classifications
-        .listConfirmedManualMerchantExamples()
-        .filter((example) => normaliseMatchText(example.originalDescription) === text)
-        .map((example) => example.merchantId)
+      (manual.length > 0 ? manual : examples).map((example) => example.merchantId)
     )
 
     if (matchingMerchantIds.size > 1) {
@@ -321,11 +338,12 @@ export class ClassificationService {
     conflicts: ClassificationConflict[]
   } {
     const text = normaliseMatchText(transaction.originalDescription)
+    const examples = this.classifications
+      .listConfirmedCategoryExamples()
+      .filter((example) => normaliseMatchText(example.originalDescription) === text)
+    const manual = examples.filter((example) => example.source === 'manual')
     const matchingCategoryIds = new Set(
-      this.classifications
-        .listConfirmedManualCategoryExamples()
-        .filter((example) => normaliseMatchText(example.originalDescription) === text)
-        .map((example) => example.categoryId)
+      (manual.length > 0 ? manual : examples).map((example) => example.categoryId)
     )
 
     if (matchingCategoryIds.size > 1) {

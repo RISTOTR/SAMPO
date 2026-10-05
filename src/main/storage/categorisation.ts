@@ -1,3 +1,4 @@
+import { AiSuggestionRepository } from './ai'
 import type { Database } from 'better-sqlite3'
 import { randomUUID } from 'crypto'
 import { EntityNotFoundError, SampoError } from '../domain/errors'
@@ -456,38 +457,48 @@ export class TransactionClassificationRepository {
     return row ? mapClassification(row as Row) : undefined
   }
 
-  listConfirmedManualMerchantExamples(): { merchantId: string; originalDescription: string }[] {
+  listConfirmedMerchantExamples(): {
+    merchantId: string
+    originalDescription: string
+    source: string
+  }[] {
     return this.database
       .prepare(
         `
           SELECT
             c.merchant_id AS merchantId,
+            c.merchant_source AS source,
             t.original_description AS originalDescription
           FROM transaction_classifications c
           JOIN transactions t ON t.id = c.transaction_id
           WHERE c.classification_status = 'confirmed'
-            AND c.merchant_source = 'manual'
+            AND c.merchant_source IN ('manual', 'ai')
             AND c.merchant_id IS NOT NULL
         `
       )
-      .all() as { merchantId: string; originalDescription: string }[]
+      .all() as { merchantId: string; originalDescription: string; source: string }[]
   }
 
-  listConfirmedManualCategoryExamples(): { categoryId: string; originalDescription: string }[] {
+  listConfirmedCategoryExamples(): {
+    categoryId: string
+    originalDescription: string
+    source: string
+  }[] {
     return this.database
       .prepare(
         `
           SELECT
             c.category_id AS categoryId,
+            c.category_source AS source,
             t.original_description AS originalDescription
           FROM transaction_classifications c
           JOIN transactions t ON t.id = c.transaction_id
           WHERE c.classification_status = 'confirmed'
-            AND c.category_source = 'manual'
+            AND c.category_source IN ('manual', 'ai')
             AND c.category_id IS NOT NULL
         `
       )
-      .all() as { categoryId: string; originalDescription: string }[]
+      .all() as { categoryId: string; originalDescription: string; source: string }[]
   }
 
   listForTransactions(transactionIds: string[]): Map<string, TransactionClassification> {
@@ -557,6 +568,7 @@ export class TransactionClassificationRepository {
         now
       })
 
+    new AiSuggestionRepository(this.database).supersedeResolvedForTransaction(input.transactionId)
     return this.findByTransactionId(input.transactionId)!
   }
 
