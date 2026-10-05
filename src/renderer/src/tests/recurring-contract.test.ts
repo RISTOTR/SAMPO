@@ -15,7 +15,7 @@ const ipc = readFileSync('src/shared/ipc.ts', 'utf8')
 
 describe('recurring renderer contract', () => {
   it('adds Recurring navigation and IPC methods', () => {
-    expect(appShell).toContain("{ path: '/recurring', label: 'Recurring' }")
+    expect(appShell).toContain("path: '/recurring', label: 'Recurring'")
     expect(router).toContain("{ path: '/recurring', name: 'recurring'")
     expect(ipc).toContain("recurringScan: 'sampo:recurring:scan'")
     expect(ipc).toContain("recurringPreviewManual: 'sampo:recurring:preview-manual'")
@@ -52,7 +52,7 @@ describe('recurring renderer contract', () => {
   it('supports editing and deleting recurring series', () => {
     expect(recurringView).toContain('Edit recurring series')
     expect(recurringView).toContain('openEdit(series)')
-    expect(recurringView).toContain('editPanel.value?.scrollIntoView')
+    expect(recurringView).toContain('scrollPanelIntoContent(editPanel.value)')
     expect(recurringView).toContain('@click.stop="openEdit(series)"')
     expect(recurringView).toContain('deleteSeries(series.id)')
     expect(recurringView).toContain('recurring.update')
@@ -74,7 +74,7 @@ describe('recurring renderer contract', () => {
     expect(recurringView).toContain('series.occurrenceCount')
     expect(recurringView).toContain('transactions ·')
     expect(recurringView).toContain('recurring.selected.source')
-    expect(transactionsView).toContain('<th>Recurring</th>')
+    expect(transactionsView).toMatch(/<th[^>]*>Recurring<\/th>/)
     expect(transactionsView).toContain('transaction.recurring.displayName')
     expect(transactionsView).toContain('transaction.recurring.cadence')
     expect(transactionsView).toContain('Not recurring')

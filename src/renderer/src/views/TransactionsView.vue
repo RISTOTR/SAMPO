@@ -1,4 +1,12 @@
 <script setup lang="ts">
+import { captureTransactionPosition, scrollPanelIntoContent } from '../presentation/content-scroll'
+import {
+  transactionReviewState,
+  transactionReviewLabels,
+  transactionReviewIcons
+} from '../presentation/transaction-review'
+import TransactionColumns from '../components/TransactionColumns.vue'
+import { useUiPreferencesStore } from '../stores/ui-preferences'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { formatCents, formatDate } from '../formatters'
@@ -10,12 +18,30 @@ import { useTransactionsStore } from '../stores/transactions'
 import type { AiSuggestionDto, TransactionListQueryDto } from '../../../shared/dtos'
 import ManualRecurringForm from '../components/ManualRecurringForm.vue'
 
+const viewRoot = ref<HTMLElement | null>(null)
+let returnFromEditor: (() => void) | undefined
+let returnFromRecurring: (() => void) | undefined
+const ui = useUiPreferencesStore()
 const accounts = useAccountsStore()
 const ai = useAiStore()
 const classification = useClassificationStore()
 const recurring = useRecurringStore()
 const transactions = useTransactionsStore()
 const route = useRoute()
+watch(
+  [
+    () => transactions.page.items,
+    () => ai.suggestions,
+    () => ui.aiPanelCollapsed,
+    () => ui.sidebarCollapsed
+  ],
+  () => {
+    const restore = captureTransactionPosition(viewRoot.value)
+    void nextTick(restore)
+  },
+  { flush: 'pre' }
+)
+
 const filters = reactive({
   search: '',
   confirmationFilter: 'all' as 'all' | 'needs_confirmation' | 'confirmed',
@@ -317,6 +343,7 @@ async function previousPage(): Promise<void> {
 }
 
 async function openEditor(transactionId: string): Promise<void> {
+  if (!editorTransactionId.value) returnFromEditor = captureTransactionPosition(viewRoot.value)
   logTransactionsDiagnostic('edit clicked', { transactionIdPresent: Boolean(transactionId) })
   const row = transactions.page.items.find((item) => item.id === transactionId)
 
@@ -369,7 +396,7 @@ async function openEditor(transactionId: string): Promise<void> {
       merchantOptionCount: editorMerchantOptions.value.length
     })
     await nextTick()
-    editorPanel.value?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    scrollPanelIntoContent(editorPanel.value)
   } catch {
     editorTransactionId.value = null
     classification.error = 'Transaction could not be loaded.'
@@ -377,9 +404,10 @@ async function openEditor(transactionId: string): Promise<void> {
 }
 
 async function openRecurringCreator(transactionId: string): Promise<void> {
+  returnFromRecurring = captureTransactionPosition(viewRoot.value)
   recurringTransactionId.value = transactionId
   await nextTick()
-  recurringPanel.value?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  scrollPanelIntoContent(recurringPanel.value)
 }
 
 async function saveManual(): Promise<void> {
@@ -403,6 +431,8 @@ async function saveManualAndConfirmMatches(): Promise<void> {
 }
 
 function closeEditor(): void {
+  if (returnFromEditor) void nextTick(returnFromEditor)
+  returnFromEditor = undefined
   const transactionId = editorTransactionId.value
   editorTransactionId.value = null
   newMerchantName.value = ''
@@ -412,6 +442,8 @@ function closeEditor(): void {
 }
 
 function closeRecurringCreator(): void {
+  if (returnFromRecurring) void nextTick(returnFromRecurring)
+  returnFromRecurring = undefined
   recurringTransactionId.value = null
   recurring.clearManualPreview()
 }
@@ -562,7 +594,7 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
 </script>
 
 <template>
-  <section class="view-stack">
+  <section ref="viewRoot" class="view-stack">
     <p v-if="transactions.error" class="error-message" aria-live="polite">
       {{ transactions.error }}
     </p>
@@ -719,12 +751,16 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
             <option value="ambiguous">Ambiguous</option>
           </select>
         </div>
-        <label class="form-field">
+        <label class="checkbox-label" for="filter-unclassified">
+          <input id="filter-unclassified" v-model="filters.unclassifiedOnly" type="checkbox" />
           <span>Unclassified only</span>
-          <input v-model="filters.unclassifiedOnly" type="checkbox" />
         </label>
-        <button type="submit" :disabled="transactions.loading">Apply filters</button>
-        <button type="button" :disabled="transactions.loading" @click="resetFilters">Reset</button>
+        <div class="button-row form-field-wide">
+          <button type="submit" :disabled="transactions.loading">Apply filters</button>
+          <button type="button" :disabled="transactions.loading" @click="resetFilters">
+            Reset
+          </button>
+        </div>
       </form>
     </div>
 
@@ -783,91 +819,108 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
     </div>
 
     <div class="panel">
-      <h3>AI suggestions</h3>
-      <div class="button-row">
-        <button type="button" :disabled="ai.loading" @click="loadAiSuggestions">Refresh</button>
+      <div class="section-header ai-panel-header">
+        <h3>
+          AI suggestions
+          <span class="badge" aria-live="polite">{{ ai.suggestions.length }} unresolved</span>
+        </h3>
         <button
           type="button"
-          :disabled="ai.submitting || ai.highConfidenceSuggestions.length === 0"
-          @click="acceptHighConfidenceCategories"
+          class="secondary-button"
+          :aria-expanded="!ui.aiPanelCollapsed"
+          aria-controls="ai-suggestions-content"
+          @click="ui.toggleAiPanel"
         >
-          Accept high-confidence categories
+          {{ ui.aiPanelCollapsed ? 'Show' : 'Hide' }}
+          <span class="sr-only">AI suggestions</span>
         </button>
       </div>
-      <p v-if="ai.suggestions.length === 0">No pending AI suggestions.</p>
-      <div v-else class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Difference</th>
-              <th>Current</th>
-              <th>AI suggests</th>
-              <th>Confidence</th>
-              <th>Lookup</th>
-              <th>Reason</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="suggestion in ai.suggestions" :key="suggestion.id">
-              <td>{{ suggestionChangeLabels(suggestion) }}</td>
-              <td>{{ suggestionCurrentValue(suggestion) }}</td>
-              <td>{{ suggestionAiValue(suggestion) }}</td>
-              <td>{{ suggestionConfidence(suggestion) }}</td>
-              <td>{{ suggestion.usedWebSearch ? 'Web' : 'Local' }}</td>
-              <td>{{ suggestion.reasonCode }}</td>
-              <td>
-                <div class="button-row">
-                  <button
-                    type="button"
-                    :disabled="ai.submitting || !suggestion.canAcceptCategory"
-                    @click="
-                      acceptAiSuggestion(suggestion.id, {
-                        acceptCategory: true,
-                        acceptMerchant: false
-                      })
-                    "
-                  >
-                    Use AI category
-                  </button>
-                  <button
-                    type="button"
-                    :disabled="ai.submitting || !suggestion.canAcceptMerchant"
-                    @click="
-                      acceptAiSuggestion(suggestion.id, {
-                        acceptCategory: false,
-                        acceptMerchant: true
-                      })
-                    "
-                  >
-                    Use AI merchant
-                  </button>
-                  <button
-                    v-if="suggestion.canAcceptCategory && suggestion.canAcceptMerchant"
-                    type="button"
-                    :disabled="ai.submitting"
-                    @click="
-                      acceptAiSuggestion(suggestion.id, {
-                        acceptCategory: true,
-                        acceptMerchant: true
-                      })
-                    "
-                  >
-                    Use both
-                  </button>
-                  <button
-                    class="danger-button"
-                    type="button"
-                    :disabled="ai.submitting"
-                    @click="rejectAiSuggestion(suggestion.id)"
-                  >
-                    Reject
-                  </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <div v-show="!ui.aiPanelCollapsed" id="ai-suggestions-content">
+        <div class="button-row">
+          <button type="button" :disabled="ai.loading" @click="loadAiSuggestions">Refresh</button>
+          <button
+            type="button"
+            :disabled="ai.submitting || ai.highConfidenceSuggestions.length === 0"
+            @click="acceptHighConfidenceCategories"
+          >
+            Accept high-confidence categories
+          </button>
+        </div>
+        <p v-if="ai.suggestions.length === 0">No pending AI suggestions.</p>
+        <div v-else class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Difference</th>
+                <th>Current</th>
+                <th>AI suggests</th>
+                <th>Confidence</th>
+                <th>Lookup</th>
+                <th>Reason</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="suggestion in ai.suggestions" :key="suggestion.id">
+                <td>{{ suggestionChangeLabels(suggestion) }}</td>
+                <td>{{ suggestionCurrentValue(suggestion) }}</td>
+                <td>{{ suggestionAiValue(suggestion) }}</td>
+                <td>{{ suggestionConfidence(suggestion) }}</td>
+                <td>{{ suggestion.usedWebSearch ? 'Web' : 'Local' }}</td>
+                <td>{{ suggestion.reasonCode }}</td>
+                <td>
+                  <div class="button-row">
+                    <button
+                      type="button"
+                      :disabled="ai.submitting || !suggestion.canAcceptCategory"
+                      @click="
+                        acceptAiSuggestion(suggestion.id, {
+                          acceptCategory: true,
+                          acceptMerchant: false
+                        })
+                      "
+                    >
+                      Use AI category
+                    </button>
+                    <button
+                      type="button"
+                      :disabled="ai.submitting || !suggestion.canAcceptMerchant"
+                      @click="
+                        acceptAiSuggestion(suggestion.id, {
+                          acceptCategory: false,
+                          acceptMerchant: true
+                        })
+                      "
+                    >
+                      Use AI merchant
+                    </button>
+                    <button
+                      v-if="suggestion.canAcceptCategory && suggestion.canAcceptMerchant"
+                      type="button"
+                      :disabled="ai.submitting"
+                      @click="
+                        acceptAiSuggestion(suggestion.id, {
+                          acceptCategory: true,
+                          acceptMerchant: true
+                        })
+                      "
+                    >
+                      Use both
+                    </button>
+                    <button
+                      class="danger-button"
+                      type="button"
+                      :disabled="ai.submitting"
+                      @click="rejectAiSuggestion(suggestion.id)"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -878,62 +931,107 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
           {{ ai.submitting ? 'Classifying...' : 'Classify' }}
         </button>
         <span>{{ selectedTransactionIds.length }} selected</span>
+        <TransactionColumns />
       </div>
       <p v-if="transactions.page.items.length === 0">No transactions match the selected filters.</p>
-      <div v-else class="table-wrap">
-        <table>
+      <div
+        v-else
+        class="table-wrap transactions-table-wrap"
+        tabindex="0"
+        role="region"
+        aria-label="Transactions table"
+      >
+        <table class="transactions-table">
           <thead>
             <tr>
               <th>Select</th>
-              <th>Date</th>
-              <th>Value date</th>
-              <th>Description</th>
-              <th>Account</th>
-              <th class="numeric">Amount</th>
-              <th class="numeric">Balance</th>
-              <th>Type</th>
-              <th>Pending</th>
-              <th>Spending</th>
-              <th>Review</th>
-              <th>Merchant</th>
-              <th>Category</th>
-              <th>Class status</th>
-              <th>Usage</th>
-              <th>Cost</th>
-              <th>Necessity</th>
-              <th>Recurring</th>
-              <th>Actions</th>
+              <th v-if="ui.isColumnVisible('date')" class="column-date">Date</th>
+              <th v-if="ui.isColumnVisible('valueDate')" class="column-valueDate">Value date</th>
+              <th v-if="ui.isColumnVisible('description')" class="column-description">
+                Description
+              </th>
+              <th v-if="ui.isColumnVisible('account')" class="column-account">Account</th>
+              <th v-if="ui.isColumnVisible('amount')" class="numeric">Amount</th>
+              <th v-if="ui.isColumnVisible('balance')" class="numeric">Balance</th>
+              <th v-if="ui.isColumnVisible('type')" class="column-type">Type</th>
+              <th v-if="ui.isColumnVisible('pending')" class="column-pending">Pending</th>
+              <th v-if="ui.isColumnVisible('spending')" class="column-spending">Spending</th>
+              <th v-if="ui.isColumnVisible('review')" class="column-review">Review</th>
+              <th v-if="ui.isColumnVisible('merchant')" class="column-merchant">Merchant</th>
+              <th v-if="ui.isColumnVisible('category')" class="column-category">Category</th>
+              <th v-if="ui.isColumnVisible('classStatus')" class="column-classStatus">
+                Class status
+              </th>
+              <th v-if="ui.isColumnVisible('usage')" class="column-usage">Usage</th>
+              <th v-if="ui.isColumnVisible('cost')" class="column-cost">Cost</th>
+              <th v-if="ui.isColumnVisible('necessity')" class="column-necessity">Necessity</th>
+              <th v-if="ui.isColumnVisible('recurring')" class="column-recurring">Recurring</th>
+              <th v-if="ui.isColumnVisible('actions')" class="column-actions">Actions</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="transaction in transactions.page.items" :key="transaction.id">
+            <tr
+              v-for="transaction in transactions.page.items"
+              :key="transaction.id"
+              :data-transaction-row="transaction.id"
+              :class="[
+                `transaction-${transactionReviewState(transaction)}`,
+                { 'transaction-selected': selectedTransactionIds.includes(transaction.id) }
+              ]"
+            >
               <td>
-                <input
-                  v-model="selectedTransactionIds"
-                  type="checkbox"
-                  :value="transaction.id"
-                  aria-label="Select transaction"
-                />
+                <div class="transaction-selection">
+                  <span
+                    class="review-indicator"
+                    role="img"
+                    :title="transactionReviewLabels[transactionReviewState(transaction)]"
+                    :aria-label="transactionReviewLabels[transactionReviewState(transaction)]"
+                  >
+                    {{ transactionReviewIcons[transactionReviewState(transaction)] }}
+                  </span>
+                  <input
+                    v-model="selectedTransactionIds"
+                    type="checkbox"
+                    :value="transaction.id"
+                    aria-label="Select transaction"
+                  />
+                </div>
               </td>
-              <td>{{ formatDate(transaction.transactionDate) }}</td>
-              <td>{{ formatDate(transaction.valueDate) }}</td>
-              <td>{{ transaction.description }}</td>
-              <td>{{ transaction.accountName }}</td>
-              <td class="numeric">
+              <td v-if="ui.isColumnVisible('date')" class="column-date">
+                {{ formatDate(transaction.transactionDate) }}
+              </td>
+              <td v-if="ui.isColumnVisible('valueDate')" class="column-valueDate">
+                {{ formatDate(transaction.valueDate) }}
+              </td>
+              <td v-if="ui.isColumnVisible('description')" class="column-description">
+                {{ transaction.description }}
+              </td>
+              <td v-if="ui.isColumnVisible('account')" class="column-account">
+                {{ transaction.accountName }}
+              </td>
+              <td v-if="ui.isColumnVisible('amount')" class="numeric">
                 {{ formatCents(transaction.amountCents, transaction.currency) }}
               </td>
-              <td class="numeric">
+              <td v-if="ui.isColumnVisible('balance')" class="numeric">
                 {{
                   transaction.balanceCents === undefined
                     ? ''
                     : formatCents(transaction.balanceCents, transaction.currency)
                 }}
               </td>
-              <td>{{ transaction.transactionType }}</td>
-              <td>{{ transaction.isPending ? 'Pending' : 'Completed' }}</td>
-              <td>{{ transaction.excludedFromSpending ? 'Excluded' : 'Included' }}</td>
-              <td>{{ transaction.reviewStatus }}</td>
-              <td>
+              <td v-if="ui.isColumnVisible('type')" class="column-type">
+                {{ transaction.transactionType }}
+              </td>
+              <td v-if="ui.isColumnVisible('pending')" class="column-pending">
+                {{ transaction.isPending ? 'Pending' : 'Completed' }}
+              </td>
+              <td v-if="ui.isColumnVisible('spending')" class="column-spending">
+                {{ transaction.excludedFromSpending ? 'Excluded' : 'Included' }}
+              </td>
+              <td v-if="ui.isColumnVisible('review')" class="column-review">
+                {{ transaction.reviewStatus }}
+              </td>
+              <td v-if="ui.isColumnVisible('merchant')" class="column-merchant">
                 {{ transaction.classification?.merchantDisplay?.displayName ?? 'Not assigned' }}
                 <span
                   v-if="transaction.classification?.merchantDisplay?.source === 'detected'"
@@ -951,7 +1049,7 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
                   Suggested: {{ aiSuggestionFor(transaction.id)?.suggestedMerchantName }}
                 </span>
               </td>
-              <td>
+              <td v-if="ui.isColumnVisible('category')" class="column-category">
                 {{
                   transaction.classification?.categoryDisplay?.displayPath?.join(' / ') ??
                   'Unclassified'
@@ -973,20 +1071,39 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
                   {{ aiSuggestionFor(transaction.id)?.suggestedCategoryPath?.join(' / ') }}
                 </span>
               </td>
-              <td>{{ transaction.classification?.classificationStatus ?? 'needs_review' }}</td>
-              <td>{{ transaction.classification?.usageType ?? 'unspecified' }}</td>
-              <td>{{ transaction.classification?.costBehaviour ?? 'unspecified' }}</td>
-              <td>{{ transaction.classification?.necessity ?? 'unspecified' }}</td>
-              <td>
-                <span v-if="transaction.recurring" class="badge">
-                  {{ transaction.recurring.displayName }}
-                </span>
-                <span v-if="transaction.recurring" class="classification-note">
-                  {{ transaction.recurring.cadence }} · {{ transaction.recurring.source }}
-                </span>
-                <span v-else>Not recurring</span>
+              <td v-if="ui.isColumnVisible('classStatus')" class="column-classStatus">
+                {{ transaction.classification?.classificationStatus ?? 'needs_review' }}
               </td>
-              <td>
+              <td v-if="ui.isColumnVisible('usage')" class="column-usage">
+                {{ transaction.classification?.usageType ?? 'unspecified' }}
+              </td>
+              <td v-if="ui.isColumnVisible('cost')" class="column-cost">
+                {{ transaction.classification?.costBehaviour ?? 'unspecified' }}
+              </td>
+              <td v-if="ui.isColumnVisible('necessity')" class="column-necessity">
+                {{ transaction.classification?.necessity ?? 'unspecified' }}
+              </td>
+              <td v-if="ui.isColumnVisible('recurring')" class="column-recurring">
+                <span
+                  class="recurring-indicator"
+                  :title="
+                    transaction.recurring
+                      ? `${transaction.recurring.displayName} · ${transaction.recurring.cadence} · ${transaction.recurring.source}`
+                      : 'Not recurring'
+                  "
+                  :aria-label="
+                    transaction.recurring
+                      ? `Recurring: ${transaction.recurring.displayName}, ${transaction.recurring.cadence}, ${transaction.recurring.source}`
+                      : 'Not recurring'
+                  "
+                >
+                  <span aria-hidden="true">{{ transaction.recurring ? '✓' : '○' }}</span>
+                  <span class="sr-only">{{
+                    transaction.recurring ? 'Recurring' : 'Not recurring'
+                  }}</span>
+                </span>
+              </td>
+              <td v-if="ui.isColumnVisible('actions')" class="column-actions">
                 <div class="button-row">
                   <button type="button" @click="openEditor(transaction.id)">Edit</button>
                   <button type="button" @click="openRecurringCreator(transaction.id)">
