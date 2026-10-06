@@ -13,7 +13,7 @@ describe('transactions manual AI classify contract', () => {
     expect(transactionsView).toContain('v-model="selectedTransactionIds"')
     expect(transactionsView).toContain(':value="transaction.id"')
     expect(transactionsView).toContain('@click="classifySelectedWithAi"')
-    expect(transactionsView).toContain('const selectedIds = [...selectedTransactionIds.value]')
+    expect(transactionsView).toContain('const selectedIds = visibleSelectedIds()')
     expect(transactionsView).toContain('await ai.classifyTransactions(selectedIds)')
     expect(transactionsView).toContain("{{ ai.submitting ? 'Classifying...' : 'Classify' }}")
   })

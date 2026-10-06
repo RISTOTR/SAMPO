@@ -933,3 +933,30 @@ td .button-row button {
 .transactions-table .column-actions .button-row {
   gap: 8px 10px;
 }
+
+.feedback-stack {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.feedback-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+.feedback-alert > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.feedback-alert > button {
+  flex: 0 0 auto;
+  min-height: 28px;
+  width: 28px;
+  padding: 2px;
+  line-height: 22px;
+}

@@ -152,8 +152,10 @@ export const useClassificationStore = defineStore('classification', () => {
   }
 
   async function bulkUpdate(input: BulkClassificationInputDto): Promise<void> {
+    const request = { ...input, transactionIds: Array.from(input.transactionIds) }
+    if (!request.transactionIds.length) return
     await submit(async () => {
-      unwrapResult(await window.sampo.classification.bulkUpdate(input))
+      unwrapResult(await window.sampo.classification.bulkUpdate(request))
       message.value = 'Selected transactions updated.'
     })
   }
@@ -167,7 +169,7 @@ export const useClassificationStore = defineStore('classification', () => {
     try {
       await action()
     } catch (caught) {
-      error.value = errorMessage(caught)
+      error.value = caught instanceof Error ? caught.message : errorMessage(caught)
     } finally {
       submitting.value = false
     }

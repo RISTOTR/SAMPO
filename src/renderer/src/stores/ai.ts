@@ -121,6 +121,10 @@ export const useAiStore = defineStore('ai', () => {
       )
 
       await loadSuggestions()
+      if (error.value) {
+        message.value = null
+        return
+      }
       message.value = classifySummaryMessage(lastSummary.value)
     })
   }

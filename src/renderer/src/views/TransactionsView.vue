@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TransactionsFeedback from '../components/TransactionsFeedback.vue'
 import { captureTransactionPosition, scrollPanelIntoContent } from '../presentation/content-scroll'
 import {
   transactionReviewState,
@@ -63,6 +64,17 @@ const filters = reactive({
   offset: 0
 })
 const selectedTransactionIds = ref<string[]>([])
+function visibleSelectedIds(): string[] {
+  const visible = new Set(transactions.page.items.map((row) => row.id))
+  return Array.from(selectedTransactionIds.value).filter((id) => visible.has(id))
+}
+watch(
+  () => transactions.page.items,
+  () => {
+    selectedTransactionIds.value = visibleSelectedIds()
+  },
+  { flush: 'sync' }
+)
 const editorTransactionId = ref<string | null>(null)
 const recurringTransactionId = ref<string | null>(null)
 const editorPanel = ref<HTMLElement | null>(null)
@@ -142,6 +154,7 @@ watch(
 watch(
   () => route.query,
   async () => {
+    selectedTransactionIds.value = []
     applyRouteQueryFilters()
     await loadTransactions()
   }
@@ -291,6 +304,7 @@ async function loadAiSuggestions(): Promise<void> {
 
 function scheduleFilterReload(): void {
   if (suppressFilterReload) return
+  selectedTransactionIds.value = []
   if (filterReloadTimer) clearTimeout(filterReloadTimer)
   filterReloadTimer = setTimeout(() => {
     void applyFilters()
@@ -333,11 +347,13 @@ async function resetFilters(): Promise<void> {
 }
 
 async function nextPage(): Promise<void> {
+  selectedTransactionIds.value = []
   filters.offset += transactions.page.limit
   await loadTransactions()
 }
 
 async function previousPage(): Promise<void> {
+  selectedTransactionIds.value = []
   filters.offset = Math.max(0, filters.offset - transactions.page.limit)
   await loadTransactions()
 }
@@ -501,8 +517,11 @@ async function handleRecurringSaved(): Promise<void> {
 }
 
 async function bulkUpdate(): Promise<void> {
+  if (classification.submitting || ai.submitting || transactions.loading) return
+  const transactionIds = visibleSelectedIds()
+  if (!transactionIds.length) return
   await classification.bulkUpdate({
-    transactionIds: selectedTransactionIds.value,
+    transactionIds,
     categoryId: bulkForm.categoryId || undefined,
     usageType: bulkForm.usageType ? (bulkForm.usageType as never) : undefined,
     costBehaviour: bulkForm.costBehaviour ? (bulkForm.costBehaviour as never) : undefined,
@@ -516,7 +535,9 @@ async function bulkUpdate(): Promise<void> {
 }
 
 async function classifySelectedWithAi(): Promise<void> {
-  const selectedIds = [...selectedTransactionIds.value]
+  if (classification.submitting || ai.submitting || transactions.loading) return
+  const selectedIds = visibleSelectedIds()
+  if (!selectedIds.length) return
   await ai.classifyTransactions(selectedIds)
   if (ai.error) return
 
@@ -595,21 +616,7 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
 
 <template>
   <section ref="viewRoot" class="view-stack">
-    <p v-if="transactions.error" class="error-message" aria-live="polite">
-      {{ transactions.error }}
-    </p>
-    <p v-if="classification.error" class="error-message" aria-live="polite">
-      {{ classification.error }}
-    </p>
-    <p v-if="classification.message" class="status-message" aria-live="polite">
-      {{ classification.message }}
-    </p>
-    <p v-if="ai.error" class="error-message" aria-live="polite">{{ ai.error }}</p>
-    <p v-if="ai.message" class="status-message" aria-live="polite">{{ ai.message }}</p>
-    <p v-if="recurring.error" class="error-message" aria-live="polite">{{ recurring.error }}</p>
-    <p v-if="recurring.message" class="status-message" aria-live="polite">
-      {{ recurring.message }}
-    </p>
+    <TransactionsFeedback />
 
     <div class="panel">
       <h3>Filters</h3>
@@ -809,10 +816,29 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
             <option value="unspecified">Unspecified</option>
           </select>
         </div>
-        <button type="submit" :disabled="classification.submitting">Apply to selected</button>
+        <button
+          type="submit"
+          :disabled="
+            classification.submitting ||
+            ai.submitting ||
+            transactions.loading ||
+            !selectedTransactionIds.length
+          "
+        >
+          Apply to selected
+        </button>
       </form>
       <div class="button-row">
-        <button type="button" :disabled="ai.submitting" @click="classifySelectedWithAi">
+        <button
+          type="button"
+          :disabled="
+            ai.submitting ||
+            classification.submitting ||
+            transactions.loading ||
+            !selectedTransactionIds.length
+          "
+          @click="classifySelectedWithAi"
+        >
           {{ ai.submitting ? 'Classifying...' : 'Classify' }}
         </button>
       </div>
@@ -927,7 +953,16 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
     <div class="panel">
       <h3>Transactions</h3>
       <div class="button-row">
-        <button type="button" :disabled="ai.submitting" @click="classifySelectedWithAi">
+        <button
+          type="button"
+          :disabled="
+            ai.submitting ||
+            classification.submitting ||
+            transactions.loading ||
+            !selectedTransactionIds.length
+          "
+          @click="classifySelectedWithAi"
+        >
           {{ ai.submitting ? 'Classifying...' : 'Classify' }}
         </button>
         <span>{{ selectedTransactionIds.length }} selected</span>
@@ -991,6 +1026,7 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
                   </span>
                   <input
                     v-model="selectedTransactionIds"
+                    :disabled="transactions.loading"
                     type="checkbox"
                     :value="transaction.id"
                     aria-label="Select transaction"
