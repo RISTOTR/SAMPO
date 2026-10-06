@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { scrollPanelIntoContent } from '../presentation/content-scroll'
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { formatCents, formatDate } from '../formatters'
 import { useRecurringStore } from '../stores/recurring'
@@ -70,7 +71,7 @@ async function openEdit(series: RecurringSeriesDto): Promise<void> {
       : series.recurrenceType
   editForm.cadence = series.cadence
   await nextTick()
-  editPanel.value?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  scrollPanelIntoContent(editPanel.value)
 }
 
 function closeEdit(): void {

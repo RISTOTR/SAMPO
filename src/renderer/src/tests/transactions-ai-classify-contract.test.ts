@@ -30,7 +30,7 @@ describe('transactions manual AI classify contract', () => {
     expect(transactionsView).toContain('classification.loadReference()')
     expect(transactionsView).toContain('editorTransactionId.value = transactionId')
     expect(transactionsView).toContain('ref="editorPanel"')
-    expect(transactionsView).toContain('editorPanel.value?.scrollIntoView')
+    expect(transactionsView).toContain('scrollPanelIntoContent(editorPanel.value)')
     expect(transactionsView).toContain("classification.error = 'Transaction could not be loaded.'")
     expect(transactionsView).toContain('editorTransactionId.value = null')
   })
@@ -87,7 +87,7 @@ describe('transactions manual AI classify contract', () => {
     expect(sharedDtos).toContain('recurring: transactionRecurringSummaryDtoSchema.optional()')
     expect(applicationWorkflow).toContain('findConfirmedSummariesForTransactions')
     expect(applicationWorkflow).toContain('recurringMap.get(transaction.id)')
-    expect(transactionsView).toContain('<th>Recurring</th>')
+    expect(transactionsView).toMatch(/<th[^>]*>Recurring<\/th>/)
     expect(transactionsView).toContain('transaction.recurring')
   })
 

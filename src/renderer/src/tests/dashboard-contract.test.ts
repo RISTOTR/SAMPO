@@ -11,7 +11,7 @@ const ipc = readFileSync('src/shared/ipc.ts', 'utf8')
 
 describe('dashboard renderer contract', () => {
   it('adds dashboard navigation, route, preload, and IPC', () => {
-    expect(appShell).toContain("{ path: '/', label: 'Dashboard' }")
+    expect(appShell).toContain("path: '/', label: 'Dashboard'")
     expect(router).toContain("{ path: '/', name: 'dashboard'")
     expect(preload).toContain('dashboard: {')
     expect(preload).toContain(

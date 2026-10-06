@@ -10,10 +10,18 @@ describe('renderer layout contract', () => {
     expect(css).toContain('html,\nbody,\n#app')
     expect(css).toContain('height: 100%;')
     expect(css).toContain('.app-shell')
-    expect(css).toContain('overflow: hidden;')
+    expect(css).toContain('overflow: clip;')
+    expect(css).toContain('height: 100dvh;')
     expect(css).toContain('.content')
     expect(css).toContain('min-height: 0;')
     expect(css).toContain('overflow-y: auto;')
+  })
+
+  it('contains absolute accessibility labels within main rather than extending document scroll', () => {
+    const content = css.match(/\.content\s*\{([^}]+)\}/)?.[1]
+    expect(content).toMatch(/position: relative/)
+    expect(content).toMatch(/overflow-y: auto/)
+    expect(css.match(/\.app-shell\s*\{([^}]+)\}/)?.[1]).toMatch(/display: flex/)
   })
 
   it('keeps the import preview table bounded without removing rows', () => {
