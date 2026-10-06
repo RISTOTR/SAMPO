@@ -78,17 +78,17 @@ describe('renderer presentation preferences', () => {
     ).toEqual([
       'Date',
       'Description',
-      'Account',
+      'Amount',
       'Merchant',
       'Category',
       'Class status',
       'Recurring',
       'Actions'
     ])
-    ui.toggleColumn('amount')
+    ui.toggleColumn('account')
     ui.toggleColumn('type')
     const restored = reopen()
-    expect(restored.isColumnVisible('amount')).toBe(true)
+    expect(restored.isColumnVisible('account')).toBe(true)
     expect(restored.isColumnVisible('type')).toBe(true)
     restored.showAllColumns()
     expect(restored.columns).toHaveLength(transactionColumns.length)
@@ -122,9 +122,9 @@ describe('renderer presentation preferences', () => {
     expect(() => {
       ui.toggleTheme()
       ui.toggleSidebar()
-      ui.toggleColumn('amount')
+      ui.toggleColumn('account')
     }).not.toThrow()
-    expect(ui.isColumnVisible('amount')).toBe(true)
+    expect(ui.isColumnVisible('account')).toBe(true)
   })
 
   it('renders accessible shell controls and labelled routes in both sidebar states', async () => {
