@@ -960,3 +960,414 @@ td .button-row button {
   padding: 2px;
   line-height: 22px;
 }
+
+/* Dashboard: aggregated financial values, shared theme tokens, main-only scrolling. */
+.dashboard-view {
+  gap: 18px;
+  container-type: inline-size;
+}
+.dashboard-header,
+.dashboard-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.dashboard-header h3 {
+  margin: 0;
+  font-size: 22px;
+}
+.dashboard-muted,
+.dashboard-section-heading small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.dashboard-header p {
+  margin: 5px 0 0;
+}
+.dashboard-period-form {
+  display: flex;
+  gap: 10px;
+  align-items: end;
+  flex-wrap: wrap;
+}
+.dashboard-period-form .form-field {
+  min-width: 140px;
+}
+.dashboard-period-form label {
+  font-size: 12px;
+}
+.dashboard-period-context {
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.dashboard-period-context strong {
+  color: var(--text);
+  font-weight: 500;
+}
+.dashboard-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+.dashboard-metric {
+  padding: 18px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 8px;
+  min-width: 0;
+}
+.dashboard-metric dt {
+  color: var(--muted);
+  font-size: 13px;
+}
+.dashboard-metric dd {
+  margin: 12px 0;
+  font-size: clamp(22px, 2.2vw, 32px);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.dashboard-metric small,
+.metric-comparison span {
+  color: var(--muted);
+  font-size: 11px;
+}
+.metric-comparison {
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 0 0 8px;
+}
+.dashboard-attention {
+  display: grid;
+  grid-template-columns: 1.3fr repeat(3, minmax(0, 1fr));
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--review-accent);
+  border-radius: 6px;
+  padding: 14px 18px;
+  background: var(--surface);
+}
+.dashboard-attention h3 {
+  font-size: 14px;
+  margin: 0;
+}
+.dashboard-attention p {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 5px 0 0;
+}
+.dashboard-attention button {
+  display: grid;
+  gap: 5px;
+  text-align: left;
+  padding: 8px;
+  background: transparent;
+  border: 0;
+  min-width: 0;
+}
+.dashboard-attention button:hover {
+  background: var(--hover);
+}
+.dashboard-attention button strong {
+  font-size: 18px;
+  font-weight: 600;
+}
+.dashboard-attention button span {
+  font-size: 11px;
+  color: var(--muted);
+}
+.dashboard-attention .attention-warning {
+  background: var(--review-row);
+  color: var(--warning-text);
+}
+.dashboard-attention .settlement-note {
+  grid-column: 1 / -1;
+  color: var(--warning-text);
+}
+.dashboard-main-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.dashboard-secondary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.dashboard-view .panel {
+  padding: 18px;
+}
+.dashboard-section-heading {
+  margin-bottom: 12px;
+}
+.dashboard-section-heading h3 {
+  margin: 0;
+  font-size: 15px;
+}
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.chart-legend span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.chart-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+.spending-key {
+  background: var(--accent);
+}
+.income-key {
+  background: var(--muted);
+}
+.monthly-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 180px;
+}
+.chart-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.chart-axis {
+  fill: var(--muted);
+  font-size: 14px;
+}
+.spending-bar {
+  fill: var(--accent);
+}
+.income-bar {
+  fill: var(--muted);
+}
+.month-hit {
+  fill: transparent;
+}
+.month-group {
+  cursor: pointer;
+}
+.month-group:hover .month-hit,
+.month-group:focus .month-hit {
+  fill: var(--hover);
+}
+.month-group:focus {
+  outline: 1px solid var(--focus);
+}
+.chart-note {
+  margin: 10px 0;
+}
+.chart-values {
+  font-size: 12px;
+  color: var(--muted);
+}
+.chart-values summary {
+  cursor: pointer;
+  width: fit-content;
+}
+.dashboard-month-values {
+  margin-top: 10px;
+}
+.category-bars {
+  display: grid;
+  gap: 4px;
+}
+.category-bar-row {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  padding: 10px 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+.category-bar-row:hover {
+  background: var(--hover);
+}
+.category-bar-heading,
+.category-bar-context {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.category-bar-heading {
+  font-size: 12px;
+}
+.category-bar-heading strong:first-child {
+  overflow-wrap: anywhere;
+}
+.category-bar-heading strong:last-child {
+  white-space: nowrap;
+}
+.category-bar-track {
+  display: block;
+  height: 5px;
+  background: var(--hover);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.category-bar-track i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+}
+.category-bar-track .unclassified-bar {
+  background: var(--review-accent);
+}
+.category-bar-track .refund-bar {
+  background: var(--muted);
+}
+.category-bar-context {
+  color: var(--muted);
+  font-size: 10px;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.dashboard-text-button {
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  padding: 10px 0 0;
+  font-size: 12px;
+  text-align: left;
+}
+.dashboard-text-button:hover {
+  text-decoration: underline;
+  background: transparent;
+}
+.dashboard-list-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  font-size: 12px;
+}
+.dashboard-list-row:hover {
+  background: var(--hover);
+}
+.dashboard-list-row strong {
+  display: block;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.dashboard-list-row small {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 5px;
+}
+.dashboard-list-row > span:last-child {
+  font-variant-numeric: tabular-nums;
+}
+.merchant-row {
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+}
+.merchant-rank {
+  color: var(--muted);
+}
+.recurring-breakdown {
+  font-size: 12px;
+  margin: 16px 0;
+}
+.recurring-breakdown div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 14px 0;
+}
+.recurring-breakdown dd {
+  margin: 0;
+}
+.recurring-baseline {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.recurring-baseline strong {
+  font-size: 18px;
+  font-weight: 500;
+}
+.recurring-baseline small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.recurring-baseline p {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.dashboard-footnote {
+  margin: 0;
+}
+@media (max-width: 1200px) {
+  .dashboard-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .dashboard-secondary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .dashboard-secondary-grid > :last-child {
+    grid-column: 1 / -1;
+  }
+  .dashboard-attention {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .dashboard-attention > div {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 900px) {
+  .dashboard-main-grid,
+  .dashboard-secondary-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .dashboard-period-form {
+    width: 100%;
+  }
+  .dashboard-list-row {
+    gap: 8px;
+  }
+}
+
+@container (max-width: 900px) {
+  .dashboard-main-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@container (min-width: 901px) {
+  .dashboard-metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .dashboard-secondary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .dashboard-secondary-grid > :last-child {
+    grid-column: auto;
+  }
+}

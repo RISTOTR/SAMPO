@@ -8,15 +8,22 @@ export const useDashboardStore = defineStore('dashboard', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
+  let requestId = 0
+
   async function load(query: DashboardQueryDto = {}): Promise<void> {
+    const id = ++requestId
     loading.value = true
     error.value = null
     try {
-      data.value = unwrapResult(await window.sampo.dashboard.get(query))
+      const result = unwrapResult(await window.sampo.dashboard.get(query))
+      if (id === requestId) data.value = result
     } catch (caught) {
-      error.value = errorMessage(caught)
+      if (id === requestId) {
+        data.value = null
+        error.value = errorMessage(caught)
+      }
     } finally {
-      loading.value = false
+      if (id === requestId) loading.value = false
     }
   }
 

@@ -7,7 +7,10 @@ import type {
   DashboardPeriodPresetDto
 } from '../../../shared/dtos'
 import { formatCents } from '../formatters'
+import { comparisonLabel, periodQuery } from '../presentation/dashboard'
 import { useDashboardStore } from '../stores/dashboard'
+import MonthlyTrend from '../components/dashboard/MonthlyTrend.vue'
+import CategorySpending from '../components/dashboard/CategorySpending.vue'
 
 const dashboard = useDashboardStore()
 const router = useRouter()
@@ -16,273 +19,298 @@ const form = reactive({
   dateFrom: '',
   dateTo: ''
 })
-
 const data = computed(() => dashboard.data)
-const maxTrendSpending = computed(() =>
-  Math.max(1, ...(data.value?.monthlyTrend.map((month) => month.spendingCents) ?? [1]))
+const hasComparison = computed(() => (data.value?.period.previousTransactionCount ?? 0) > 0)
+const metrics = computed(() =>
+  data.value
+    ? [
+        { label: 'Spending', metric: data.value.totalSpending, context: 'Expenses less refunds' },
+        { label: 'Income', metric: data.value.totalIncome, context: 'Income received' },
+        { label: 'Net cash flow', metric: data.value.netCashFlow, context: 'Income less spending' },
+        {
+          label: 'Recurring spend',
+          metric: data.value.recurringSpending,
+          context: 'Confirmed series · selected period'
+        }
+      ]
+    : []
 )
-const maxCategorySpending = computed(() =>
-  Math.max(1, ...(data.value?.categories.map((category) => category.amountCents) ?? [1]))
+const recurringRows = computed(() =>
+  data.value
+    ? [
+        { label: 'Subscriptions', amount: data.value.recurring.subscriptionCents },
+        { label: 'Recurring bills', amount: data.value.recurring.recurringBillCents },
+        { label: 'Other recurring', amount: data.value.recurring.recurringPaymentCents }
+      ]
+    : []
 )
-
-onMounted(async () => {
-  await loadDashboard()
-})
-
+onMounted(loadDashboard)
 async function loadDashboard(): Promise<void> {
+  if (form.preset === 'custom' && (!form.dateFrom || !form.dateTo || form.dateFrom > form.dateTo))
+    return
   await dashboard.load({
     preset: form.preset,
-    dateFrom: form.preset === 'custom' ? form.dateFrom || undefined : undefined,
-    dateTo: form.preset === 'custom' ? form.dateTo || undefined : undefined
+    dateFrom: form.preset === 'custom' ? form.dateFrom : undefined,
+    dateTo: form.preset === 'custom' ? form.dateTo : undefined
   })
 }
-
-function comparisonLabel(amountCents: number, percent?: number): string {
-  const amount = formatCents(Math.abs(amountCents))
-  const sign = amountCents > 0 ? '+' : amountCents < 0 ? '-' : ''
-  return `${sign}${amount}${percent === undefined ? '' : ` (${percent > 0 ? '+' : ''}${percent}% )`}`
-}
-
-function trendWidth(amountCents: number): string {
-  return `${Math.max(2, Math.round((amountCents / maxTrendSpending.value) * 100))}%`
-}
-
-function categoryWidth(amountCents: number): string {
-  return `${Math.max(2, Math.round((amountCents / maxCategorySpending.value) * 100))}%`
-}
-
 function transactionQueryBase(): Record<string, string> {
-  const period = data.value?.period
-  return {
-    dateFrom: period?.dateFrom ?? '',
-    dateTo: period?.dateTo ?? ''
-  }
+  return data.value ? periodQuery(data.value.period) : {}
 }
-
 async function openCategory(category: DashboardCategorySpendDto): Promise<void> {
-  const query: Record<string, string> = transactionQueryBase()
-  if (category.categoryId) {
-    query.categoryId = category.categoryId
-  } else {
-    query.unclassifiedOnly = 'true'
-    query.confirmationFilter = 'needs_confirmation'
-  }
-  await router.push({ path: '/transactions', query })
+  await router.push({
+    path: '/transactions',
+    query: {
+      ...transactionQueryBase(),
+      ...(category.categoryId
+        ? { categoryId: category.categoryId }
+        : { unclassifiedOnly: 'true', confirmationFilter: 'needs_confirmation' })
+    }
+  })
 }
-
 async function openMerchant(merchant: DashboardMerchantSpendDto): Promise<void> {
-  const query: Record<string, string> = transactionQueryBase()
-  if (merchant.merchantId) query.merchantId = merchant.merchantId
-  else query.search = merchant.label
-  await router.push({ path: '/transactions', query })
+  await router.push({
+    path: '/transactions',
+    query: {
+      ...transactionQueryBase(),
+      ...(merchant.merchantId ? { merchantId: merchant.merchantId } : { search: merchant.label })
+    }
+  })
 }
-
 async function openNeedsConfirmation(): Promise<void> {
   await router.push({
     path: '/transactions',
     query: { ...transactionQueryBase(), confirmationFilter: 'needs_confirmation' }
   })
 }
+async function openUnclassified(): Promise<void> {
+  await router.push({
+    path: '/transactions',
+    query: { ...transactionQueryBase(), unclassifiedOnly: 'true' }
+  })
+}
+async function openMonth(month: string): Promise<void> {
+  const [year, number] = month.split('-').map(Number)
+  const end = new Date(Date.UTC(year!, number!, 0)).toISOString().slice(0, 10)
+  await router.push({
+    path: '/transactions',
+    query: {
+      dateFrom: [data.value?.period.dateFrom ?? '', `${month}-01`].sort().at(-1)!,
+      dateTo: [data.value?.period.dateTo ?? end, end].sort()[0]!
+    }
+  })
+}
 </script>
 
 <template>
-  <section class="view-stack">
-    <div class="panel">
-      <div class="section-header">
-        <div>
-          <h3>Dashboard</h3>
-          <p>Deterministic analysis from imported transactions and confirmed classifications.</p>
-        </div>
+  <section class="view-stack dashboard-view" :aria-busy="dashboard.loading">
+    <header class="dashboard-header">
+      <div>
+        <h3>{{ data?.period.label ?? 'Your financial overview' }}</h3>
+        <p class="dashboard-muted">
+          {{ data?.period.dateFrom
+          }}<template v-if="data?.period.dateTo"> — {{ data.period.dateTo }}</template>
+        </p>
       </div>
-      <form class="form-grid" @submit.prevent="loadDashboard">
+      <form class="dashboard-period-form" @submit.prevent="loadDashboard">
         <div class="form-field">
-          <label for="dashboard-period">Period</label>
-          <select id="dashboard-period" v-model="form.preset" @change="loadDashboard">
+          <label for="dashboard-period">Period</label
+          ><select id="dashboard-period" v-model="form.preset" @change="loadDashboard">
             <option value="latest_month">Latest imported month</option>
             <option value="this_month">This month</option>
             <option value="previous_month">Previous month</option>
             <option value="last_3_months">Last 3 months</option>
             <option value="last_6_months">Last 6 months</option>
             <option value="this_year">This year</option>
-            <option value="custom">Custom</option>
+            <option value="custom">Custom dates</option>
           </select>
         </div>
-        <div class="form-field">
-          <label for="dashboard-from">From</label>
-          <input id="dashboard-from" v-model="form.dateFrom" type="date" />
-        </div>
-        <div class="form-field">
-          <label for="dashboard-to">To</label>
-          <input id="dashboard-to" v-model="form.dateTo" type="date" />
-        </div>
-        <button type="submit" :disabled="dashboard.loading">Update</button>
+        <template v-if="form.preset === 'custom'"
+          ><div class="form-field">
+            <label for="dashboard-from">From</label
+            ><input
+              id="dashboard-from"
+              v-model="form.dateFrom"
+              type="date"
+              required
+              :max="form.dateTo || undefined"
+            />
+          </div>
+          <div class="form-field">
+            <label for="dashboard-to">To</label
+            ><input
+              id="dashboard-to"
+              v-model="form.dateTo"
+              type="date"
+              required
+              :min="form.dateFrom || undefined"
+            />
+          </div>
+          <button type="submit" :disabled="dashboard.loading">Apply</button></template
+        >
       </form>
-      <p v-if="dashboard.error" class="error-message" aria-live="polite">{{ dashboard.error }}</p>
-      <p v-if="dashboard.loading">Loading dashboard...</p>
+    </header>
+    <p v-if="dashboard.error" class="error-message" role="alert">{{ dashboard.error }}</p>
+    <p v-if="dashboard.loading" class="dashboard-muted" role="status">Updating overview…</p>
+    <div v-if="data && !data.hasData" class="panel dashboard-empty">
+      <h3>No transactions in this period</h3>
+      <p>Import a statement or choose another period to see your financial overview.</p>
+      <button type="button" @click="router.push('/imports')">Go to imports</button>
     </div>
-
-    <div v-if="data && !data.hasData" class="panel">
-      <h3>No dashboard data</h3>
-      <p>
-        Import transactions to see spending, income, category, merchant, and recurring analysis.
-      </p>
-    </div>
-
     <template v-if="data && data.hasData">
-      <div class="summary-grid dashboard-summary">
-        <div>
-          <dt>Spending</dt>
-          <dd>{{ formatCents(data.totalSpending.amountCents) }}</dd>
-          <p v-if="data.totalSpending.comparison">
+      <div class="dashboard-period-context">
+        <span
+          >Compared with <strong>{{ data.period.previousLabel }}</strong
+          ><template v-if="!hasComparison"> · No imported comparison data</template></span
+        >
+        <span v-if="data.period.latestTransactionDate"
+          >Latest transaction in this period: {{ data.period.latestTransactionDate }}. Full date
+          ranges are compared; partial imports are not adjusted to matching days.</span
+        >
+      </div>
+      <dl class="dashboard-metrics">
+        <div v-for="item in metrics" :key="item.label" class="dashboard-metric">
+          <dt>{{ item.label }}</dt>
+          <dd>{{ formatCents(item.metric.amountCents) }}</dd>
+          <p
+            v-if="hasComparison && item.label !== 'Recurring spend' && item.metric.comparison"
+            class="metric-comparison"
+          >
             {{
-              comparisonLabel(
-                data.totalSpending.comparison.amountCents,
-                data.totalSpending.comparison.percent
-              )
+              comparisonLabel(item.metric.comparison.amountCents, item.metric.comparison.percent)
             }}
-            vs {{ data.totalSpending.comparison.previousPeriodLabel }}
+            <span>vs prior period</span>
+          </p>
+          <p v-else class="metric-comparison">
+            {{
+              item.label === 'Recurring spend'
+                ? `${data.recurring.confirmedSeriesCount} confirmed series overall`
+                : 'No comparison data'
+            }}
+          </p>
+          <small>{{ item.context }}</small>
+        </div>
+      </dl>
+      <section class="dashboard-attention" aria-labelledby="quality-heading">
+        <div>
+          <h3 id="quality-heading">Needs attention</h3>
+          <p>
+            Data quality · {{ data.dataQuality.classifiedSpendingPercent }}% of net spending
+            classified
           </p>
         </div>
-        <div>
-          <dt>Income</dt>
-          <dd>{{ formatCents(data.totalIncome.amountCents) }}</dd>
-          <p v-if="data.totalIncome.comparison">
+        <button type="button" @click="openNeedsConfirmation">
+          <strong>{{ data.dataQuality.needsConfirmationCount }}</strong
+          ><span>Needs confirmation →</span>
+        </button>
+        <button type="button" @click="openUnclassified">
+          <strong>{{ formatCents(data.dataQuality.unclassifiedSpendingCents) }}</strong
+          ><span>Unclassified spending →</span>
+        </button>
+        <button
+          type="button"
+          :class="{ 'attention-warning': data.dataQuality.unreconciledSettlementCount > 0 }"
+          @click="router.push({ path: '/imports', hash: '#reconciliation-review' })"
+        >
+          <strong>{{ data.dataQuality.unreconciledSettlementCount }}</strong
+          ><span>Unreconciled settlements →</span>
+        </button>
+        <p v-if="data.dataQuality.unreconciledSettlementCount > 0" class="settlement-note">
+          Unreconciled settlements are included in spending and may overlap imported card purchases.
+          Review them in Imports.
+        </p>
+      </section>
+      <div class="dashboard-main-grid">
+        <MonthlyTrend
+          :months="data.monthlyTrend"
+          :period="data.period"
+          @open-month="openMonth"
+        /><CategorySpending
+          :categories="data.categories"
+          :has-comparison="hasComparison"
+          @select="openCategory"
+        />
+      </div>
+      <div class="dashboard-secondary-grid">
+        <section class="panel">
+          <div class="dashboard-section-heading">
+            <h3>Biggest changes</h3>
+            <small>vs prior period</small>
+          </div>
+          <p v-if="!hasComparison || data.biggestChanges.length === 0" class="dashboard-muted">
             {{
-              comparisonLabel(
-                data.totalIncome.comparison.amountCents,
-                data.totalIncome.comparison.percent
-              )
+              hasComparison
+                ? 'No category changes of €1 or more.'
+                : 'Import the previous period to compare categories.'
             }}
-            vs {{ data.totalIncome.comparison.previousPeriodLabel }}
           </p>
-        </div>
-        <div>
-          <dt>Net cash flow</dt>
-          <dd>{{ formatCents(data.netCashFlow.amountCents) }}</dd>
-        </div>
-        <div>
-          <dt>Recurring spend</dt>
-          <dd>{{ formatCents(data.recurringSpending.amountCents) }}</dd>
-          <p>{{ formatCents(data.recurring.monthlyBaselineCents) }} monthly baseline</p>
-        </div>
-      </div>
-
-      <div class="split-grid">
-        <div class="panel">
-          <h3>Spending by category</h3>
-          <p v-if="data.categories.length === 0">No spending categories in this period.</p>
-          <div v-else class="analysis-list">
-            <button
-              v-for="category in data.categories"
-              :key="category.categoryId ?? 'unclassified'"
-              type="button"
-              class="analysis-row"
-              @click="openCategory(category)"
-            >
-              <span>
-                <strong>{{ category.label }}</strong>
-                <small>
-                  {{ category.percentOfSpending }}% · {{ category.transactionCount }} transactions ·
-                  {{ comparisonLabel(category.differenceCents) }}
-                </small>
-              </span>
-              <span>{{ formatCents(category.amountCents) }}</span>
-              <i :style="{ width: categoryWidth(category.amountCents) }"></i>
-            </button>
-          </div>
-        </div>
-
-        <div class="panel">
-          <h3>Top merchants</h3>
-          <p v-if="data.merchants.length === 0">No merchant spending in this period.</p>
-          <div v-else class="analysis-list">
-            <button
-              v-for="merchant in data.merchants"
-              :key="merchant.merchantId ?? merchant.label"
-              type="button"
-              class="analysis-row"
-              @click="openMerchant(merchant)"
-            >
-              <span>
-                <strong>{{ merchant.label }}</strong>
-                <small
-                  >{{ merchant.transactionCount }} transactions · avg
-                  {{ formatCents(merchant.averageAmountCents) }}</small
-                >
-              </span>
-              <span>{{ formatCents(merchant.amountCents) }}</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div class="split-grid">
-        <div class="panel">
-          <h3>Monthly trend</h3>
-          <div class="analysis-list">
-            <div v-for="month in data.monthlyTrend" :key="month.month" class="trend-row">
-              <span>{{ month.month }}</span>
-              <span>{{ formatCents(month.spendingCents) }}</span>
-              <i :style="{ width: trendWidth(month.spendingCents) }"></i>
-              <small
-                >Income {{ formatCents(month.incomeCents) }} · Net
-                {{ formatCents(month.netCashFlowCents) }}</small
-              >
-            </div>
-          </div>
-        </div>
-
-        <div class="panel">
-          <h3>Biggest changes</h3>
-          <p v-if="data.biggestChanges.length === 0">No meaningful previous-period changes.</p>
-          <div v-else class="analysis-list">
-            <button
-              v-for="category in data.biggestChanges"
-              :key="`change-${category.categoryId ?? 'unclassified'}`"
-              type="button"
-              class="analysis-row"
-              @click="openCategory(category)"
-            >
-              <span>
-                <strong>{{ category.label }}</strong>
-                <small>Previous {{ formatCents(category.previousAmountCents) }}</small>
-              </span>
-              <span>{{ comparisonLabel(category.differenceCents) }}</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div class="split-grid">
-        <div class="panel">
-          <h3>Recurring spending</h3>
-          <div class="summary-grid">
-            <p>
-              <strong>Subscriptions:</strong> {{ formatCents(data.recurring.subscriptionCents) }}
-            </p>
-            <p><strong>Bills:</strong> {{ formatCents(data.recurring.recurringBillCents) }}</p>
-            <p>
-              <strong>Payments:</strong> {{ formatCents(data.recurring.recurringPaymentCents) }}
-            </p>
-            <p><strong>Series:</strong> {{ data.recurring.confirmedSeriesCount }}</p>
-          </div>
-        </div>
-
-        <div class="panel">
-          <h3>Data quality</h3>
-          <button type="button" class="analysis-row" @click="openNeedsConfirmation">
-            <span>
-              <strong
-                >{{ data.dataQuality.classifiedSpendingPercent }}% of spending classified</strong
-              >
-              <small
-                >{{ data.dataQuality.needsConfirmationCount }} transactions need confirmation</small
-              >
-            </span>
-            <span>{{ formatCents(data.dataQuality.unclassifiedSpendingCents) }} unclassified</span>
+          <button
+            v-for="category in hasComparison ? data.biggestChanges : []"
+            :key="category.categoryId ?? 'unclassified'"
+            type="button"
+            class="dashboard-list-row"
+            @click="openCategory(category)"
+          >
+            <span
+              ><strong>{{ category.label }}</strong
+              ><small
+                >{{ formatCents(category.amountCents) }} · Previously
+                {{ formatCents(category.previousAmountCents) }}</small
+              ></span
+            ><span>{{ comparisonLabel(category.differenceCents) }}</span>
           </button>
-        </div>
+        </section>
+        <section class="panel">
+          <div class="dashboard-section-heading">
+            <h3>Top merchants</h3>
+            <small>By net spend</small>
+          </div>
+          <p v-if="data.merchants.length === 0" class="dashboard-muted">
+            No merchant spending in this period.
+          </p>
+          <button
+            v-for="(merchant, index) in data.merchants.slice(0, 5)"
+            :key="merchant.merchantId ?? merchant.label"
+            type="button"
+            class="dashboard-list-row merchant-row"
+            @click="openMerchant(merchant)"
+          >
+            <span class="merchant-rank">{{ index + 1 }}</span
+            ><span
+              ><strong>{{ merchant.label }}</strong
+              ><small>{{ merchant.transactionCount }} transactions</small></span
+            ><span>{{ formatCents(merchant.amountCents) }}</span>
+          </button>
+        </section>
+        <section class="panel">
+          <div class="dashboard-section-heading"><h3>Recurring spending</h3></div>
+          <p class="dashboard-muted">Confirmed series only · selected period</p>
+          <p v-if="data.recurring.confirmedSeriesCount === 0" class="dashboard-muted">
+            No confirmed recurring payments yet. Review candidates to include them here.
+          </p>
+          <dl v-else class="recurring-breakdown">
+            <div v-for="row in recurringRows" :key="row.label">
+              <dt>{{ row.label }}</dt>
+              <dd>{{ formatCents(row.amount) }}</dd>
+            </div>
+          </dl>
+          <div class="recurring-baseline">
+            <strong
+              >{{ formatCents(data.recurring.monthlyBaselineCents) }} <small>/ month</small></strong
+            >
+            <p>
+              Approximate baseline across all confirmed series, independent of the selected period.
+            </p>
+          </div>
+          <button type="button" class="dashboard-text-button" @click="router.push('/recurring')">
+            Review recurring series →
+          </button>
+        </section>
       </div>
+      <p class="dashboard-muted dashboard-footnote">
+        Refunds reduce spending. Reconciled card settlements are excluded. Own-account transfer
+        detection remains unavailable.
+      </p>
     </template>
   </section>
 </template>

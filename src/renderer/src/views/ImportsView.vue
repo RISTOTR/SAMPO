@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { computed, nextTick, onMounted, ref } from 'vue'
+import { RouterLink, useRoute } from 'vue-router'
+import { scrollPanelIntoContent } from '../presentation/content-scroll'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import { formatCents, formatDate, formatDateTime, sourceLabel } from '../formatters'
 import { useAccountsStore } from '../stores/accounts'
@@ -9,6 +10,8 @@ import { useImportsStore } from '../stores/imports'
 import { useReconciliationStore } from '../stores/reconciliation'
 import { useTransactionsStore } from '../stores/transactions'
 
+const route = useRoute()
+const reconciliationPanel = ref<HTMLElement | null>(null)
 const accounts = useAccountsStore()
 const ai = useAiStore()
 const imports = useImportsStore()
@@ -41,6 +44,10 @@ onMounted(async () => {
     reconciliation.loadSettlements()
   ])
   selectedAccountId.value = importableAccounts.value[0]?.id ?? ''
+  if (route.hash === '#reconciliation-review') {
+    await nextTick()
+    scrollPanelIntoContent(reconciliationPanel.value)
+  }
 })
 
 async function inspect(): Promise<void> {
@@ -263,7 +270,7 @@ async function reverseReconciliation(): Promise<void> {
       </div>
     </div>
 
-    <div class="panel">
+    <div id="reconciliation-review" ref="reconciliationPanel" class="panel">
       <h3>Reconciliation review</h3>
       <div class="split-grid">
         <div>

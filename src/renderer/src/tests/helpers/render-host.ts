@@ -5,9 +5,28 @@ export type TestNode = {
   children: TestNode[]
   text: string
   parent: TestNode | null
+  addEventListener: () => void
+  options: TestNode[]
+  value: unknown
 }
 export function node(tag = 'root'): TestNode {
-  return { tag, props: {}, children: [], text: '', parent: null }
+  return {
+    tag,
+    props: {},
+    children: [],
+    text: '',
+    parent: null,
+    addEventListener: () => undefined,
+    get options() {
+      return this.children.filter((child) => child.tag === 'option')
+    },
+    get value() {
+      return this.props.value ?? this.text
+    },
+    set value(value: unknown) {
+      this.props.value = value
+    }
+  }
 }
 export const renderer = createRenderer<TestNode, TestNode>({
   createElement: node,

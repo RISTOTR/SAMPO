@@ -500,7 +500,7 @@ function buildTransactionListSql(query: TransactionListQuery): {
 
   if (query.unclassifiedOnly) {
     where.push(
-      "(classification.transaction_id IS NULL OR classification.classification_source = 'unclassified')"
+      "(classification.transaction_id IS NULL OR classification.classification_status != 'confirmed' OR classification.category_id IS NULL)"
     )
   }
 

@@ -7,6 +7,7 @@ import type { Database } from 'better-sqlite3'
 import { DashboardAnalyticsService } from '../dashboard-analytics-service'
 import type { NewTransaction, PreparedImport } from '../../domain/schemas'
 import { AccountRepository } from '../../storage/accounts'
+import { TransactionRepository } from '../../storage/transactions'
 import { createDatabase, type SampoDatabase } from '../../storage/database'
 import { ImportService } from '../../services/import-service'
 import {
@@ -16,6 +17,7 @@ import {
 } from '../../storage/categorisation'
 import { TransactionLinkRepository } from '../../storage/transaction-links'
 import { RecurringDetectionService } from '../../recurring/recurring-service'
+import { dashboardDataDtoSchema } from '../../../shared/dtos'
 
 describe('DashboardAnalyticsService', () => {
   let directory: string
@@ -197,6 +199,85 @@ describe('DashboardAnalyticsService', () => {
     )
     expect(data.recurring.totalCents).toBe(0)
     expect(data.monthlyTrend.map((month) => month.month)).toEqual(['2026-01', '2026-02', '2026-03'])
+  })
+
+  it('keeps unconfirmed category amounts unclassified in data quality', () => {
+    const category = categories.create({ name: 'Synthetic Detected Category' })
+    const merchant = merchants.create({ name: 'Synthetic Detected Merchant' })
+    const rows = commit('unconfirmed-category', [
+      transaction('2026-01-10', 'Synthetic Detection', -10000, 'expense', accountId)
+    ])
+    classifications.save({
+      transactionId: rows.transactions[0]!.id,
+      merchantId: merchant.id,
+      merchantSource: 'rule',
+      categoryId: category.id,
+      categorySource: 'rule',
+      classificationSource: 'rule',
+      classificationStatus: 'needs_review'
+    })
+    const data = dashboard.getDashboard()
+    expect(data.totalSpending.amountCents).toBe(10000)
+    expect(data.categories.reduce((sum, category) => sum + category.amountCents, 0)).toBe(10000)
+    expect(data.categories[0]).toMatchObject({ label: 'Unclassified', amountCents: 10000 })
+    expect(
+      new TransactionRepository(connection).listFilteredIds({
+        unclassifiedOnly: true,
+        dateFrom: '2026-01-01',
+        dateTo: '2026-01-31',
+        sortBy: 'transactionDate',
+        sortDirection: 'asc'
+      })
+    ).toContain(rows.transactions[0]!.id)
+    expect(data.dataQuality).toMatchObject({
+      classifiedSpendingPercent: 0,
+      needsConfirmationCount: 1,
+      unclassifiedSpendingCents: 10000
+    })
+  })
+
+  it('accepts signed category shares when refunds exceed spending in a category', () => {
+    const category = categories.create({ name: 'Synthetic Purchases' })
+    const merchant = merchants.create({ name: 'Synthetic Shop' })
+    const rows = commit('refund-category', [
+      transaction('2026-01-10', 'Synthetic Purchase', -10000, 'expense', accountId),
+      transaction('2026-01-11', 'Synthetic Refund', 2000, 'refund', accountId)
+    ])
+    classify(rows.transactions[0]!.id, merchant.id, category.id)
+    const data = dashboard.getDashboard()
+    expect(data.totalSpending.amountCents).toBe(8000)
+    expect(data.categories.reduce((sum, category) => sum + category.amountCents, 0)).toBe(8000)
+    expect(data.categories.map((category) => category.percentOfSpending)).toEqual([125, -25])
+    expect(dashboardDataDtoSchema.safeParse(data).success).toBe(true)
+  })
+
+  it('reports disappearing categories, period coverage, and unreconciled settlements without changing spending semantics', () => {
+    const category = categories.create({ name: 'Synthetic Prior Only' })
+    const merchant = merchants.create({ name: 'Synthetic Prior Merchant' })
+    const previous = commit('previous-only', [
+      transaction('2026-02-10', 'Synthetic Prior', -50000, 'expense', accountId)
+    ])
+    classify(previous.transactions[0]!.id, merchant.id, category.id)
+    commit('current-settlement', [
+      transaction('2026-03-06', 'Synthetic Unreconciled', -20000, 'card_settlement', accountId),
+      transaction('2026-03-05', 'Synthetic Expense', -10000, 'expense', accountId)
+    ])
+    const data = dashboard.getDashboard()
+    expect(data.totalSpending.amountCents).toBe(30000)
+    expect(data.categories.reduce((sum, row) => sum + row.amountCents, 0)).toBe(30000)
+    expect(data.dataQuality.unreconciledSettlementCount).toBe(1)
+    expect(data.period).toMatchObject({
+      dateFrom: '2026-03-01',
+      dateTo: '2026-03-31',
+      latestTransactionDate: '2026-03-06',
+      previousTransactionCount: 1
+    })
+    expect(data.biggestChanges[0]).toMatchObject({
+      categoryId: category.id,
+      amountCents: 0,
+      differenceCents: -50000
+    })
+    expect(dashboardDataDtoSchema.safeParse(data).success).toBe(true)
   })
 
   function classify(transactionId: string, merchantId: string, categoryId: string): void {

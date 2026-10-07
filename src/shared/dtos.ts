@@ -828,6 +828,8 @@ export const dashboardPeriodDtoSchema = z.object({
   label: z.string().min(1),
   previousDateFrom: isoDateDtoSchema.optional(),
   previousDateTo: isoDateDtoSchema.optional(),
+  latestTransactionDate: isoDateDtoSchema.optional(),
+  previousTransactionCount: z.number().int().min(0).optional(),
   previousLabel: z.string().min(1).optional()
 })
 
@@ -836,7 +838,7 @@ export const dashboardCategorySpendDtoSchema = z.object({
   categoryPath: z.array(z.string().min(1)),
   label: z.string().min(1),
   amountCents: z.number().int(),
-  percentOfSpending: z.number().min(0).max(100),
+  percentOfSpending: z.number(),
   transactionCount: z.number().int().min(0),
   previousAmountCents: z.number().int(),
   differenceCents: z.number().int()
@@ -868,7 +870,8 @@ export const dashboardRecurringSummaryDtoSchema = z.object({
 })
 
 export const dashboardDataQualityDtoSchema = z.object({
-  classifiedSpendingPercent: z.number().min(0).max(100),
+  classifiedSpendingPercent: z.number(),
+  unreconciledSettlementCount: z.number().int().min(0).default(0),
   needsConfirmationCount: z.number().int().min(0),
   unclassifiedSpendingCents: z.number().int()
 })

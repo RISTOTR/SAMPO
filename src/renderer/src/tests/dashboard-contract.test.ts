@@ -23,9 +23,9 @@ describe('dashboard renderer contract', () => {
 
   it('renders required dashboard sections and period selector', () => {
     expect(dashboardView).toContain('Latest imported month')
-    expect(dashboardView).toContain('Spending by category')
+    expect(dashboardView).toContain('CategorySpending')
     expect(dashboardView).toContain('Top merchants')
-    expect(dashboardView).toContain('Monthly trend')
+    expect(dashboardView).toContain('MonthlyTrend')
     expect(dashboardView).toContain('Biggest changes')
     expect(dashboardView).toContain('Recurring spending')
     expect(dashboardView).toContain('Data quality')

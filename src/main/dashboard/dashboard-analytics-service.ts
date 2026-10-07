@@ -15,6 +15,8 @@ type Period = {
   previousDateFrom?: string
   previousDateTo?: string
   previousLabel?: string
+  latestTransactionDate?: string
+  previousTransactionCount?: number
 }
 
 type AmountRow = {
@@ -115,8 +117,28 @@ export class DashboardAnalyticsService {
         ? this.recurring(period.dateFrom, period.dateTo)
         : emptyRecurring()
 
+    if (
+      categories.reduce((sum, category) => sum + category.amountCents, 0) !==
+      (current.spendingCents ?? 0)
+    ) {
+      throw new Error('Dashboard category totals do not match total spending.')
+    }
+    const coverage =
+      period.dateFrom && period.dateTo
+        ? (this.database
+            .prepare(
+              `SELECT max(transactions.transaction_date) AS latestDate ${baseFrom()} ${baseWhere()}`
+            )
+            .get({ dateFrom: period.dateFrom, dateTo: period.dateTo }) as {
+            latestDate: string | null
+          })
+        : undefined
     return {
-      period,
+      period: {
+        ...period,
+        latestTransactionDate: coverage?.latestDate ?? undefined,
+        previousTransactionCount: previous.transactionCount
+      },
       hasData: Boolean(period.dateFrom && period.dateTo && current.transactionCount > 0),
       totalSpending: metric(current.spendingCents ?? 0, previous.spendingCents ?? 0, period),
       totalIncome: metric(current.incomeCents ?? 0, previous.incomeCents ?? 0, period),
@@ -138,7 +160,8 @@ export class DashboardAnalyticsService {
           : {
               classifiedSpendingPercent: 0,
               needsConfirmationCount: 0,
-              unclassifiedSpendingCents: 0
+              unclassifiedSpendingCents: 0,
+              unreconciledSettlementCount: 0
             }
     }
   }
@@ -210,7 +233,14 @@ export class DashboardAnalyticsService {
       previousDateFrom && previousDateTo ? this.categoryRows(previousDateFrom, previousDateTo) : []
     const previousByKey = new Map(previousRows.map((row) => [categoryKey(row), row.amountCents]))
     const total = currentRows.reduce((sum, row) => sum + row.amountCents, 0)
-    return currentRows
+    const currentKeys = new Set(currentRows.map(categoryKey))
+    const rows = [
+      ...currentRows,
+      ...previousRows
+        .filter((row) => !currentKeys.has(categoryKey(row)))
+        .map((row) => ({ ...row, amountCents: 0, transactionCount: 0 }))
+    ]
+    return rows
       .map((row) => {
         const previousAmountCents = previousByKey.get(categoryKey(row)) ?? 0
         const categoryPath = categoryPathFor(row)
@@ -393,8 +423,8 @@ export class DashboardAnalyticsService {
       .prepare(
         `
           SELECT
-            SUM(CASE WHEN classification.category_id IS NULL THEN ${spendExpression} ELSE 0 END) AS unclassifiedSpendingCents,
-            SUM(CASE WHEN classification.category_id IS NOT NULL THEN ${spendExpression} ELSE 0 END) AS classifiedSpendingCents,
+            SUM(CASE WHEN classification.category_id IS NULL OR classification.classification_status != 'confirmed' THEN ${spendExpression} ELSE 0 END) AS unclassifiedSpendingCents,
+            SUM(CASE WHEN classification.category_id IS NOT NULL AND classification.classification_status = 'confirmed' THEN ${spendExpression} ELSE 0 END) AS classifiedSpendingCents,
             SUM(
               CASE
                 WHEN classification.transaction_id IS NULL
@@ -416,12 +446,22 @@ export class DashboardAnalyticsService {
       classifiedSpendingCents: number | null
       needsConfirmationCount: number | null
     }
+    const settlements = this.database
+      .prepare(
+        `
+      SELECT COUNT(*) AS count ${baseFrom()} ${baseWhere()}
+      AND transactions.transaction_type = 'card_settlement'
+      AND NOT EXISTS (SELECT 1 FROM transaction_links links WHERE links.from_transaction_id = transactions.id AND links.kind = 'card_settlement')
+    `
+      )
+      .get({ dateFrom, dateTo }) as { count: number }
     const classified = row.classifiedSpendingCents ?? 0
     return {
       classifiedSpendingPercent:
         totalSpendingCents <= 0 ? 0 : Math.round((classified / totalSpendingCents) * 1000) / 10,
       needsConfirmationCount: row.needsConfirmationCount ?? 0,
-      unclassifiedSpendingCents: row.unclassifiedSpendingCents ?? 0
+      unclassifiedSpendingCents: row.unclassifiedSpendingCents ?? 0,
+      unreconciledSettlementCount: settlements.count
     }
   }
 }

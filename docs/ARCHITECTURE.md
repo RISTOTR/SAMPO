@@ -14,7 +14,7 @@ Application services
 Import adapters / repositories / SQLite
 ```
 
-The Electron shell, typed preload API, renderer layout, validation setup, SQLite initialization, migrations, repositories, prepared-import service, EVO/Bankinter Visa XLS importer, EVO/Bankinter account PDF importer, EVO/Bankinter account Excel importer, Visa settlement reconciliation service, account/import/transaction/reconciliation UI, deterministic transaction categorisation, optional AI categorisation suggestions, and deterministic recurring-series candidate detection are implemented. Charts, monthly analysis dashboards, forecasting, and broader AI analysis remain planned.
+The Electron shell, typed preload API, renderer layout, validation setup, SQLite initialization, migrations, repositories, prepared-import service, EVO/Bankinter Visa XLS importer, EVO/Bankinter account PDF importer, EVO/Bankinter account Excel importer, Visa settlement reconciliation service, account/import/transaction/reconciliation UI, deterministic transaction categorisation, optional AI categorisation suggestions, and deterministic recurring-series candidate detection are implemented. Dashboard charts and monthly analysis are implemented; forecasting and broader AI analysis remain planned.
 
 ## Responsibilities
 
@@ -181,6 +181,34 @@ The default period is the latest imported month with committed data, not necessa
 Category analysis uses confirmed category classification; unclassified spending is kept visible as `Unclassified`. Merchant analysis uses confirmed canonical merchants and falls back to the original description when unresolved. Pending AI suggestions never affect dashboard totals. Recurring spending uses only confirmed recurring-series links; candidates and rejected series are ignored. The monthly recurring baseline is approximate and based on confirmed series typical amounts by cadence, so variable bills are not shown as exact fixed forecasts.
 
 Dashboard drill-downs route to the existing Transactions page with date, category, merchant, unclassified, or needs-confirmation query filters. The dashboard does not implement a second transaction table.
+
+### Dashboard presentation and review
+
+`DashboardView` arranges summary values, attention actions, and compact analysis
+panels. `MonthlyTrend` renders supplied monthly spending/income aggregates as SVG
+bars with a shared zero-inclusive scale, keyboard drill-downs, and a monthly-value
+disclosure. Missing calendar months are labelled as having no imported activity.
+`CategorySpending` renders sorted CSS bars, retains Unclassified in the collapsed
+list, and expands to all active categories. Charts use global dark/light tokens;
+no chart dependency or raw transaction aggregation is used in the renderer.
+
+The period DTO additionally carries `latestTransactionDate` within the selected
+range and `previousTransactionCount`. Full-period comparisons remain unchanged;
+the renderer explains partial-import limitations and suppresses comparisons when
+no previous transactions exist. Data quality now includes
+`unreconciledSettlementCount`, with an action to Imports' reconciliation panel
+that scrolls only the main content container. Recurring baseline values remain
+global, approximate, and explicitly distinguished from observed period spending.
+
+Data-quality classification amounts require confirmed categories, matching the
+category breakdown. Category and classified-spending percentages permit signed
+values outside 0–100 because refunds can produce legitimate negative category
+amounts and shares above 100% of net spending. The service checks the exact
+category-sum invariant before returning data. Previous-only categories retain a
+zero current amount so Biggest changes can show spending that disappeared.
+Transactions' Unclassified filter includes missing categories and unconfirmed
+classifications. No persistence migration or change to spending arithmetic is
+involved. See `DASHBOARD_AUDIT.md` for remaining comparison/drill-down limitations.
 
 ## Classification learning and mutation refresh
 
