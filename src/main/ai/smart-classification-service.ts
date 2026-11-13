@@ -1,3 +1,5 @@
+import { aiClassificationSuggestionSchema } from '../domain/schemas'
+import { createHash } from 'crypto'
 import type { Database } from 'better-sqlite3'
 import { aiModelConfig, confidenceBand } from './config'
 import { isDevelopmentRuntime } from './diagnostics'
@@ -27,6 +29,11 @@ import type {
 } from '../domain/schemas'
 
 export type SmartClassifySummary = {
+  totalTransactionsConsidered: number
+  descriptorsConsidered: number
+  locallyResolvedDescriptors: number
+  cachedTransactions: number
+  aiClassifications: number
   eligibleTransactionCount: number
   uniqueDescriptionCount: number
   suggestionsCreated: number
@@ -57,6 +64,7 @@ export class SmartClassificationService {
   private readonly suggestions: AiSuggestionRepository
   private readonly deterministic: ClassificationService
   private readonly activeTransactions = new Set<string>()
+  private readonly activeDescriptors = new Set<string>()
 
   constructor(
     private readonly database: Database,
@@ -77,7 +85,22 @@ export class SmartClassificationService {
     const transactions = this.transactions.listByIds([...new Set(transactionIds)])
     const eligible = transactions.filter((transaction) => this.isEligible(transaction))
     let skippedDeterministicOrManual = transactions.length - eligible.length
-    const grouped = new Map<string, { input: AiClassificationInput; transactions: Transaction[] }>()
+    const grouped = new Map<
+      string,
+      { input: AiClassificationInput; transactions: Transaction[]; cacheKey: string }
+    >()
+    const categoryChoices = this.activeCategoryChoices()
+    let cachedCount = 0
+    const locallyResolved = new Set<string>()
+    const descriptorCount = new Set(
+      transactions.map((transaction) =>
+        JSON.stringify([
+          transaction.accountId,
+          transaction.transactionType,
+          normaliseMatchText(transaction.originalDescription)
+        ])
+      )
+    ).size
 
     for (const transaction of eligible) {
       if (this.activeTransactions.has(transaction.id)) {
@@ -88,18 +111,83 @@ export class SmartClassificationService {
       const current = this.classifications.findByTransactionId(transaction.id)
       const resolved = current?.classificationStatus === 'confirmed' ? current : proposal
       if (
-        proposal.status === 'confirmed' &&
-        proposal.source !== 'unclassified' &&
-        Boolean(resolved.merchantId && resolved.categoryId) &&
-        proposal.conflicts.length === 0
+        proposal.conflicts.length > 0 ||
+        Boolean(resolved.merchantId && resolved.categoryId) ||
+        Boolean(
+          proposal.merchantId &&
+          !(current?.classificationStatus === 'confirmed' && current.merchantId)
+        ) ||
+        Boolean(
+          proposal.categoryId &&
+          !(current?.classificationStatus === 'confirmed' && current.categoryId)
+        )
       ) {
+        if (!proposal.conflicts.length && (proposal.merchantId || proposal.categoryId)) {
+          locallyResolved.add(
+            JSON.stringify([
+              transaction.accountId,
+              transaction.transactionType,
+              normaliseMatchText(transaction.originalDescription)
+            ])
+          )
+        }
         skippedDeterministicOrManual += 1
         continue
       }
       const descriptor = normaliseMatchText(transaction.originalDescription)
+      const cacheKey = createHash('sha256')
+        .update(
+          JSON.stringify([
+            descriptor,
+            transaction.accountId,
+            transaction.transactionType,
+            settings.country,
+            settings.city,
+            settings.allowWebLookup,
+            categoryChoices,
+            aiModelConfig.bulkClassificationModel,
+            aiModelConfig.webLookupModel
+          ])
+        )
+        .digest('hex')
+      if (this.activeDescriptors.has(cacheKey) && !grouped.has(cacheKey)) {
+        skippedDeterministicOrManual += 1
+        continue
+      }
+      const cachedRow = this.database
+        .prepare('SELECT suggestion_id, result_json FROM ai_descriptor_cache WHERE cache_key = ?')
+        .get(cacheKey) as { suggestion_id: string; result_json: string } | undefined
+      if (cachedRow) {
+        const origin = this.suggestions.findById(cachedRow.suggestion_id)
+        const cached = aiClassificationSuggestionSchema.parse(JSON.parse(cachedRow.result_json))
+        if (origin.status === 'pending') {
+          if (
+            cached.transactionId !== transaction.id &&
+            !this.suggestions.listPendingForTransactions([transaction.id]).length
+          ) {
+            const copy = this.suggestions.create({
+              ...cached,
+              transactionId: transaction.id,
+              suggestedMerchantName:
+                current?.classificationStatus === 'confirmed' && current.merchantId
+                  ? undefined
+                  : cached.suggestedMerchantName,
+              suggestedCategoryId:
+                current?.classificationStatus === 'confirmed' && current.categoryId
+                  ? undefined
+                  : cached.suggestedCategoryId
+            })
+            this.copySources(cached.id, copy.id)
+          }
+          cachedCount++
+          continue
+        }
+      }
+      this.activeDescriptors.add(cacheKey)
       grouped.set(
-        descriptor,
-        grouped.get(descriptor) ?? {
+        cacheKey,
+        grouped.get(cacheKey) ?? {
+          cacheKey,
           input: {
             inputId: `item-${grouped.size + 1}`,
             descriptor,
@@ -109,12 +197,17 @@ export class SmartClassificationService {
           transactions: []
         }
       )
-      grouped.get(descriptor)!.transactions.push(transaction)
+      grouped.get(cacheKey)!.transactions.push(transaction)
       this.activeTransactions.add(transaction.id)
     }
 
     const groups = [...grouped.values()]
     const summary: SmartClassifySummary = {
+      totalTransactionsConsidered: transactions.length,
+      descriptorsConsidered: descriptorCount,
+      locallyResolvedDescriptors: locallyResolved.size,
+      cachedTransactions: cachedCount,
+      aiClassifications: groups.length,
       eligibleTransactionCount: eligible.length,
       uniqueDescriptionCount: groups.length,
       suggestionsCreated: 0,
@@ -160,6 +253,7 @@ export class SmartClassificationService {
             logProviderDiagnostic('targeted web lookup started', {
               inputId: group.input.inputId
             })
+            summary.webLookupsPerformed += 1
             try {
               const webResults = await this.provider.classify([group.input], {
                 categories: this.activeCategoryChoices(),
@@ -189,17 +283,14 @@ export class SmartClassificationService {
           }
 
           for (const transaction of group.transactions) {
-            const current = this.classifications.findByTransactionId(transaction.id)
-            const confirmed = current?.classificationStatus === 'confirmed' ? current : undefined
-            if (confirmed?.merchantId && confirmed.categoryId) continue
+            const local = this.deterministic.evaluateTransaction(transaction.id)
+            if (local.conflicts.length || (local.merchantId && local.categoryId)) continue
             const suggestion = this.suggestions.create({
               transactionId: transaction.id,
               provider: 'openai',
               model,
-              suggestedMerchantName: confirmed?.merchantId
-                ? undefined
-                : result.merchant?.canonicalName,
-              suggestedCategoryId: confirmed?.categoryId ? undefined : result.category.categoryId,
+              suggestedMerchantName: local.merchantId ? undefined : result.merchant?.canonicalName,
+              suggestedCategoryId: local.categoryId ? undefined : result.category.categoryId,
               merchantConfidence: Math.round((result.merchant?.confidence ?? 0) * 1000),
               categoryConfidence: Math.round(result.category.confidence * 1000),
               needsWebLookup: webLookupFailed
@@ -212,16 +303,31 @@ export class SmartClassificationService {
             })
             for (const source of result.sources ?? [])
               this.suggestions.addSource(suggestion.id, source)
+            this.database
+              .prepare(
+                'INSERT OR REPLACE INTO ai_descriptor_cache (cache_key, suggestion_id, result_json) VALUES (?, ?, ?)'
+              )
+              .run(
+                group.cacheKey,
+                suggestion.id,
+                JSON.stringify({
+                  ...suggestion,
+                  suggestedMerchantName: result.merchant?.canonicalName,
+                  suggestedCategoryId: result.category.categoryId
+                })
+              )
             this.countSuggestion(summary, suggestion)
           }
         }
       }
     } finally {
       for (const group of groups) {
+        this.activeDescriptors.delete(group.cacheKey)
         for (const transaction of group.transactions) this.activeTransactions.delete(transaction.id)
       }
     }
 
+    logProviderDiagnostic('classification summary', { ...summary })
     return summary
   }
 
@@ -251,6 +357,18 @@ export class SmartClassificationService {
       }
 
       const existing = this.classifications.findByTransactionId(suggestion.transactionId)
+      const local = this.deterministic.evaluateTransaction(suggestion.transactionId)
+      if (
+        local.conflicts.length ||
+        (input.acceptCategory &&
+          local.categoryId &&
+          !(existing?.classificationStatus === 'confirmed' && existing.categoryId)) ||
+        (input.acceptMerchant &&
+          local.merchantId &&
+          !(existing?.classificationStatus === 'confirmed' && existing.merchantId))
+      ) {
+        throw new InvalidAiSuggestionAcceptanceError('Review the current local proposal instead')
+      }
       const category = reviewCategoryStatus(input, suggestion, existing)
       const merchant = reviewMerchantStatus(
         input,
@@ -271,8 +389,14 @@ export class SmartClassificationService {
       if (shouldApplyCategory) this.categories.assertAssignable(suggestion.suggestedCategoryId)
       const merchantId = shouldApplyMerchant
         ? this.findOrCreateMerchant(suggestion.suggestedMerchantName!)
-        : existing?.merchantId
-      const categoryId = shouldApplyCategory ? suggestion.suggestedCategoryId : existing?.categoryId
+        : existing?.classificationStatus === 'confirmed'
+          ? existing.merchantId
+          : undefined
+      const categoryId = shouldApplyCategory
+        ? suggestion.suggestedCategoryId
+        : existing?.classificationStatus === 'confirmed'
+          ? existing.categoryId
+          : undefined
       const merchantSource = shouldApplyMerchant ? 'ai' : existing?.merchantSource
       const categorySource = shouldApplyCategory ? 'ai' : existing?.categorySource
 
@@ -379,7 +503,13 @@ export class SmartClassificationService {
       summary.lowConfidenceCategories += 1
     }
     if (suggestion.suggestedMerchantName) summary.canonicalMerchantsSuggested += 1
-    if (suggestion.usedWebSearch) summary.webLookupsPerformed += 1
+  }
+
+  private copySources(from: string, to: string): void {
+    const sources = this.database
+      .prepare('SELECT title, url FROM ai_suggestion_sources WHERE suggestion_id = ?')
+      .all(from) as { title: string; url: string }[]
+    for (const source of sources) this.suggestions.addSource(to, source)
   }
 
   private findOrCreateMerchant(name: string): string {

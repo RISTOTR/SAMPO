@@ -632,6 +632,25 @@ export const migrations: Migration[] = [
           ON recurring_series_transactions(transaction_id);
       `)
     }
+  },
+  {
+    version: 12,
+    name: 'classification_review_rejections_and_ai_cache',
+    up: (database) => {
+      database.exec(`
+        CREATE TABLE classification_review_rejections (
+          transaction_id TEXT NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+          field TEXT NOT NULL CHECK (field IN ('merchant', 'category')),
+          value TEXT NOT NULL,
+          PRIMARY KEY (transaction_id, field, value)
+        );
+        CREATE TABLE ai_descriptor_cache (
+          cache_key TEXT PRIMARY KEY,
+          result_json TEXT NOT NULL,
+          suggestion_id TEXT NOT NULL REFERENCES ai_classification_suggestions(id) ON DELETE CASCADE
+        );
+      `)
+    }
   }
 ]
 

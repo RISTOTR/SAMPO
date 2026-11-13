@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ReviewSuggestions from '../components/ReviewSuggestions.vue'
 import TransactionsFeedback from '../components/TransactionsFeedback.vue'
 import { captureTransactionPosition, scrollPanelIntoContent } from '../presentation/content-scroll'
 import {
@@ -19,6 +20,8 @@ import { useTransactionsStore } from '../stores/transactions'
 import type { AiSuggestionDto, TransactionListQueryDto } from '../../../shared/dtos'
 import ManualRecurringForm from '../components/ManualRecurringForm.vue'
 
+const reviewPanel = ref<InstanceType<typeof ReviewSuggestions> | null>(null)
+const reviewQuery = computed(() => currentSuggestionTransactionQuery())
 const viewRoot = ref<HTMLElement | null>(null)
 let returnFromEditor: (() => void) | undefined
 let returnFromRecurring: (() => void) | undefined
@@ -242,51 +245,15 @@ function aiSuggestionFor(transactionId: string): AiSuggestionDto | undefined {
   return ai.suggestions.find((suggestion) => suggestion.transactionId === transactionId)
 }
 
-function suggestionChangeLabels(suggestion: AiSuggestionDto): string {
-  return [
-    suggestion.suggestedMerchantName ? 'Merchant' : undefined,
-    suggestion.suggestedCategoryId ? 'Category' : undefined
-  ]
-    .filter(Boolean)
-    .join(' + ')
-}
-
-function suggestionCurrentValue(suggestion: AiSuggestionDto): string {
-  return [
-    suggestion.suggestedMerchantName
-      ? `Merchant: ${suggestion.currentMerchantName ?? 'Unassigned'}`
-      : undefined,
-    suggestion.suggestedCategoryId
-      ? `Category: ${suggestion.currentCategoryPath?.join(' / ') ?? 'Unclassified'}`
-      : undefined
-  ]
-    .filter(Boolean)
-    .join(' | ')
-}
-
-function suggestionAiValue(suggestion: AiSuggestionDto): string {
-  return [
-    suggestion.suggestedMerchantName ? `Merchant: ${suggestion.suggestedMerchantName}` : undefined,
-    suggestion.suggestedCategoryPath
-      ? `Category: ${suggestion.suggestedCategoryPath.join(' / ')}`
-      : undefined
-  ]
-    .filter(Boolean)
-    .join(' | ')
-}
-
-function suggestionConfidence(suggestion: AiSuggestionDto): string {
-  return [
-    suggestion.suggestedMerchantName ? `Merchant ${suggestion.merchantConfidenceBand}` : undefined,
-    suggestion.suggestedCategoryId ? `Category ${suggestion.categoryConfidenceBand}` : undefined
-  ]
-    .filter(Boolean)
-    .join(' | ')
-}
-
 async function handleMerchantChange(): Promise<void> {
   newMerchantName.value = ''
   await refreshMatchingSummary()
+}
+
+async function reviewChanged(): Promise<void> {
+  await classification.loadReference()
+  await loadTransactions()
+  if (editorTransactionId.value) await openEditor(editorTransactionId.value)
 }
 
 async function loadTransactions(): Promise<void> {
@@ -296,10 +263,7 @@ async function loadTransactions(): Promise<void> {
   )
   await transactions.load(transactionQuery)
   await ai.loadSuggestions(suggestionInput)
-}
-
-async function loadAiSuggestions(): Promise<void> {
-  await ai.loadSuggestions(currentSuggestionListInput())
+  await reviewPanel.value?.load()
 }
 
 function scheduleFilterReload(): void {
@@ -548,48 +512,6 @@ async function classifySelectedWithAi(): Promise<void> {
   }
 }
 
-async function acceptAiSuggestion(
-  suggestionId: string,
-  options: { acceptCategory: boolean; acceptMerchant: boolean }
-): Promise<void> {
-  logAiSuggestionDiagnostic('button clicked', {
-    action: acceptAction(options),
-    suggestionIdPresent: Boolean(suggestionId)
-  })
-  const transactionId = ai.suggestions.find((item) => item.id === suggestionId)?.transactionId
-  await ai.acceptSuggestion(suggestionId, options, currentSuggestionListInput())
-  if (ai.error) return
-  await classification.loadReference()
-  if (editorTransactionId.value) {
-    await classification.loadClassification(editorTransactionId.value)
-    if (editorTransactionId.value === transactionId) {
-      if (options.acceptMerchant) {
-        manualForm.merchantId = classification.current?.merchantId ?? ''
-        newMerchantName.value = ''
-      }
-      if (options.acceptCategory) manualForm.categoryId = classification.current?.categoryId ?? ''
-      await refreshMatchingSummary()
-    }
-  }
-  await loadTransactions()
-}
-
-async function rejectAiSuggestion(suggestionId: string): Promise<void> {
-  logAiSuggestionDiagnostic('button clicked', {
-    action: 'reject',
-    suggestionIdPresent: Boolean(suggestionId)
-  })
-  await ai.rejectSuggestion(suggestionId, currentSuggestionListInput())
-  await loadTransactions()
-}
-
-async function acceptHighConfidenceCategories(): Promise<void> {
-  await ai.acceptHighConfidenceCategories(currentSuggestionListInput())
-  if (ai.error) return
-  if (editorTransactionId.value) await openEditor(editorTransactionId.value)
-  await loadTransactions()
-}
-
 function currentSuggestionListInput(
   transactionQuery = currentSuggestionTransactionQuery()
 ): NonNullable<Parameters<typeof ai.loadSuggestions>[0]> {
@@ -599,18 +521,6 @@ function currentSuggestionListInput(
 function logTransactionsDiagnostic(label: string, metadata: Record<string, unknown>): void {
   if (import.meta.env.PROD) return
   console.warn(`[sampo-transactions] ${label}`, metadata)
-}
-
-function logAiSuggestionDiagnostic(label: string, metadata: Record<string, unknown>): void {
-  if (import.meta.env.PROD) return
-  console.warn(`[sampo-ai-suggestions] ${label}`, metadata)
-}
-
-function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolean }): string {
-  if (options.acceptCategory && options.acceptMerchant) return 'accept_both'
-  if (options.acceptCategory) return 'accept_category'
-  if (options.acceptMerchant) return 'accept_merchant'
-  return 'accept'
 }
 </script>
 
@@ -844,111 +754,14 @@ function acceptAction(options: { acceptCategory: boolean; acceptMerchant: boolea
       </div>
     </div>
 
-    <div class="panel">
-      <div class="section-header ai-panel-header">
-        <h3>
-          AI suggestions
-          <span class="badge" aria-live="polite">{{ ai.suggestions.length }} unresolved</span>
-        </h3>
-        <button
-          type="button"
-          class="secondary-button"
-          :aria-expanded="!ui.aiPanelCollapsed"
-          aria-controls="ai-suggestions-content"
-          @click="ui.toggleAiPanel"
-        >
-          {{ ui.aiPanelCollapsed ? 'Show' : 'Hide' }}
-          <span class="sr-only">AI suggestions</span>
-        </button>
-      </div>
-      <div v-show="!ui.aiPanelCollapsed" id="ai-suggestions-content">
-        <div class="button-row">
-          <button type="button" :disabled="ai.loading" @click="loadAiSuggestions">Refresh</button>
-          <button
-            type="button"
-            :disabled="ai.submitting || ai.highConfidenceSuggestions.length === 0"
-            @click="acceptHighConfidenceCategories"
-          >
-            Accept high-confidence categories
-          </button>
-        </div>
-        <p v-if="ai.suggestions.length === 0">No pending AI suggestions.</p>
-        <div v-else class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Difference</th>
-                <th>Current</th>
-                <th>AI suggests</th>
-                <th>Confidence</th>
-                <th>Lookup</th>
-                <th>Reason</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="suggestion in ai.suggestions" :key="suggestion.id">
-                <td>{{ suggestionChangeLabels(suggestion) }}</td>
-                <td>{{ suggestionCurrentValue(suggestion) }}</td>
-                <td>{{ suggestionAiValue(suggestion) }}</td>
-                <td>{{ suggestionConfidence(suggestion) }}</td>
-                <td>{{ suggestion.usedWebSearch ? 'Web' : 'Local' }}</td>
-                <td>{{ suggestion.reasonCode }}</td>
-                <td>
-                  <div class="button-row">
-                    <button
-                      type="button"
-                      :disabled="ai.submitting || !suggestion.canAcceptCategory"
-                      @click="
-                        acceptAiSuggestion(suggestion.id, {
-                          acceptCategory: true,
-                          acceptMerchant: false
-                        })
-                      "
-                    >
-                      Use AI category
-                    </button>
-                    <button
-                      type="button"
-                      :disabled="ai.submitting || !suggestion.canAcceptMerchant"
-                      @click="
-                        acceptAiSuggestion(suggestion.id, {
-                          acceptCategory: false,
-                          acceptMerchant: true
-                        })
-                      "
-                    >
-                      Use AI merchant
-                    </button>
-                    <button
-                      v-if="suggestion.canAcceptCategory && suggestion.canAcceptMerchant"
-                      type="button"
-                      :disabled="ai.submitting"
-                      @click="
-                        acceptAiSuggestion(suggestion.id, {
-                          acceptCategory: true,
-                          acceptMerchant: true
-                        })
-                      "
-                    >
-                      Use both
-                    </button>
-                    <button
-                      class="danger-button"
-                      type="button"
-                      :disabled="ai.submitting"
-                      @click="rejectAiSuggestion(suggestion.id)"
-                    >
-                      Reject
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+    <ReviewSuggestions
+      ref="reviewPanel"
+      :query="reviewQuery"
+      :collapsed="ui.aiPanelCollapsed"
+      @toggle="ui.toggleAiPanel"
+      @edit="openEditor"
+      @changed="reviewChanged"
+    />
 
     <div class="panel">
       <h3>Transactions</h3>

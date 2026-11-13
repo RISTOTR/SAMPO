@@ -37,10 +37,7 @@ const renderer = createRenderer<object, object>({
 type ViewState = {
   openEditor: (id: string) => Promise<void>
   saveManual: () => Promise<void>
-  acceptAiSuggestion: (
-    id: string,
-    options: { acceptMerchant: boolean; acceptCategory: boolean }
-  ) => Promise<void>
+  reviewChanged: () => Promise<void>
   manualForm: { merchantId: string; categoryId: string }
   newMerchantName: string
 }
@@ -130,6 +127,17 @@ async function setup(): Promise<{
         saveManual: (input: unknown) => ok(workflow.saveManualClassification(input)),
         matchingSummary: (input: unknown) => ok(workflow.matchingClassificationSummary(input))
       },
+      review: {
+        list: async (input: unknown) => ({ ok: true, data: workflow.listReviewSuggestions(input) }),
+        accept: async (input: unknown) => ({
+          ok: true,
+          data: workflow.acceptReviewSuggestions(input)
+        }),
+        reject: async (input: unknown) => ({
+          ok: true,
+          data: workflow.rejectReviewSuggestion(input)
+        })
+      },
       ai: {
         getSettings: async () => ({ ok: true, data: await workflow.getAiSettings() }),
         listSuggestions: (input: Parameters<typeof workflow.listAiSuggestions>[0]) =>
@@ -195,10 +203,12 @@ describe('Transactions classification mutation synchronization', () => {
     async (first) => {
       const { view, transactionId, categoryId, suggestion, transactions, ai } = await setup()
       await view.openEditor(transactionId)
-      await view.acceptAiSuggestion(suggestion.id, {
+      await window.sampo.review.accept({
+        transactionIds: [transactionId],
         acceptMerchant: first === 'merchant',
         acceptCategory: first === 'category'
       })
+      await view.reviewChanged()
       expect(ai.suggestions).toHaveLength(1)
       expect(ai.suggestions[0]).toMatchObject({
         canAcceptMerchant: first === 'category',
@@ -213,10 +223,12 @@ describe('Transactions classification mutation synchronization', () => {
         expect(row.classification?.categoryDisplay?.source).toBe('authoritative')
         expect(view.manualForm.categoryId).toBe(categoryId)
       }
-      await view.acceptAiSuggestion(suggestion.id, {
+      await window.sampo.review.accept({
+        transactionIds: [transactionId],
         acceptMerchant: first === 'category',
         acceptCategory: first === 'merchant'
       })
+      await view.reviewChanged()
       expect(ai.suggestions).toHaveLength(0)
       expect(transactions.page.items[0]!.classification).toMatchObject({
         merchantDisplay: { source: 'authoritative' },

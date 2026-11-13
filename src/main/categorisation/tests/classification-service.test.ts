@@ -237,7 +237,7 @@ describe('Phase 6 categorisation', () => {
 
     const first = classifications.findByTransactionId(committed.transactions[0]!.id)
     const pending = classifications.findByTransactionId(committed.transactions[1]!.id)
-    expect(first).toMatchObject({ categoryId: category.id, classificationStatus: 'confirmed' })
+    expect(first).toMatchObject({ categoryId: category.id, classificationStatus: 'needs_review' })
     expect(pending).toMatchObject({ categoryId: category.id, classificationStatus: 'needs_review' })
     expect(transactions.findById(committed.transactions[0]!.id).originalDescription).toBe(
       'Synthetic Grocery Market'

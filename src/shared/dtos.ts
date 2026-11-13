@@ -685,6 +685,11 @@ export const smartClassifyBatchInputDtoSchema = z.object({
 })
 
 export const smartClassifySummaryDtoSchema = z.object({
+  totalTransactionsConsidered: z.number().int().min(0).optional(),
+  descriptorsConsidered: z.number().int().min(0).optional(),
+  locallyResolvedDescriptors: z.number().int().min(0).optional(),
+  cachedTransactions: z.number().int().min(0).optional(),
+  aiClassifications: z.number().int().min(0).optional(),
   eligibleTransactionCount: z.number().int().min(0),
   uniqueDescriptionCount: z.number().int().min(0),
   suggestionsCreated: z.number().int().min(0),
@@ -971,3 +976,52 @@ export type DashboardDataDto = z.infer<typeof dashboardDataDtoSchema>
 export type DashboardCategorySpendDto = z.infer<typeof dashboardCategorySpendDtoSchema>
 export type DashboardMerchantSpendDto = z.infer<typeof dashboardMerchantSpendDtoSchema>
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: OperationErrorDto }
+
+export const reviewSourceDtoSchema = z.enum([
+  'Learned',
+  'Historical match',
+  'Rule',
+  'AI',
+  'AI + Web',
+  'Unclassified'
+])
+export const reviewItemDtoSchema = z.object({
+  transactionId: uuidDtoSchema,
+  description: z.string(),
+  date: isoDateDtoSchema,
+  amountCents: z.number().int(),
+  currency: z.string(),
+  merchantName: z.string().optional(),
+  categoryPath: z.array(z.string()).optional(),
+  merchantSource: reviewSourceDtoSchema,
+  categorySource: reviewSourceDtoSchema,
+  merchantConfidence: z.number().int().optional(),
+  categoryConfidence: z.number().int().optional(),
+  canAcceptMerchant: z.boolean(),
+  canAcceptCategory: z.boolean(),
+  canBulkAccept: z.boolean(),
+  conflict: z.boolean()
+})
+export const reviewListInputDtoSchema = z.object({
+  transactionQuery: transactionListQueryDtoSchema
+    .omit({ limit: true, offset: true })
+    .partial()
+    .optional(),
+  source: z.enum(['All', 'Local', 'AI', 'Unclassified']).default('All'),
+  offset: z.number().int().min(0).default(0),
+  limit: z.number().int().min(1).max(100).default(50)
+})
+export const reviewPageDtoSchema = z.object({
+  items: z.array(reviewItemDtoSchema),
+  total: z.number().int()
+})
+export const reviewAcceptInputDtoSchema = z.object({
+  transactionIds: z.array(uuidDtoSchema).min(1).max(100),
+  acceptMerchant: z.boolean().default(true),
+  acceptCategory: z.boolean().default(true)
+})
+export const reviewRejectInputDtoSchema = z.object({ transactionId: uuidDtoSchema })
+export type ReviewItemDto = z.infer<typeof reviewItemDtoSchema>
+export type ReviewPageDto = z.infer<typeof reviewPageDtoSchema>
+export type ReviewListInputDto = z.input<typeof reviewListInputDtoSchema>
+export type ReviewAcceptInputDto = z.input<typeof reviewAcceptInputDtoSchema>

@@ -18,6 +18,12 @@ function elements(node: RootNode | TemplateChildNode): ElementNode[] {
   return [node, ...node.children.flatMap(elements)]
 }
 const nodes = elements(template)
+const reviewNodes = elements(
+  baseParse(
+    parseSfc(readFileSync('src/renderer/src/components/ReviewSuggestions.vue', 'utf8')).descriptor
+      .template!.content
+  )
+)
 function attribute(node: ElementNode, name: string): string | undefined {
   const prop = node.props.find((prop) => prop.type === NodeTypes.ATTRIBUTE && prop.name === name)
   return prop?.type === NodeTypes.ATTRIBUTE ? prop.value?.content : undefined
@@ -31,16 +37,18 @@ function directive(node: ElementNode, name: string): string | undefined {
 
 describe('Transactions usability structure', () => {
   it('keeps the unresolved count and toggle outside the collapsible AI content', () => {
-    const body = nodes.find((node) => attribute(node, 'id') === 'ai-suggestions-content')!
-    expect(directive(body, 'show')).toBe('!ui.aiPanelCollapsed')
+    const body = reviewNodes.find((node) => attribute(node, 'id') === 'review-suggestions-content')!
+    expect(directive(body, 'show')).toBe('!collapsed')
     expect(body.loc.source).not.toContain('class="transactions-table"')
     expect(nodes.some((node) => attribute(node, 'class') === 'transactions-table')).toBe(true)
-    const header = nodes.find((node) => attribute(node, 'class')?.includes('ai-panel-header'))!
-    expect(header.loc.source).toContain('ai.suggestions.length')
-    expect(header.loc.source).toContain('unresolved')
+    const header = reviewNodes.find((node) =>
+      attribute(node, 'class')?.includes('ai-panel-header')
+    )!
+    expect(header.loc.source).toContain('page.total')
+    expect(header.loc.source).toContain('remaining')
     const toggle = elements(header).find((node) => node.tag === 'button')!
-    expect(attribute(toggle, 'aria-controls')).toBe('ai-suggestions-content')
-    expect(directive(toggle, 'on')).toBe('ui.toggleAiPanel')
+    expect(attribute(toggle, 'aria-controls')).toBe('review-suggestions-content')
+    expect(directive(toggle, 'on')).toBe("emit('toggle')")
   })
 
   it('uses matching column guards for headers and cells while selection is always available', () => {

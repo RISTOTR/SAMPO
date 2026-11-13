@@ -1,3 +1,4 @@
+import type { ReviewListInputDto, ReviewPageDto, ReviewAcceptInputDto } from './dtos'
 import type {
   AccountSummaryDto,
   AcceptAiSuggestionInputDto,
@@ -124,6 +125,11 @@ export type SampoApi = {
     create: (input: CreateMerchantAliasInputDto) => Promise<ApiResult<MerchantAliasDto>>
     update: (input: UpdateMerchantAliasInputDto) => Promise<ApiResult<MerchantAliasDto>>
     deactivate: (id: string) => Promise<ApiResult<MerchantAliasDto>>
+  }
+  review: {
+    list: (input: ReviewListInputDto) => Promise<ApiResult<ReviewPageDto>>
+    accept: (input: ReviewAcceptInputDto) => Promise<ApiResult<number>>
+    reject: (input: { transactionId: string }) => Promise<ApiResult<void>>
   }
   classification: {
     get: (transactionId: string) => Promise<ApiResult<ClassificationProposalDto>>

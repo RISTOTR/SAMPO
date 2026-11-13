@@ -457,9 +457,14 @@ export class TransactionClassificationRepository {
     return row ? mapClassification(row as Row) : undefined
   }
 
-  listConfirmedMerchantExamples(): {
+  listConfirmedMerchantExamples(
+    accountId: string,
+    transactionType: string
+  ): {
     merchantId: string
     originalDescription: string
+    accountId: string
+    transactionType: string
     source: string
   }[] {
     return this.database
@@ -468,20 +473,33 @@ export class TransactionClassificationRepository {
           SELECT
             c.merchant_id AS merchantId,
             c.merchant_source AS source,
-            t.original_description AS originalDescription
+            t.original_description AS originalDescription,
+            t.account_id AS accountId, t.transaction_type AS transactionType
           FROM transaction_classifications c
           JOIN transactions t ON t.id = c.transaction_id
           WHERE c.classification_status = 'confirmed'
+            AND t.account_id = ? AND t.transaction_type = ?
             AND c.merchant_source IN ('manual', 'ai')
             AND c.merchant_id IS NOT NULL
         `
       )
-      .all() as { merchantId: string; originalDescription: string; source: string }[]
+      .all(accountId, transactionType) as {
+      merchantId: string
+      originalDescription: string
+      accountId: string
+      transactionType: string
+      source: string
+    }[]
   }
 
-  listConfirmedCategoryExamples(): {
+  listConfirmedCategoryExamples(
+    accountId: string,
+    transactionType: string
+  ): {
     categoryId: string
     originalDescription: string
+    accountId: string
+    transactionType: string
     source: string
   }[] {
     return this.database
@@ -490,15 +508,23 @@ export class TransactionClassificationRepository {
           SELECT
             c.category_id AS categoryId,
             c.category_source AS source,
-            t.original_description AS originalDescription
+            t.original_description AS originalDescription,
+            t.account_id AS accountId, t.transaction_type AS transactionType
           FROM transaction_classifications c
           JOIN transactions t ON t.id = c.transaction_id
           WHERE c.classification_status = 'confirmed'
+            AND t.account_id = ? AND t.transaction_type = ?
             AND c.category_source IN ('manual', 'ai')
             AND c.category_id IS NOT NULL
         `
       )
-      .all() as { categoryId: string; originalDescription: string; source: string }[]
+      .all(accountId, transactionType) as {
+      categoryId: string
+      originalDescription: string
+      accountId: string
+      transactionType: string
+      source: string
+    }[]
   }
 
   listForTransactions(transactionIds: string[]): Map<string, TransactionClassification> {

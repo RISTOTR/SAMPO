@@ -593,12 +593,12 @@ describe('smart classification service', () => {
       merchantName: 'Synthetic Learned Merchant',
       categoryId
     })
-    const suggestion = createSuggestion(connection, {
+    createSuggestion(connection, {
       transactionId: transactionIds[1]!,
       suggestedCategoryId: categoryId
     })
-    workflow.acceptAiSuggestion({
-      suggestionId: suggestion.id,
+    workflow.acceptReviewSuggestions({
+      transactionIds: [transactionIds[1]!],
       acceptCategory: true,
       acceptMerchant: false
     })
@@ -705,7 +705,7 @@ describe('smart classification service', () => {
     })
   })
 
-  it('keeps matching AI fields actionable until an imported detection is confirmed', () => {
+  it('shows local detections in review instead of competing AI fields', () => {
     const { transactionIds, categoryId } = seedTransactions(connection, [
       'Synthetic Detection Delta'
     ])
@@ -725,7 +725,8 @@ describe('smart classification service', () => {
       suggestedCategoryId: categoryId
     })
     const workflow = createWorkflow(connection)
-    expect(workflow.listAiSuggestions({})[0]).toMatchObject({
+    expect(workflow.listAiSuggestions({})).toEqual([])
+    expect(workflow.listReviewSuggestions({}).items[0]).toMatchObject({
       canAcceptMerchant: true,
       canAcceptCategory: true
     })
@@ -815,6 +816,9 @@ describe('smart classification service', () => {
         suggestedMerchantName: undefined
       })
     ])
+    expect((await service.classifyTransactions(transactionIds)).cachedTransactions).toBe(1)
+    expect(calls).toBe(1)
+    new AiSettingsRepository(connection).update({ city: 'Synthetic changed context' })
     confirmDuringRequest = true
     expect((await service.classifyTransactions(transactionIds)).suggestionsCreated).toBe(0)
     expect(calls).toBe(2)

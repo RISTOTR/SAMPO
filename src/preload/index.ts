@@ -67,6 +67,11 @@ const sampo: SampoApi = {
     update: (input) => ipcRenderer.invoke(IPC_CHANNELS.merchantAliasesUpdate, input),
     deactivate: (id) => ipcRenderer.invoke(IPC_CHANNELS.merchantAliasesDeactivate, id)
   },
+  review: {
+    list: (input) => ipcRenderer.invoke(IPC_CHANNELS.reviewList, input),
+    accept: (input) => ipcRenderer.invoke(IPC_CHANNELS.reviewAccept, input),
+    reject: (input) => ipcRenderer.invoke(IPC_CHANNELS.reviewReject, input)
+  },
   classification: {
     get: (transactionId) => ipcRenderer.invoke(IPC_CHANNELS.classificationGet, transactionId),
     saveManual: (input) => ipcRenderer.invoke(IPC_CHANNELS.classificationSaveManual, input),

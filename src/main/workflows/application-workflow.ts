@@ -1,3 +1,4 @@
+import { ReviewService } from '../categorisation/review-service'
 import type { Database } from 'better-sqlite3'
 import type { BrowserWindow } from 'electron'
 import {
@@ -56,6 +57,7 @@ import {
   type AccountSummaryDto,
   type AiConnectionTestDto,
   type AiSettingsDto,
+  type ReviewPageDto,
   type AiSuggestionDto,
   type AiSuggestionReviewDto,
   type BulkClassificationResultDto,
@@ -690,6 +692,16 @@ export class ApplicationWorkflow {
     )
   }
 
+  listReviewSuggestions(input: unknown): ReviewPageDto {
+    return new ReviewService(this.database).list(input)
+  }
+  acceptReviewSuggestions(input: unknown): number {
+    return new ReviewService(this.database).accept(input)
+  }
+  rejectReviewSuggestion(input: unknown): void {
+    new ReviewService(this.database).reject(input)
+  }
+
   listAiSuggestions(input?: unknown): AiSuggestionDto[] {
     const parsed = listAiSuggestionsInputDtoSchema.parse(input ?? {})
     const suggestions = parsed.transactionQuery
@@ -928,6 +940,7 @@ export class ApplicationWorkflow {
   } {
     const existing = this.classifications.findByTransactionId(transactionId)
     const classification = existing?.classificationStatus === 'confirmed' ? existing : undefined
+    const local = this.classification.evaluateTransaction(transactionId)
     const currentMerchantName = classification?.merchantId
       ? this.merchants.findById(classification.merchantId).name
       : undefined
@@ -938,11 +951,15 @@ export class ApplicationWorkflow {
       canAcceptCategory: Boolean(
         suggestion.status === 'pending' &&
         !classification?.categoryId &&
+        !local.categoryId &&
+        !local.conflicts.length &&
         suggestion.suggestedCategoryId
       ),
       canAcceptMerchant: Boolean(
         suggestion.status === 'pending' &&
         !classification?.merchantId &&
+        !local.merchantId &&
+        !local.conflicts.length &&
         suggestion.suggestedMerchantName
       )
     }

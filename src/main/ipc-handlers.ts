@@ -88,6 +88,13 @@ export function registerApplicationIpcHandlers(
   handle(IPC_CHANNELS.merchantAliasesDeactivate, isTrustedSender, (id) =>
     workflow.deactivateMerchantAlias(z.string().uuid().parse(id))
   )
+  handle(IPC_CHANNELS.reviewList, isTrustedSender, (input) => workflow.listReviewSuggestions(input))
+  handle(IPC_CHANNELS.reviewAccept, isTrustedSender, (input) =>
+    workflow.acceptReviewSuggestions(input)
+  )
+  handle(IPC_CHANNELS.reviewReject, isTrustedSender, (input) =>
+    workflow.rejectReviewSuggestion(input)
+  )
   handle(IPC_CHANNELS.classificationGet, isTrustedSender, (transactionId) =>
     workflow.getClassification(z.string().uuid().parse(transactionId))
   )

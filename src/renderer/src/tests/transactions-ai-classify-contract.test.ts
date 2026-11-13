@@ -91,30 +91,15 @@ describe('transactions manual AI classify contract', () => {
     expect(transactionsView).toContain('transaction.recurring')
   })
 
-  it('uses persisted suggestion ids for same-merchant suggestion rows and actions', () => {
-    expect(transactionsView).toContain('v-for="suggestion in ai.suggestions"')
-    expect(transactionsView).toContain(':key="suggestion.id"')
-    expect(transactionsView).toContain('acceptAiSuggestion(suggestion.id')
-    expect(transactionsView).toContain('rejectAiSuggestion(suggestion.id)')
-    expect(transactionsView).toContain('[sampo-ai-suggestions]')
-    expect(aiStore).toContain('[sampo-ai-store]')
-    expect(aiStore).toContain('suggestionIdPresent')
-    expect(aiStore).toContain('review action started')
-    expect(transactionsView).toContain('currentSuggestionListInput()')
-    expect(transactionsView).toContain('await ai.acceptSuggestion(suggestionId, options,')
-    expect(transactionsView).toContain('await ai.rejectSuggestion(suggestionId,')
-  })
-
-  it('disables AI suggestion actions that are not field-actionable', () => {
-    expect(transactionsView).toContain(':disabled="ai.submitting || !suggestion.canAcceptCategory"')
-    expect(transactionsView).toContain(':disabled="ai.submitting || !suggestion.canAcceptMerchant"')
-    expect(transactionsView).toContain(
-      'v-if="suggestion.canAcceptCategory && suggestion.canAcceptMerchant"'
-    )
-    expect(transactionsView).toContain('Use both')
-    expect(aiStore).toContain('Manual category preserved')
-    expect(aiStore).toContain('Manual merchant preserved')
-    expect(aiStore).toContain('AI suggestion unchanged.')
+  it('uses the consolidated review component with transaction-based actions and field-level acceptance', () => {
+    const review = readFileSync('src/renderer/src/components/ReviewSuggestions.vue', 'utf8')
+    expect(transactionsView).toContain('<ReviewSuggestions')
+    expect(transactionsView).toContain('@changed="reviewChanged"')
+    expect(review).toContain(':key="item.transactionId"')
+    expect(review).toContain('Array.from(ids)')
+    expect(review).toContain('item.canAcceptMerchant && item.canAcceptCategory')
+    expect(review).toContain('item.canBulkAccept')
+    expect(review).toContain('Accept both')
   })
 
   it('preselects detected classification values in the manual editor without persisting them until save', () => {

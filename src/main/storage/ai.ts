@@ -1,3 +1,4 @@
+import { normaliseMatchText } from '../categorisation/normalisation'
 import type { Database } from 'better-sqlite3'
 import { randomUUID } from 'crypto'
 import {
@@ -169,6 +170,7 @@ export class AiSuggestionRepository {
     id: string,
     status: 'accepted' | 'rejected' | 'failed' | 'superseded'
   ): AiClassificationSuggestion {
+    if (status === 'rejected') this.invalidateDescriptorCache(id)
     this.database
       .prepare(
         `
@@ -179,6 +181,34 @@ export class AiSuggestionRepository {
       )
       .run({ id, status, reviewedAt: new Date().toISOString() })
     return this.findById(id)
+  }
+
+  private invalidateDescriptorCache(suggestionId: string): void {
+    const target = this.database
+      .prepare(
+        `SELECT t.account_id, t.transaction_type, t.original_description
+      FROM transactions t JOIN ai_classification_suggestions s ON s.transaction_id = t.id WHERE s.id = ?`
+      )
+      .get(suggestionId) as
+      { account_id: string; transaction_type: string; original_description: string } | undefined
+    if (!target) return
+    const candidates = this.database
+      .prepare(
+        `SELECT cache.cache_key, t.original_description
+      FROM ai_descriptor_cache cache JOIN ai_classification_suggestions s ON s.id = cache.suggestion_id
+      JOIN transactions t ON t.id = s.transaction_id WHERE t.account_id = ? AND t.transaction_type = ?`
+      )
+      .all(target.account_id, target.transaction_type) as {
+      cache_key: string
+      original_description: string
+    }[]
+    const descriptor = normaliseMatchText(target.original_description)
+    for (const candidate of candidates) {
+      if (normaliseMatchText(candidate.original_description) === descriptor)
+        this.database
+          .prepare('DELETE FROM ai_descriptor_cache WHERE cache_key = ?')
+          .run(candidate.cache_key)
+    }
   }
 
   addSource(suggestionId: string, input: { title: string; url: string }): void {
