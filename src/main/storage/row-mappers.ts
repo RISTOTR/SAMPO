@@ -16,6 +16,7 @@ type ImportBatchRow = {
   source_kind: ImportBatch['sourceKind']
   source_file_name: string
   file_sha256: string
+  statement_transaction_count: number | null
   statement_period_start: string | null
   statement_period_end: string | null
   status: ImportBatch['status']
@@ -73,6 +74,7 @@ export function mapImportBatch(row: ImportBatchRow): ImportBatch {
     sourceKind: row.source_kind,
     sourceFileName: row.source_file_name,
     fileSha256: row.file_sha256,
+    statementTransactionCount: row.statement_transaction_count ?? undefined,
     statementPeriodStart: row.statement_period_start ?? undefined,
     statementPeriodEnd: row.statement_period_end ?? undefined,
     status: row.status,

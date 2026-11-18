@@ -1,3 +1,4 @@
+import type { TapioExportResult } from './dtos'
 import type { ReviewListInputDto, ReviewPageDto, ReviewAcceptInputDto } from './dtos'
 import type {
   AccountSummaryDto,
@@ -87,6 +88,7 @@ export type SampoApi = {
     rollback: (importBatchId: string) => Promise<ApiResult<ImportBatchSummaryDto>>
   }
   transactions: {
+    exportForTapio: (input: { transactionIds: string[] }) => Promise<ApiResult<TapioExportResult>>
     list: (query: TransactionListQueryDto) => Promise<ApiResult<TransactionPageDto>>
   }
   dashboard: {

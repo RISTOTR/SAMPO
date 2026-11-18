@@ -125,7 +125,7 @@ Supported Phase 5 account/source combinations are:
 
 ```text
 current account     -> EVO account PDF or account Excel
-credit-card account -> EVO Visa XLS
+credit-card account -> EVO Visa XLS or Bankinter Visa PDF
 ```
 
 Imports remain all-or-nothing. Preview and inspection do not write to SQLite. Commit revalidates source compatibility and file hash, then uses the existing atomic prepared-import service. Import history supports rollback for unreconciled committed batches and communicates active reconciliation blocking.
@@ -249,3 +249,7 @@ Resolution is field-level: confirmed fields, learned exact description/approved 
 Migration 12 adds classification-only rejection records and an AI descriptor cache. Rejection suppresses the rejected local field/value, leaving the transaction unclassified for editing; confirmed fields are never hidden. AI history is retained, with inactive proposals superseded or omitted. Fully resolved confirmations survive restart and teach subsequent identical descriptors locally.
 
 AI runs skip local proposals and conflicts, group unresolved normalized descriptors by account/type, and batch unique inputs. The persistent cache key includes descriptor/context, location/web settings, models, and category choices; changed context or rejection invalidates reuse. Cached results remain drafts and omit confirmed fields when reused. Development-only counters report considered transactions/descriptors, skipped local/manual items, cached rows, unique AI classifications, and actual web requests without descriptions or identifiers. No paid calls are required by tests.
+
+### Bankinter Visa PDF import
+
+`evo-visa-pdf` is a separate main-process adapter over shared positioned PDF extraction. It validates complete page numbering, the observed EUR charges/credits table and exact column totals before producing the existing normalized transaction model. No OCR or external service is used. Migrations 13–14 add the `evo_visa_pdf` batch source and optional original statement movement count, preserving existing batch IDs and foreign keys. Reconciliation accepts complete PDF batches; a PDF batch reduced by deduplication is explicitly blocked from settlement matching. XLS parsing and the cross-format transaction fingerprint are unchanged. Preview retains the original parsed import for commit-time deduplication, so a genuine repeated purchase is not removed by filtering the already-reduced preview a second time.

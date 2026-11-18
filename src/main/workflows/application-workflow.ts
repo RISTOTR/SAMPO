@@ -1,3 +1,5 @@
+import { exportSelectedForTapio } from './tapio-export'
+import type { TapioExportResult } from '../../shared/dtos'
 import { ReviewService } from '../categorisation/review-service'
 import type { Database } from 'better-sqlite3'
 import type { BrowserWindow } from 'electron'
@@ -256,6 +258,10 @@ export class ApplicationWorkflow {
   rollbackImportBatch(importBatchId: string): ImportBatchSummaryDto {
     const rolledBack = this.imports.rollbackCommittedBatch(importBatchId)
     return importBatchSummaryDtoSchema.parse(this.importBatchSummary(rolledBack))
+  }
+
+  exportTransactionsForTapio(input: unknown, window?: BrowserWindow): Promise<TapioExportResult> {
+    return exportSelectedForTapio(this.database, input, window)
   }
 
   listTransactions(input: TransactionListQueryDto): TransactionPageDto {

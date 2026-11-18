@@ -23,6 +23,7 @@ const sampo: SampoApi = {
     rollback: (importBatchId) => ipcRenderer.invoke(IPC_CHANNELS.importsRollback, importBatchId)
   },
   transactions: {
+    exportForTapio: (input) => ipcRenderer.invoke(IPC_CHANNELS.transactionsExportForTapio, input),
     list: (query) => ipcRenderer.invoke(IPC_CHANNELS.transactionsList, query)
   },
   dashboard: {

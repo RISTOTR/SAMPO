@@ -152,3 +152,16 @@ Visa importer tests generate temporary BIFF `.xls` workbooks from synthetic rows
 - Accepting an AI suggestion is explicit and stores user-reviewed enrichment with source `ai`.
 - AI suggestion acceptance is field-aware: accepting only merchant or only category confirms that field and leaves any other differing suggested field pending until reviewed. Suggestions that already match the current classification do not produce actionable review cards.
 - AI failures must not roll back or invalidate a valid financial import.
+
+## Bankinter Visa PDF statements
+
+- The portrait, text-based charges/credits statement layout is supported alongside Visa XLS.
+- The adapter requires repeated date/card/concept/EUR charge/EUR credit headers, complete `N de M` page numbering, one card identifier, and a final `SUMA TOTAL` row.
+- Purchases in the charge column become negative integer cents; credits become positive refunds. Each column's sum must match its printed total exactly before import.
+- Wrapped concepts are joined only within the description column. Payment, interest and other summaries below the final total are excluded. Card identifiers are checked in memory and are not stored as transaction references.
+- Invalid or ambiguous rows, signed magnitudes, missing pages/totals, multiple cards, pending sections, other currencies and unsupported layouts block the whole import. Scanned/encrypted PDFs are not supported.
+- The source is stored as `evo_visa_pdf` and requires a credit-card account. Existing XLS support is unchanged.
+- Cross-format deduplication uses the existing exact account/date/normalized-description/signed-cents/currency fingerprint and occurrence counts. Different bank descriptions are not fuzzy-matched.
+- The original statement movement count survives preview deduplication. A PDF batch missing any original movements cannot be reconciled, even if its remaining net total happens to match a settlement. Complete PDF batches use the existing exact signed-cent reconciliation rules.
+
+- Visa statements may contain a separately totaled commission section and a trailing “Detalle de importes recobrados a cierre del mes” repayment appendix. Each movement section must balance independently. Blank commission amounts contribute zero and are not imported; nonzero commissions are imported. Repayment appendix entries are excluded. Unknown appendix pages still block import.

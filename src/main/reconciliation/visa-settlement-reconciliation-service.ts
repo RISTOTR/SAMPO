@@ -64,6 +64,7 @@ export class VisaSettlementReconciliationService {
 
     const candidates = this.importBatches
       .listCommittedBySourceKind('evo_visa_xls')
+      .concat(this.importBatches.listCommittedBySourceKind('evo_visa_pdf'))
       .map((batch) => this.buildCandidate(settlementContext, batch))
       .filter((candidate): candidate is CandidateWithSort => Boolean(candidate))
       .sort(compareCandidates)
@@ -194,7 +195,8 @@ export class VisaSettlementReconciliationService {
 
     if (
       visaContext.batch.status !== 'committed' ||
-      visaContext.batch.sourceKind !== 'evo_visa_xls' ||
+      visaContext.warnings.some((item) => item.code === 'visa_batch_incomplete') ||
+      !['evo_visa_xls', 'evo_visa_pdf'].includes(visaContext.batch.sourceKind) ||
       visaContext.account.kind !== 'credit_card' ||
       visaContext.completedMovements.length === 0 ||
       visaContext.alreadyLinkedDestinationIds.size > 0
@@ -321,7 +323,7 @@ export class VisaSettlementReconciliationService {
       )
     }
 
-    if (batch.sourceKind !== 'evo_visa_xls') {
+    if (!['evo_visa_xls', 'evo_visa_pdf'].includes(batch.sourceKind)) {
       warnings.push(
         warning('visa_batch_wrong_source', 'Visa import batch has the wrong source.', true)
       )
@@ -336,6 +338,21 @@ export class VisaSettlementReconciliationService {
     if (account.currency !== settlementAccount.currency) {
       warnings.push(
         warning('currency_mismatch', 'Settlement and Visa account currencies differ.', true)
+      )
+    }
+
+    if (
+      batch.sourceKind === 'evo_visa_pdf' &&
+      (batch.statementTransactionCount === undefined ||
+        batch.statementTransactionCount !== completedMovements.length ||
+        pendingCount > 0)
+    ) {
+      warnings.push(
+        warning(
+          'visa_batch_incomplete',
+          'The PDF batch does not contain every movement from the statement; partial batches cannot be reconciled.',
+          true
+        )
       )
     }
 

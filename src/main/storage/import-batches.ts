@@ -34,6 +34,7 @@ export class ImportBatchRepository {
             source_kind,
             source_file_name,
             file_sha256,
+            statement_transaction_count,
             statement_period_start,
             statement_period_end,
             status,
@@ -46,6 +47,7 @@ export class ImportBatchRepository {
             @sourceKind,
             @sourceFileName,
             @fileSha256,
+            @statementTransactionCount,
             @statementPeriodStart,
             @statementPeriodEnd,
             'pending',
@@ -60,6 +62,7 @@ export class ImportBatchRepository {
         sourceKind: batch.sourceKind,
         sourceFileName: batch.sourceFileName,
         fileSha256: batch.fileSha256,
+        statementTransactionCount: batch.statementTransactionCount ?? null,
         statementPeriodStart: batch.statementPeriodStart ?? null,
         statementPeriodEnd: batch.statementPeriodEnd ?? null,
         createdAt: now

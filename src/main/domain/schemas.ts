@@ -3,6 +3,7 @@ import { z } from 'zod'
 export const accountKinds = ['current', 'credit_card', 'cash', 'other'] as const
 export const importSourceKinds = [
   'evo_visa_xls',
+  'evo_visa_pdf',
   'evo_account_pdf',
   'evo_account_excel',
   'unknown'
@@ -52,6 +53,7 @@ export const reconciliationWarningCodes = [
   'visa_batch_not_found',
   'visa_batch_not_committed',
   'visa_batch_wrong_source',
+  'visa_batch_incomplete',
   'visa_account_wrong_kind',
   'currency_mismatch',
   'no_completed_visa_transactions',
@@ -107,6 +109,7 @@ export const importBatchSchema = z.object({
   sourceKind: z.enum(importSourceKinds),
   sourceFileName: nonBlankStringSchema,
   fileSha256: fileSha256Schema,
+  statementTransactionCount: z.number().int().min(1).optional(),
   statementPeriodStart: isoDateSchema.optional(),
   statementPeriodEnd: isoDateSchema.optional(),
   status: z.enum(importStatuses),
@@ -121,6 +124,7 @@ export const newImportBatchSchema = z.object({
   sourceKind: z.enum(importSourceKinds),
   sourceFileName: nonBlankStringSchema,
   fileSha256: fileSha256Schema,
+  statementTransactionCount: z.number().int().min(1).optional(),
   statementPeriodStart: isoDateSchema.optional(),
   statementPeriodEnd: isoDateSchema.optional()
 })
@@ -192,6 +196,7 @@ export const preparedImportSchema = z.object({
   sourceKind: z.enum(importSourceKinds),
   sourceFileName: nonBlankStringSchema,
   fileSha256: fileSha256Schema,
+  statementTransactionCount: z.number().int().min(1).optional(),
   statementPeriodStart: isoDateSchema.optional(),
   statementPeriodEnd: isoDateSchema.optional(),
   transactions: z.array(newTransactionSchema)

@@ -20,6 +20,7 @@ import {
 import {
   ActiveReconciliationError,
   DuplicateImportError,
+  ImportParseError,
   EntityNotFoundError,
   ReconciliationError,
   SampoError,
@@ -65,6 +66,14 @@ export function toOperationError(error: unknown): OperationErrorDto {
 
   if (error instanceof UnsupportedImportFormatError) {
     return { code: 'unsupported_file', message: 'The selected file is not supported.' }
+  }
+
+  if (error instanceof ImportParseError) {
+    return {
+      code: 'unsupported_file',
+      message:
+        'The statement could not be validated. Its layout, movement amounts or totals are unsupported or inconsistent. Nothing was imported.'
+    }
   }
 
   if (error instanceof DuplicateImportError) {

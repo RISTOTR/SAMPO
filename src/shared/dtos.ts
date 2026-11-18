@@ -4,6 +4,7 @@ export const accountKindDtoSchema = z.enum(['current', 'credit_card', 'cash', 'o
 export const creatableAccountKindDtoSchema = z.enum(['current', 'credit_card'])
 export const importSourceKindDtoSchema = z.enum([
   'evo_visa_xls',
+  'evo_visa_pdf',
   'evo_account_pdf',
   'evo_account_excel',
   'unknown'
@@ -1025,3 +1026,8 @@ export type ReviewItemDto = z.infer<typeof reviewItemDtoSchema>
 export type ReviewPageDto = z.infer<typeof reviewPageDtoSchema>
 export type ReviewListInputDto = z.input<typeof reviewListInputDtoSchema>
 export type ReviewAcceptInputDto = z.input<typeof reviewAcceptInputDtoSchema>
+
+export const tapioExportInputSchema = z.object({
+  transactionIds: z.array(uuidDtoSchema).min(1).max(500)
+})
+export type TapioExportResult = { exportedCount: number; skippedCount: number; cancelled: boolean }

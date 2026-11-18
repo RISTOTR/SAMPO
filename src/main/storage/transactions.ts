@@ -469,7 +469,15 @@ function buildTransactionListSql(query: TransactionListQuery): {
   }
 
   if (query.categoryId) {
-    where.push('classification.category_id = @categoryId')
+    where.push(`classification.category_id IN (
+      WITH RECURSIVE selected_categories(id) AS (
+        SELECT id FROM categories WHERE id = @categoryId
+        UNION
+        SELECT child.id FROM categories child
+        JOIN selected_categories parent ON child.parent_id = parent.id
+      )
+      SELECT id FROM selected_categories
+    )`)
     params['categoryId'] = query.categoryId
   }
 

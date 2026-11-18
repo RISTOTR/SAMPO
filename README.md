@@ -1,6 +1,6 @@
 # Sampo
 
-Sampo is a local-first macOS desktop application for analysing personal finances. It currently has a secure Electron/Vue shell, the local persistence/domain foundation, tested EVO/Bankinter Visa XLS and account PDF importers, exact Visa settlement reconciliation, a usable import/reconciliation UI workflow, deterministic transaction categorisation with merchant aliases and user-approved rules, optional AI categorisation suggestions, deterministic recurring-payment candidates, manual recurring-series creation, and a deterministic dashboard for spending, income, category, merchant, recurring, trend, and data-quality analysis. Forecasting and broader AI analysis remain planned.
+Sampo is a local-first macOS desktop application for analysing personal finances. It currently has a secure Electron/Vue shell, the local persistence/domain foundation, tested EVO/Bankinter Visa XLS, Visa PDF and account PDF importers, exact Visa settlement reconciliation, a usable import/reconciliation UI workflow, deterministic transaction categorisation with merchant aliases and user-approved rules, optional AI categorisation suggestions, deterministic recurring-payment candidates, manual recurring-series creation, and a deterministic dashboard for spending, income, category, merchant, recurring, trend, and data-quality analysis. Forecasting and broader AI analysis remain planned.
 
 ## Stack
 
@@ -91,3 +91,7 @@ AI categorisation is optional and disabled by default. When enabled, Sampo sends
 - [Data model](docs/DATA_MODEL.md)
 - [Import rules](docs/IMPORT_RULES.md)
 - [Roadmap](docs/ROADMAP.md)
+
+### Selected export for Tapio
+
+The Transactions category filter includes subcategories (for example, Travel also includes Travel / Flights). In Transactions, check the flight/train/bus purchases belonging to a Finland trip, then use **Export N selected for Tapio**. The local CSV preserves stored dates, descriptions, merchant/category/account names, signed amounts, currency and transaction IDs, with `source_system=SAMPO`. HSL, hotels/accommodation and unrecognized transport are skipped, with counts shown after export. Travel alone does not identify a transport mode. Export never changes classifications. This CSV is the Tapio evidence interchange format, not Tapio’s existing bank-statement CSV schema.

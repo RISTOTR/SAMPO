@@ -32,6 +32,12 @@ export function registerApplicationIpcHandlers(
   handle(IPC_CHANNELS.importsRollback, isTrustedSender, (importBatchId) =>
     workflow.rollbackImportBatch(z.string().uuid().parse(importBatchId))
   )
+  handle(IPC_CHANNELS.transactionsExportForTapio, isTrustedSender, (input, event) =>
+    workflow.exportTransactionsForTapio(
+      input,
+      BrowserWindow.fromWebContents(event.sender) ?? undefined
+    )
+  )
   handle(IPC_CHANNELS.transactionsList, isTrustedSender, (query) =>
     workflow.listTransactions(query as never)
   )

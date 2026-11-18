@@ -111,6 +111,8 @@ describe('financial core migrations', () => {
 
     phase6.connection.prepare('DROP TABLE ai_descriptor_cache').run()
     phase6.connection.prepare('DROP TABLE classification_review_rejections').run()
+    phase6.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(14)
+    phase6.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(13)
     phase6.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(12)
     phase6.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(11)
     phase6.connection.prepare('DELETE FROM schema_migrations WHERE version = ?').run(10)
@@ -1272,6 +1274,57 @@ describe('import service and transaction repository', () => {
     expect(() => service.rollbackCommittedBatch(result.batch.id)).toThrow(
       InvalidImportStatusTransitionError
     )
+  })
+
+  it('includes child categories in transaction filtering and selected IDs', () => {
+    const categories = new CategoryRepository(database.connection)
+    const root = categories.create({ name: 'Synthetic trip' })
+    const flight = categories.create({ name: 'Synthetic flights', parentId: root.id })
+    const other = categories.create({ name: 'Synthetic unrelated' })
+    const imported = service.commitPreparedImport(
+      makePreparedImport(
+        account.id,
+        [0, 1, 2, 3].map((sourceRowIndex) =>
+          makeTransaction(account.id, { sourceRowIndex, amountCents: -100 - sourceRowIndex })
+        )
+      )
+    )
+    const classifications = new TransactionClassificationRepository(database.connection)
+    for (const [index, categoryId] of [root.id, flight.id, other.id].entries()) {
+      classifications.save({
+        transactionId: imported.transactions[index]!.id,
+        categoryId,
+        usageType: 'unspecified',
+        costBehaviour: 'unspecified',
+        necessity: 'unspecified',
+        classificationSource: 'manual',
+        classificationStatus: 'confirmed'
+      })
+    }
+    const query = {
+      categoryId: root.id,
+      sortBy: 'amount' as const,
+      sortDirection: 'asc' as const,
+      limit: 50,
+      offset: 0
+    }
+    const expected = imported.transactions
+      .slice(0, 2)
+      .map((row) => row.id)
+      .sort()
+    expect(
+      transactions
+        .listPage(query)
+        .items.map((row) => row.id)
+        .sort()
+    ).toEqual(expected)
+    expect(transactions.listPage(query).total).toBe(2)
+    expect(transactions.listFilteredIds(query).sort()).toEqual(expected)
+    expect(transactions.listPage({ ...query, limit: 1, offset: 1 }).items).toHaveLength(1)
+    expect(
+      transactions.listPage({ ...query, categoryId: flight.id }).items.map((row) => row.id)
+    ).toEqual([imported.transactions[1]!.id])
+    expect(transactions.listPage({ ...query, search: 'no match' }).total).toBe(0)
   })
 
   it('lists transactions with focused filters, sorting, pagination, and enforced limits', () => {

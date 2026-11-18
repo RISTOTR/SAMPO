@@ -75,6 +75,7 @@ export class ImportService {
         sourceKind: preparedImport.sourceKind,
         sourceFileName: preparedImport.sourceFileName,
         fileSha256: preparedImport.fileSha256,
+        statementTransactionCount: preparedImport.statementTransactionCount,
         statementPeriodStart: preparedImport.statementPeriodStart,
         statementPeriodEnd: preparedImport.statementPeriodEnd
       })

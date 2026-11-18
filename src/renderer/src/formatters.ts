@@ -27,6 +27,8 @@ export function formatDateTime(value?: string): string {
 }
 
 export function sourceLabel(value: string): string {
+  if (value === 'evo_visa_pdf') return 'Visa PDF'
+
   if (value === 'evo_visa_xls') {
     return 'Visa XLS'
   }

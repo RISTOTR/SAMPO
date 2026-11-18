@@ -1,3 +1,4 @@
+import { EvoVisaPdfImporter } from '../importers/evo-visa-pdf/evo-visa-pdf-importer'
 import type { Database } from 'better-sqlite3'
 import { randomUUID } from 'crypto'
 import { existsSync } from 'fs'
@@ -38,6 +39,7 @@ type InternalPreviewSession = {
   importer: TransactionImporter
   inspection: ImportInspection
   preparedImport: PreparedImport
+  originalPreparedImport: PreparedImport
   fileSha256: string
   createdAt: string
   expiresAt: string
@@ -58,6 +60,7 @@ export class ImportPreviewWorkflow {
     importers: TransactionImporter[] = [
       new EvoAccountExcelImporter(),
       new EvoVisaXlsImporter(),
+      new EvoVisaPdfImporter(),
       new EvoAccountPdfImporter()
     ]
   ) {
@@ -111,6 +114,7 @@ export class ImportPreviewWorkflow {
       importer,
       inspection: inspectionWithDuplicates,
       preparedImport,
+      originalPreparedImport,
       fileSha256,
       createdAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + sessionTtlMs).toISOString()
@@ -148,7 +152,7 @@ export class ImportPreviewWorkflow {
       throw new SourceFileChangedError()
     }
 
-    const result = this.importService.commitPreparedImport(session.preparedImport)
+    const result = this.importService.commitPreparedImport(session.originalPreparedImport)
     this.sessions.delete(session.id)
 
     return committedImportDtoSchema.parse({
@@ -235,7 +239,10 @@ export function assertAccountSourceCompatibility(
     return
   }
 
-  if (account.kind === 'credit_card' && sourceKind === 'evo_visa_xls') {
+  if (
+    account.kind === 'credit_card' &&
+    (sourceKind === 'evo_visa_xls' || sourceKind === 'evo_visa_pdf')
+  ) {
     return
   }
 

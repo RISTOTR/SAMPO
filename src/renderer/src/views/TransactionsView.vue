@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TapioExportButton from '../components/TapioExportButton.vue'
 import ReviewSuggestions from '../components/ReviewSuggestions.vue'
 import TransactionsFeedback from '../components/TransactionsFeedback.vue'
 import { captureTransactionPosition, scrollPanelIntoContent } from '../presentation/content-scroll'
@@ -624,7 +625,7 @@ function logTransactionsDiagnostic(label: string, metadata: Record<string, unkno
           </select>
         </div>
         <div class="form-field">
-          <label for="filter-category">Category</label>
+          <label for="filter-category">Category (includes subcategories)</label>
           <select id="filter-category" v-model="filters.categoryId">
             <option value="">All categories</option>
             <option
@@ -632,7 +633,11 @@ function logTransactionsDiagnostic(label: string, metadata: Record<string, unkno
               :key="category.id"
               :value="category.id"
             >
-              {{ category.name }}
+              {{
+                category.parentId
+                  ? `${classification.categories.find((parent) => parent.id === category.parentId)?.name ?? ''} / `
+                  : ''
+              }}{{ category.name }}
             </option>
           </select>
         </div>
@@ -779,6 +784,10 @@ function logTransactionsDiagnostic(label: string, metadata: Record<string, unkno
           {{ ai.submitting ? 'Classifying...' : 'Classify' }}
         </button>
         <span>{{ selectedTransactionIds.length }} selected</span>
+        <TapioExportButton
+          :transaction-ids="selectedTransactionIds"
+          :disabled="transactions.loading"
+        />
         <TransactionColumns />
       </div>
       <p v-if="transactions.page.items.length === 0">No transactions match the selected filters.</p>
