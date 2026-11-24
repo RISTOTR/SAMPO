@@ -50,7 +50,7 @@ Migrations are explicit, ordered, numeric, and forward-only. Applied migrations 
 
 Import adapters are separate modules from the normalised transaction model. Each adapter parses one source format, validates extracted data, reports confidence and errors, and produces a prepared import for the Phase 1 import service.
 
-The prepared-import service validates input, rejects duplicate committed file hashes for the same account, filters overlapping rows by account-scoped stable-fact fingerprint occurrence counts, creates a pending batch, inserts all new transactions in one SQLite transaction, and commits the batch atomically. Startup migrations repair historical committed duplicate fingerprints by keeping the earliest committed occurrence and recalculating import-batch transaction counts. Failed imports leave no partial transactions.
+The prepared-import service validates input, rejects duplicate committed file hashes for the same account, filters overlapping rows by account-scoped stable-fact fingerprint occurrence counts, creates a pending batch, inserts all new transactions in one SQLite transaction, and commits the batch atomically. Startup migrations repair historical committed duplicate fingerprints by keeping the earliest committed occurrence and recalculating import-batch transaction counts. Failed imports leave no partial transactions. When an exact pending movement later appears completed, its existing ID and classification enrichment are preserved, but it moves into the completing import batch with the new source row index. Both batch counts are updated atomically. Preview includes these completions as importable movements; they are not skipped duplicates. This lets the full completed statement reconcile without adding a duplicate transaction or altering links for earlier settled movements. Rolling back the completed batch removes its movements under the existing reconciliation protections.
 
 Rollback is a deliberate operation for committed batches. It deletes imported transactions and related transaction links in one transaction, preserves the import-batch record, sets status to `rolled_back`, records `rolled_back_at`, and resets `transaction_count` to zero.
 
@@ -174,7 +174,7 @@ Repeated scans are idempotent by stable series key and extend existing confirmed
 
 Dashboard analytics are deterministic main-process/application-layer code exposed through `window.sampo.dashboard`. The renderer does not read SQLite or aggregate raw transactions. `DashboardAnalyticsService` returns one cohesive dashboard DTO containing summary metrics, category spending, merchant spending, monthly trend, biggest category changes, recurring spending, and data-quality indicators.
 
-Dashboard calculations read committed, non-pending transactions only. Spending is reported as a positive value: expenses increase spending, refunds reduce spending, and reconciled card-settlement transactions are excluded so imported Visa purchases and their bank-account settlement are not double-counted. Unreconciled card settlements remain included because Sampo does not yet have authoritative transfer detection for them. Income uses `income` transactions only; refunds are not presented as ordinary income. Net cash flow is derived from income minus dashboard spending under the same double-counting rules.
+Dashboard calculations read committed, non-pending transactions only. Spending is reported as a positive value: expenses increase spending, refunds reduce spending, and reconciled card-settlement transactions are excluded so imported Visa purchases and their bank-account settlement are not double-counted. Unreconciled card settlements remain included because Sampo does not yet have authoritative transfer detection for them. Income uses confirmed assignments to the system Income category (stable `income` key) or its subcategories, rather than imported transaction types. Confirmed `Oma tilisiirto` categories (case-insensitive, trimmed name, including children) take precedence even beneath Income: their signed monthly net appears separately as `ownTransferCents` and is excluded from spending and income. Unclassified or unconfirmed incoming movements do not count as income. Card settlements retain their link-based accounting regardless of category. Imported facts are never rewritten by reporting. Net cash flow is derived from income minus dashboard spending under the same double-counting rules.
 
 The default period is the latest imported month with committed data, not necessarily the current calendar month. Month views compare with the immediately previous month. Multi-month presets compare with the previous equally long period. Custom ranges compare with the immediately preceding date range of the same length. Percentage comparisons are omitted when the previous value is zero.
 
@@ -185,7 +185,7 @@ Dashboard drill-downs route to the existing Transactions page with date, categor
 ### Dashboard presentation and review
 
 `DashboardView` arranges summary values, attention actions, and compact analysis
-panels. `MonthlyTrend` renders supplied monthly spending/income aggregates as SVG
+panels. `MonthlyTrend` renders supplied monthly spending/income/own-transfer aggregates as SVG
 bars with a shared zero-inclusive scale, keyboard drill-downs, and a monthly-value
 disclosure. Missing calendar months are labelled as having no imported activity.
 `CategorySpending` renders sorted CSS bars, retains Unclassified in the collapsed
@@ -253,3 +253,27 @@ AI runs skip local proposals and conflicts, group unresolved normalized descript
 ### Bankinter Visa PDF import
 
 `evo-visa-pdf` is a separate main-process adapter over shared positioned PDF extraction. It validates complete page numbering, the observed EUR charges/credits table and exact column totals before producing the existing normalized transaction model. No OCR or external service is used. Migrations 13–14 add the `evo_visa_pdf` batch source and optional original statement movement count, preserving existing batch IDs and foreign keys. Reconciliation accepts complete PDF batches; a PDF batch reduced by deduplication is explicitly blocked from settlement matching. XLS parsing and the cross-format transaction fingerprint are unchanged. Preview retains the original parsed import for commit-time deduplication, so a genuine repeated purchase is not removed by filtering the already-reduced preview a second time.
+
+## Reconciliation review diagnostics
+
+The Imports workflow requests candidate discovery with `includeBlocked: true` so committed
+Visa batches that are incomplete, pending-only, already linked, or otherwise ineligible are
+visible for diagnosis. Default service discovery still omits incomplete, empty, and already
+linked batches. Candidates carry the same blocking reasons as preview; unblocked candidates
+rank first. Commit revalidates every condition and still requires an exact signed match.
+
+The UI shows preview warning messages and recovery guidance rather than warning codes or an
+unexplained disabled button. Unlinked settlements are labelled “Awaiting matching Visa statement”;
+classification confirmation does not resolve reconciliation. Candidate/preview requests clear
+stale data, catch errors, and ignore responses belonging to a previous selection. No existing
+settlements are automatically confirmed or changed by these diagnostics.
+
+## Transaction editor loading
+
+The classification editor fetches its selected transaction through the narrow
+`transactions.get(transactionId)` preload API, with UUID validation in main and a
+validated transaction DTO response. It retains that snapshot independently of the
+paginated list and AI/review suggestions. “Use transaction description” therefore
+works for off-page review items and after list refreshes, including transactions
+with no suggestion. Failed fetches do not open an empty editor; obsolete responses
+are ignored after switching or closing the editor.

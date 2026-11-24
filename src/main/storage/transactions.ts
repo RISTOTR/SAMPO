@@ -372,6 +372,8 @@ export class TransactionRepository {
   promotePendingToCompleted(
     id: string,
     input: {
+      importBatchId: string
+      sourceRowIndex: number
       transactionType: Transaction['transactionType']
       reviewStatus: Transaction['reviewStatus']
     }
@@ -386,7 +388,9 @@ export class TransactionRepository {
       .prepare(
         `
           UPDATE transactions
-          SET transaction_type = @transactionType,
+          SET import_batch_id = @importBatchId,
+              source_row_index = @sourceRowIndex,
+              transaction_type = @transactionType,
               is_pending = 0,
               review_status = @reviewStatus,
               updated_at = @updatedAt
@@ -395,6 +399,8 @@ export class TransactionRepository {
       )
       .run({
         id,
+        importBatchId: input.importBatchId,
+        sourceRowIndex: input.sourceRowIndex,
         transactionType: input.transactionType,
         reviewStatus: input.reviewStatus,
         updatedAt: new Date().toISOString()

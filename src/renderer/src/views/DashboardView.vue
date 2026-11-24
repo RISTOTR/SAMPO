@@ -25,7 +25,7 @@ const metrics = computed(() =>
   data.value
     ? [
         { label: 'Spending', metric: data.value.totalSpending, context: 'Expenses less refunds' },
-        { label: 'Income', metric: data.value.totalIncome, context: 'Income received' },
+        { label: 'Income', metric: data.value.totalIncome, context: 'Confirmed Income categories' },
         { label: 'Net cash flow', metric: data.value.netCashFlow, context: 'Income less spending' },
         {
           label: 'Recurring spend',

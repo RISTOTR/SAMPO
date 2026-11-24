@@ -122,6 +122,7 @@ describe('Dashboard presentation', () => {
     const fixture = dashboardFixture()
     fixture.monthlyTrend[0]!.spendingCents = -1234
     fixture.monthlyTrend[0]!.incomeCents = 0
+    fixture.monthlyTrend[0]!.ownTransferCents = -50000
     const openMonth = vi.fn()
     const root = node()
     const app = renderer.createApp(MonthlyTrend, {
@@ -135,6 +136,10 @@ describe('Dashboard presentation', () => {
     expect(text(root)).toContain(formatCents(200000))
     const zero = nodes(root).find((n) => n.props.class === 'income-bar')!
     expect(zero.props.height).toBe(0)
+    const transfer = nodes(root).find((n) => n.props.class === 'transfer-bar')!
+    expect(transfer.props.height).toBeGreaterThan(0)
+    expect(text(root)).toContain(formatCents(-50000))
+    expect(nodes(root).filter((n) => n.props.class === 'transfer-bar')).toHaveLength(3)
     const button = nodes(root).find((n) => n.props.role === 'button')!
     ;(button.props.onKeydown as ((event: unknown) => void)[])[0]!({
       key: 'Enter',
@@ -179,7 +184,7 @@ describe('Dashboard presentation', () => {
     })
     app.mount(root)
     unmount = () => app.unmount()
-    expect(text(root)).toContain('No spending or income in this period')
+    expect(text(root)).toContain('No spending, income, or own transfers in this period')
     expect(nodes(root).some((n) => n.tag === 'svg')).toBe(false)
   })
   it('uses theme tokens and responsive grids without raw transaction aggregation', () => {

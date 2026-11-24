@@ -43,6 +43,7 @@ type MerchantRow = {
 }
 
 type TrendRow = {
+  ownTransferCents: number | null
   month: string
   spendingCents: number | null
   incomeCents: number | null
@@ -50,8 +51,31 @@ type TrendRow = {
   recurringSpendCents: number | null
 }
 
+// Classification enrichment controls reporting without rewriting imported transaction facts.
+const ownTransferPredicate = `EXISTS (
+  SELECT 1 FROM transaction_classifications report_classification
+  JOIN categories report_category ON report_category.id = report_classification.category_id
+  LEFT JOIN categories report_parent ON report_parent.id = report_category.parent_id
+  WHERE report_classification.transaction_id = transactions.id
+    AND transactions.transaction_type != 'card_settlement'
+    AND report_classification.classification_status = 'confirmed'
+    AND (lower(trim(report_category.name)) = 'oma tilisiirto'
+      OR lower(trim(report_parent.name)) = 'oma tilisiirto')
+)`
+
+const incomeCategoryPredicate = `EXISTS (
+  SELECT 1 FROM transaction_classifications report_classification
+  JOIN categories report_category ON report_category.id = report_classification.category_id
+  LEFT JOIN categories report_parent ON report_parent.id = report_category.parent_id
+  WHERE report_classification.transaction_id = transactions.id
+    AND transactions.transaction_type != 'card_settlement'
+    AND report_classification.classification_status = 'confirmed'
+    AND (report_category.key = 'income' OR report_parent.key = 'income')
+) AND NOT (${ownTransferPredicate})`
+
 const spendExpression = `
   CASE
+    WHEN (${ownTransferPredicate}) OR (${incomeCategoryPredicate}) THEN 0
     WHEN transactions.transaction_type = 'expense' THEN -transactions.amount_cents
     WHEN transactions.transaction_type = 'refund' THEN -transactions.amount_cents
     WHEN transactions.transaction_type = 'card_settlement'
@@ -67,26 +91,15 @@ const spendExpression = `
 
 const incomeExpression = `
   CASE
-    WHEN transactions.transaction_type = 'income' THEN transactions.amount_cents
+    WHEN (${incomeCategoryPredicate}) THEN transactions.amount_cents
     ELSE 0
   END
 `
 
-const cashFlowExpression = `
-  CASE
-    WHEN transactions.transaction_type = 'income' THEN transactions.amount_cents
-    WHEN transactions.transaction_type = 'expense' THEN transactions.amount_cents
-    WHEN transactions.transaction_type = 'refund' THEN transactions.amount_cents
-    WHEN transactions.transaction_type = 'card_settlement'
-      AND NOT EXISTS (
-        SELECT 1 FROM transaction_links settlement_links
-        WHERE settlement_links.from_transaction_id = transactions.id
-          AND settlement_links.kind = 'card_settlement'
-      )
-      THEN transactions.amount_cents
-    ELSE 0
-  END
-`
+const ownTransferExpression = `CASE WHEN ${ownTransferPredicate} THEN transactions.amount_cents ELSE 0 END`
+
+// Own transfers and unclassified incoming movements are not earned income.
+const cashFlowExpression = `(${incomeExpression}) - (${spendExpression})`
 
 export class DashboardAnalyticsService {
   constructor(private readonly database: Database) {}
@@ -381,6 +394,7 @@ export class DashboardAnalyticsService {
           `
           SELECT
             substr(transactions.transaction_date, 1, 7) AS month,
+            SUM(${ownTransferExpression}) AS ownTransferCents,
             SUM(${spendExpression}) AS spendingCents,
             SUM(${incomeExpression}) AS incomeCents,
             SUM(${cashFlowExpression}) AS netCashFlowCents,
@@ -407,6 +421,7 @@ export class DashboardAnalyticsService {
         .all({ dateFrom, dateTo }) as TrendRow[]
     ).map((row) => ({
       month: row.month,
+      ownTransferCents: row.ownTransferCents ?? 0,
       spendingCents: row.spendingCents ?? 0,
       incomeCents: row.incomeCents ?? 0,
       netCashFlowCents: row.netCashFlowCents ?? 0,

@@ -15,6 +15,10 @@ export const useReconciliationStore = defineStore('reconciliation', () => {
   const preview = ref<ReconciliationPreviewDto | null>(null)
   const loading = ref(false)
   const submitting = ref(false)
+  const findingCandidates = ref(false)
+  const loadingPreview = ref(false)
+  let candidateRequest = 0
+  let previewRequest = 0
   const error = ref<string | null>(null)
   const message = ref<string | null>(null)
 
@@ -34,21 +38,43 @@ export const useReconciliationStore = defineStore('reconciliation', () => {
   }
 
   async function findCandidates(settlementTransactionId: string): Promise<void> {
+    const request = ++candidateRequest
+    ++previewRequest
     error.value = null
     preview.value = null
-    candidates.value = unwrapResult(
-      await window.sampo.reconciliation.findCandidates(settlementTransactionId)
-    )
+    candidates.value = []
+    findingCandidates.value = true
+    loadingPreview.value = false
+    try {
+      const result = unwrapResult(
+        await window.sampo.reconciliation.findCandidates(settlementTransactionId)
+      )
+      if (request === candidateRequest) candidates.value = result
+    } catch (caught) {
+      if (request === candidateRequest) error.value = errorMessage(caught)
+    } finally {
+      if (request === candidateRequest) findingCandidates.value = false
+    }
   }
 
   async function loadPreview(
     settlementTransactionId: string,
     visaImportBatchId: string
   ): Promise<void> {
+    const request = ++previewRequest
     error.value = null
-    preview.value = unwrapResult(
-      await window.sampo.reconciliation.preview(settlementTransactionId, visaImportBatchId)
-    )
+    preview.value = null
+    loadingPreview.value = true
+    try {
+      const result = unwrapResult(
+        await window.sampo.reconciliation.preview(settlementTransactionId, visaImportBatchId)
+      )
+      if (request === previewRequest) preview.value = result
+    } catch (caught) {
+      if (request === previewRequest) error.value = errorMessage(caught)
+    } finally {
+      if (request === previewRequest) loadingPreview.value = false
+    }
   }
 
   async function commit(
@@ -102,6 +128,8 @@ export const useReconciliationStore = defineStore('reconciliation', () => {
     preview,
     loading,
     submitting,
+    findingCandidates,
+    loadingPreview,
     error,
     message,
     loadSettlements,

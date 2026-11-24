@@ -55,7 +55,10 @@ export class VisaSettlementReconciliationService {
     this.transactions = new TransactionRepository(database)
   }
 
-  findVisaSettlementCandidates(settlementTransactionId: string): ReconciliationCandidate[] {
+  findVisaSettlementCandidates(
+    settlementTransactionId: string,
+    options: { includeBlocked?: boolean } = {}
+  ): ReconciliationCandidate[] {
     const settlementContext = this.getSettlementContext(settlementTransactionId)
 
     if (settlementContext.warnings.some((warning) => warning.blocking)) {
@@ -65,7 +68,9 @@ export class VisaSettlementReconciliationService {
     const candidates = this.importBatches
       .listCommittedBySourceKind('evo_visa_xls')
       .concat(this.importBatches.listCommittedBySourceKind('evo_visa_pdf'))
-      .map((batch) => this.buildCandidate(settlementContext, batch))
+      .map((batch) =>
+        this.buildCandidate(settlementContext, batch, options.includeBlocked ?? false)
+      )
       .filter((candidate): candidate is CandidateWithSort => Boolean(candidate))
       .sort(compareCandidates)
 
@@ -189,17 +194,19 @@ export class VisaSettlementReconciliationService {
 
   private buildCandidate(
     settlementContext: SettlementContext,
-    batch: ImportBatch
+    batch: ImportBatch,
+    includeBlocked: boolean
   ): CandidateWithSort | undefined {
     const visaContext = this.getVisaBatchContext(batch.id, settlementContext.settlementAccount)
 
     if (
-      visaContext.batch.status !== 'committed' ||
-      visaContext.warnings.some((item) => item.code === 'visa_batch_incomplete') ||
-      !['evo_visa_xls', 'evo_visa_pdf'].includes(visaContext.batch.sourceKind) ||
-      visaContext.account.kind !== 'credit_card' ||
-      visaContext.completedMovements.length === 0 ||
-      visaContext.alreadyLinkedDestinationIds.size > 0
+      !includeBlocked &&
+      (visaContext.batch.status !== 'committed' ||
+        visaContext.warnings.some((item) => item.code === 'visa_batch_incomplete') ||
+        !['evo_visa_xls', 'evo_visa_pdf'].includes(visaContext.batch.sourceKind) ||
+        visaContext.account.kind !== 'credit_card' ||
+        visaContext.completedMovements.length === 0 ||
+        visaContext.alreadyLinkedDestinationIds.size > 0)
     ) {
       return undefined
     }
@@ -212,7 +219,10 @@ export class VisaSettlementReconciliationService {
     const dateGapDaysValue = totals.latestDate
       ? dateGapDays(totals.latestDate, settlementContext.settlement.transactionDate)
       : Number.MAX_SAFE_INTEGER
-    const warnings: ReconciliationWarning[] = []
+    const warnings = this.previewVisaSettlementReconciliation(
+      settlementContext.settlement.id,
+      batch.id
+    ).warnings
 
     if (dateGapDaysValue > unusualDateGapDays && dateOrderValid) {
       warnings.push(warning('unusual_date_gap', 'Candidate date gap is unusually large.', false))
@@ -455,6 +465,8 @@ function warning(
 
 function compareCandidates(left: CandidateWithSort, right: CandidateWithSort): number {
   return (
+    Number(left.warnings.some((item) => item.blocking)) -
+      Number(right.warnings.some((item) => item.blocking)) ||
     Number(right.exactAmountMatch) - Number(left.exactAmountMatch) ||
     Number(right.dateOrderValid) - Number(left.dateOrderValid) ||
     left.dateGapDays - right.dateGapDays ||

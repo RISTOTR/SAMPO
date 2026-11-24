@@ -98,6 +98,11 @@ describe('DashboardAnalyticsService', () => {
         kind: 'card_settlement'
       }))
     )
+    classify(
+      account.transactions[0]!.id,
+      utilityMerchant.id,
+      categories.list().find((category) => category.key === 'income')!.id
+    )
     classify(december.transactions[0]!.id, groceryMerchant.id, groceries.id)
     classify(visa.transactions[0]!.id, groceryMerchant.id, groceries.id)
     classify(account.transactions[1]!.id, utilityMerchant.id, utilities.id)
@@ -177,6 +182,55 @@ describe('DashboardAnalyticsService', () => {
     })
     expect(data.dataQuality.needsConfirmationCount).toBeGreaterThan(0)
     expect(data.dataQuality.classifiedSpendingPercent).toBeCloseTo(81.3)
+  })
+
+  it('reports confirmed Income categories separately from signed own transfers and unclassified credits', () => {
+    const income = categories.list().find((category) => category.key === 'income')!
+    const salary = categories.create({ name: 'Synthetic Salary Category', parentId: income.id })
+    const own = categories.create({ name: 'Oma tilisiirto', parentId: income.id })
+    const merchant = merchants.create({ name: 'Synthetic Source' })
+    const rows = commit('category-income', [
+      transaction('2026-01-01', 'Synthetic Salary', 200000, 'income', accountId),
+      transaction('2026-01-02', 'Synthetic Incoming Transfer', 50000, 'income', accountId),
+      transaction('2026-01-03', 'Synthetic Outgoing Transfer', -10000, 'expense', accountId),
+      transaction('2026-01-04', 'Synthetic Unknown Credit', 90000, 'income', accountId),
+      transaction('2026-01-05', 'Synthetic Unconfirmed Credit', 80000, 'income', accountId),
+      transaction('2026-01-06', 'Synthetic Spending', -20000, 'expense', accountId),
+      transaction('2026-01-07', 'Synthetic Income Adjustment', -1000, 'expense', accountId),
+      {
+        ...transaction('2026-01-08', 'Synthetic Pending', 5000, 'income', accountId),
+        isPending: true
+      }
+    ]).transactions
+    classify(rows[0]!.id, merchant.id, salary.id)
+    classify(rows[1]!.id, merchant.id, own.id)
+    classify(rows[2]!.id, merchant.id, own.id)
+    classify(rows[6]!.id, merchant.id, income.id)
+    classify(rows[7]!.id, merchant.id, income.id)
+    classifications.save({
+      transactionId: rows[4]!.id,
+      categoryId: income.id,
+      categorySource: 'rule',
+      classificationSource: 'rule',
+      classificationStatus: 'needs_review'
+    })
+    const data = dashboard.getDashboard()
+    expect(data.totalIncome.amountCents).toBe(199000)
+    expect(data.totalSpending.amountCents).toBe(20000)
+    expect(data.netCashFlow.amountCents).toBe(179000)
+    expect(data.monthlyTrend[0]).toMatchObject({
+      incomeCents: 199000,
+      ownTransferCents: 40000,
+      spendingCents: 20000,
+      netCashFlowCents: 179000
+    })
+    expect(data.categories.reduce((sum, row) => sum + row.amountCents, 0)).toBe(20000)
+    // Reporting does not mutate the imported transaction type or amount.
+    expect(new TransactionRepository(connection).findById(rows[1]!.id)).toMatchObject({
+      transactionType: 'income',
+      amountCents: 50000
+    })
+    expect(dashboardDataDtoSchema.safeParse(data).success).toBe(true)
   })
 
   it('supports multi-month period selection and excludes candidate recurring series', () => {

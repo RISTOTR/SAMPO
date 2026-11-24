@@ -569,7 +569,9 @@ describe('smart classification service', () => {
         ...makePreparedImport(original.accountId, [{ ...monthly, isPending: false }]),
         fileSha256: 'e'.repeat(64)
       })
-      expect(completed.transactions).toHaveLength(0)
+      expect(completed.transactions).toHaveLength(1)
+      expect(completed.transactions[0]?.id).toBe(id)
+      expect(completed.transactions[0]?.importBatchId).toBe(completed.batch.id)
       expect(new TransactionRepository(connection).findById(id).isPending).toBe(false)
       assertDetected()
       expect(

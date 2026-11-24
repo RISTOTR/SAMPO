@@ -859,6 +859,7 @@ export const dashboardMerchantSpendDtoSchema = z.object({
 })
 
 export const dashboardMonthlyTrendDtoSchema = z.object({
+  ownTransferCents: z.number().int(),
   month: z.string().regex(/^\d{4}-\d{2}$/),
   spendingCents: z.number().int(),
   incomeCents: z.number().int(),

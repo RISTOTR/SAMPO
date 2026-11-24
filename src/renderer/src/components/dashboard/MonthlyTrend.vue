@@ -10,16 +10,22 @@ const props = defineProps<{
 const emit = defineEmits<{ openMonth: [month: string] }>()
 const rows = computed(() => trendMonths(props.months, props.period.dateFrom, props.period.dateTo))
 const hasMovement = computed(() =>
-  props.months.some((row) => row.spendingCents !== 0 || row.incomeCents !== 0)
+  props.months.some(
+    (row) => row.spendingCents !== 0 || row.incomeCents !== 0 || row.ownTransferCents !== 0
+  )
 )
 const bounds = computed(() => {
-  const values = props.months.flatMap((row) => [row.spendingCents, row.incomeCents])
+  const values = props.months.flatMap((row) => [
+    row.spendingCents,
+    row.incomeCents,
+    row.ownTransferCents
+  ])
   return { min: Math.min(0, ...values), max: Math.max(100, ...values) }
 })
 const y = (value: number): number =>
   175 - ((value - bounds.value.min) / (bounds.value.max - bounds.value.min)) * 145
 const step = computed(() => 540 / Math.max(1, rows.value.length))
-const barWidth = computed(() => Math.min(22, step.value * 0.3))
+const barWidth = computed(() => Math.min(22, step.value * 0.22))
 function label(month: string): string {
   return new Intl.DateTimeFormat('en', { month: 'short', year: '2-digit', timeZone: 'UTC' }).format(
     new Date(`${month}-01T00:00:00Z`)
@@ -27,7 +33,7 @@ function label(month: string): string {
 }
 function description(row: (typeof rows.value)[number]): string {
   return row.values
-    ? `${label(row.month)}: spending ${formatCents(row.values.spendingCents)}, income ${formatCents(row.values.incomeCents)}, net ${formatCents(row.values.netCashFlowCents)}. Open transactions.`
+    ? `${label(row.month)}: spending ${formatCents(row.values.spendingCents)}, income ${formatCents(row.values.incomeCents)}, own transfers ${formatCents(row.values.ownTransferCents)}, net ${formatCents(row.values.netCashFlowCents)}. Open transactions.`
     : `${label(row.month)}: no imported transactions.`
 }
 </script>
@@ -38,19 +44,25 @@ function description(row: (typeof rows.value)[number]): string {
       <div class="chart-legend">
         <span><i class="spending-key"></i>Spending</span
         ><span><i class="income-key"></i>Income</span>
+        <span><i class="transfer-key"></i>Own transfers</span>
       </div>
     </div>
+    <p class="dashboard-muted">
+      Income includes confirmed Income categories only. Own transfers show the signed net of
+      confirmed Oma tilisiirto categories, excluded from income, spending, and net cash flow.
+      Unclassified incoming movements are not income until categorised.
+    </p>
     <p v-if="months.length === 0" class="dashboard-muted">No monthly activity in this period.</p>
     <template v-else>
       <p v-if="!hasMovement" class="dashboard-muted">
-        No spending or income in this period. Monthly values are available below.
+        No spending, income, or own transfers in this period. Monthly values are available below.
       </p>
       <svg
         v-else
         class="monthly-chart"
         viewBox="0 0 640 210"
         role="group"
-        aria-label="Monthly spending and income; values use a shared scale including zero"
+        aria-label="Monthly spending, income, and own transfers; values use a shared scale including zero"
       >
         <g v-for="value in [bounds.max, 0, ...(bounds.min < 0 ? [bounds.min] : [])]" :key="value">
           <line x1="80" x2="620" :y1="y(value)" :y2="y(value)" class="chart-grid" />
@@ -73,13 +85,17 @@ function description(row: (typeof rows.value)[number]): string {
           <rect :x="80 + index * step" y="22" :width="step" height="175" class="month-hit" />
           <template v-if="row.values">
             <rect
-              v-for="(value, kind) in [row.values.spendingCents, row.values.incomeCents]"
+              v-for="(value, kind) in [
+                row.values.spendingCents,
+                row.values.incomeCents,
+                row.values.ownTransferCents
+              ]"
               :key="kind"
-              :x="80 + index * step + step / 2 + (kind === 0 ? -barWidth - 2 : 2)"
+              :x="80 + index * step + step / 2 + (kind - 1) * (barWidth + 3) - barWidth / 2"
               :y="Math.min(y(0), y(value))"
               :width="barWidth"
               :height="Math.abs(y(value) - y(0))"
-              :class="kind === 0 ? 'spending-bar' : 'income-bar'"
+              :class="['spending-bar', 'income-bar', 'transfer-bar'][kind]"
               rx="2"
             />
           </template>
@@ -114,7 +130,8 @@ function description(row: (typeof rows.value)[number]): string {
             <strong>{{ label(row.month) }}</strong
             ><span v-if="row.values"
               >Spent {{ formatCents(row.values.spendingCents) }} · Income
-              {{ formatCents(row.values.incomeCents) }} · Net
+              {{ formatCents(row.values.incomeCents) }} · Own transfers
+              {{ formatCents(row.values.ownTransferCents) }} · Net
               {{ formatCents(row.values.netCashFlowCents) }}</span
             ><span v-else>No imported activity</span>
           </button>

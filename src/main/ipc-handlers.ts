@@ -38,6 +38,9 @@ export function registerApplicationIpcHandlers(
       BrowserWindow.fromWebContents(event.sender) ?? undefined
     )
   )
+  handle(IPC_CHANNELS.transactionsGet, isTrustedSender, (transactionId) =>
+    workflow.getTransaction(z.string().uuid().parse(transactionId))
+  )
   handle(IPC_CHANNELS.transactionsList, isTrustedSender, (query) =>
     workflow.listTransactions(query as never)
   )

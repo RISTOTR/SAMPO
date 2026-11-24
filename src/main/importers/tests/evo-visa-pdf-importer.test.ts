@@ -381,6 +381,12 @@ describe('Bankinter Visa PDF adapter', () => {
       expect(result.warnings.some((warning) => warning.code === 'visa_batch_incomplete')).toBe(true)
       expect(
         reconciliation
+          .findVisaSettlementCandidates(settlement.id, { includeBlocked: true })
+          .find((candidate) => candidate.visaImportBatchId === batch.batchId)?.warnings
+      ).toContainEqual(expect.objectContaining({ code: 'visa_batch_incomplete', blocking: true }))
+
+      expect(
+        reconciliation
           .findVisaSettlementCandidates(settlement.id)
           .some((candidate) => candidate.visaImportBatchId === batch.batchId)
       ).toBe(false)

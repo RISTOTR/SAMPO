@@ -58,6 +58,7 @@ export function dashboardFixture(): DashboardDataDto {
     ],
     monthlyTrend: [
       {
+        ownTransferCents: 0,
         month: '2026-07',
         spendingCents: 80000,
         incomeCents: 200000,
@@ -65,6 +66,7 @@ export function dashboardFixture(): DashboardDataDto {
         recurringSpendCents: 10000
       },
       {
+        ownTransferCents: 0,
         month: '2026-08',
         spendingCents: 90000,
         incomeCents: 200000,
@@ -72,6 +74,7 @@ export function dashboardFixture(): DashboardDataDto {
         recurringSpendCents: 10000
       },
       {
+        ownTransferCents: 0,
         month: '2026-09',
         spendingCents: 64567,
         incomeCents: 100000,

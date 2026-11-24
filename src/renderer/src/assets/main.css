@@ -1135,6 +1135,12 @@ td .button-row button {
 .spending-key {
   background: var(--accent);
 }
+.transfer-key {
+  background: var(--danger-border);
+}
+.transfer-bar {
+  fill: var(--danger-border);
+}
 .income-key {
   background: var(--muted);
 }

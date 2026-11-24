@@ -39,6 +39,7 @@ type PendingPromotion = {
 
 type DeduplicatedPreparedImport = PreparedImportDuplicatePreview & {
   pendingPromotions: PendingPromotion[]
+  newTransactions: NewTransaction[]
 }
 
 export class ImportService {
@@ -80,7 +81,7 @@ export class ImportService {
         statementPeriodEnd: preparedImport.statementPeriodEnd
       })
 
-      const transactions = deduplicated.preparedImport.transactions.map((transaction) => {
+      const transactions = deduplicated.newTransactions.map((transaction) => {
         if (transaction.accountId !== preparedImport.accountId) {
           throw new AccountMismatchError()
         }
@@ -91,19 +92,36 @@ export class ImportService {
           transaction
         })
       })
-      const promotedTransactions = deduplicated.pendingPromotions.map((promotion) =>
-        this.transactions.promotePendingToCompleted(promotion.existingTransactionId, {
+      const promotedTransactions = deduplicated.pendingPromotions.map((promotion) => {
+        const previous = this.transactions.findById(promotion.existingTransactionId)
+        if (this.links.listCardSettlementLinkedDestinationIds([previous.id]).size > 0) {
+          throw new ActiveReconciliationError()
+        }
+        const promoted = this.transactions.promotePendingToCompleted(previous.id, {
+          importBatchId: batch.id,
+          sourceRowIndex: promotion.incomingTransaction.sourceRowIndex,
           transactionType: promotion.incomingTransaction.transactionType,
           reviewStatus: promotion.incomingTransaction.reviewStatus ?? 'confirmed'
         })
+        // The completed statement now owns this movement; earlier reconciled movements stay put.
+        this.database
+          .prepare(
+            `UPDATE import_batches SET transaction_count = (
+          SELECT COUNT(*) FROM transactions WHERE import_batch_id = ?
+        ) WHERE id = ?`
+          )
+          .run(previous.importBatchId, previous.importBatchId)
+        return promoted
+      })
+      const committedTransactions = [...transactions, ...promotedTransactions]
+      const committedBatch = this.importBatches.markCommitted(
+        batch.id,
+        committedTransactions.length
       )
-
-      const committedBatch = this.importBatches.markCommitted(batch.id, transactions.length)
 
       return {
         batch: committedBatch,
-        transactions,
-        promotedTransactions,
+        transactions: committedTransactions,
         skippedDuplicateTransactionCount: deduplicated.duplicateTransactionCount
       }
     })
@@ -112,9 +130,7 @@ export class ImportService {
 
     try {
       new ClassificationService(this.database).applyToTransactions(
-        [...result.transactions, ...result.promotedTransactions].map(
-          (transaction) => transaction.id
-        )
+        result.transactions.map((transaction) => transaction.id)
       )
     } catch {
       // Classification enrichment must not invalidate a committed financial import.
@@ -160,15 +176,20 @@ export class ImportService {
 
     const filteredPreparedImport = preparedImportSchema.parse({
       ...preparedImport,
-      transactions
+      transactions: [
+        ...transactions,
+        ...pendingPromotions.map((promotion) => promotion.incomingTransaction)
+      ]
     })
 
     return {
       preparedImport: filteredPreparedImport,
       originalTransactionCount: preparedImport.transactions.length,
-      newTransactionCount: transactions.length,
-      duplicateTransactionCount: preparedImport.transactions.length - transactions.length,
-      pendingPromotions
+      newTransactionCount: transactions.length + pendingPromotions.length,
+      duplicateTransactionCount:
+        preparedImport.transactions.length - transactions.length - pendingPromotions.length,
+      pendingPromotions,
+      newTransactions: transactions
     }
   }
 

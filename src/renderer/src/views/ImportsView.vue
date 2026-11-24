@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { scrollPanelIntoContent } from '../presentation/content-scroll'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import ReconciliationWarnings from '../components/ReconciliationWarnings.vue'
 import { formatCents, formatDate, formatDateTime, sourceLabel } from '../formatters'
 import { useAccountsStore } from '../stores/accounts'
 import { useAiStore } from '../stores/ai'
@@ -30,10 +31,8 @@ const importableAccounts = computed(() =>
     (account) => account.kind === 'current' || account.kind === 'credit_card'
   )
 )
-const selectedCandidate = computed(() =>
-  reconciliation.candidates.find(
-    (candidate) => candidate.visaImportBatchId === selectedCandidateBatchId.value
-  )
+const selectedSettlement = computed(() =>
+  reconciliation.settlements.find((settlement) => settlement.id === selectedSettlementId.value)
 )
 
 onMounted(async () => {
@@ -272,6 +271,10 @@ async function reverseReconciliation(): Promise<void> {
 
     <div id="reconciliation-review" ref="reconciliationPanel" class="panel">
       <h3>Reconciliation review</h3>
+      <p>
+        Unreconciled settlements need a complete matching Visa batch. Confirming a transaction's
+        category does not reconcile its card payment. Settlements stay in spending until linked.
+      </p>
       <div class="split-grid">
         <div>
           <h4>Card settlements</h4>
@@ -294,7 +297,9 @@ async function reverseReconciliation(): Promise<void> {
                   <td class="numeric">
                     {{ formatCents(settlement.amountCents, settlement.currency) }}
                   </td>
-                  <td>{{ settlement.reconciled ? 'Reconciled' : settlement.reviewStatus }}</td>
+                  <td>
+                    {{ settlement.reconciled ? 'Reconciled' : 'Awaiting matching Visa statement' }}
+                  </td>
                   <td>
                     <button
                       v-if="!settlement.reconciled"
@@ -319,8 +324,22 @@ async function reverseReconciliation(): Promise<void> {
         </div>
         <div>
           <h4>Candidate batches</h4>
+          <p v-if="selectedSettlement">
+            Settlement: {{ formatDate(selectedSettlement.transactionDate) }} ·
+            {{ selectedSettlement.accountName }} ·
+            {{ formatCents(selectedSettlement.amountCents, selectedSettlement.currency) }}
+          </p>
           <p v-if="!selectedSettlementId">Select a settlement to find candidates.</p>
-          <p v-else-if="reconciliation.candidates.length === 0">No candidates found.</p>
+          <p v-else-if="reconciliation.findingCandidates" role="status">
+            Checking imported Visa batches…
+          </p>
+          <p v-else-if="reconciliation.error">
+            Could not load batches. Select Find candidates to retry.
+          </p>
+          <p v-else-if="reconciliation.candidates.length === 0">
+            No committed Visa batches are available. Import the complete Visa statement into a
+            credit-card account, then select Find candidates again.
+          </p>
           <div v-else class="table-wrap">
             <table>
               <thead>
@@ -350,7 +369,9 @@ async function reverseReconciliation(): Promise<void> {
                   <td class="numeric">{{ formatCents(candidate.differenceCents) }}</td>
                   <td>
                     {{
-                      candidate.exactAmountMatch && candidate.dateOrderValid ? 'Exact' : 'Review'
+                      candidate.warnings.some((warning) => warning.blocking)
+                        ? 'Blocked — preview for details'
+                        : 'Exact — ready to review'
                     }}
                   </td>
                   <td>
@@ -363,6 +384,7 @@ async function reverseReconciliation(): Promise<void> {
             </table>
           </div>
 
+          <p v-if="reconciliation.loadingPreview" role="status">Loading reconciliation preview…</p>
           <div v-if="reconciliation.preview" class="panel">
             <h4>Reconciliation preview</h4>
             <p>
@@ -370,10 +392,7 @@ async function reverseReconciliation(): Promise<void> {
               {{ reconciliation.preview.ignoredPendingTransactionCount }}, difference
               {{ formatCents(reconciliation.preview.differenceCents) }}.
             </p>
-            <p v-if="selectedCandidate?.warnings.length" class="status-message">
-              Candidate warnings:
-              {{ selectedCandidate.warnings.map((warning) => warning.code).join(', ') }}
-            </p>
+            <ReconciliationWarnings :warnings="reconciliation.preview.warnings" />
             <button
               type="button"
               :disabled="!reconciliation.preview.canCommit || reconciliation.submitting"

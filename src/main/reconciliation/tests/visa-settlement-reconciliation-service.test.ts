@@ -14,6 +14,10 @@ import { createDatabase, type SampoDatabase } from '../../storage/database'
 import { ImportBatchRepository } from '../../storage/import-batches'
 import { TransactionLinkRepository } from '../../storage/transaction-links'
 import { TransactionRepository } from '../../storage/transactions'
+import {
+  MerchantRepository,
+  TransactionClassificationRepository
+} from '../../storage/categorisation'
 import { VisaSettlementReconciliationService } from '../visa-settlement-reconciliation-service'
 
 const hashA = 'a'.repeat(64)
@@ -123,6 +127,24 @@ describe('VisaSettlementReconciliationService', () => {
     expect(candidates.map((candidate) => candidate.visaImportBatchId)).not.toContain(failed.id)
     expect(candidates.map((candidate) => candidate.visaImportBatchId)).not.toContain(empty.batch.id)
     expect(candidates.map((candidate) => candidate.visaImportBatchId)).not.toContain(visaBatch.id)
+    const diagnosticCandidates = reconciliation.findVisaSettlementCandidates(secondSettlement.id, {
+      includeBlocked: true
+    })
+    expect(
+      diagnosticCandidates.find((candidate) => candidate.visaImportBatchId === empty.batch.id)
+        ?.warnings
+    ).toContainEqual(
+      expect.objectContaining({ code: 'no_completed_visa_transactions', blocking: true })
+    )
+    expect(
+      diagnosticCandidates.find((candidate) => candidate.visaImportBatchId === visaBatch.id)
+        ?.warnings
+    ).toContainEqual(
+      expect.objectContaining({ code: 'visa_transaction_already_reconciled', blocking: true })
+    )
+    expect(() =>
+      reconciliation.commitVisaSettlementReconciliation(secondSettlement.id, visaBatch.id)
+    ).toThrow()
   })
 
   it('previews exact totals, refunds, ignored pending movements, and mismatch blockers', () => {
@@ -295,6 +317,63 @@ describe('VisaSettlementReconciliationService', () => {
 
     expect(imports.rollbackCommittedBatch(visaBatch.id).status).toBe('rolled_back')
     expect(imports.rollbackCommittedBatch(settlementBatch.id).status).toBe('rolled_back')
+  })
+
+  it('moves a promoted pending movement into its completed statement without disturbing prior reconciliation', () => {
+    const earlier = setupVisaBatch({ amounts: [-1000], pendingAmounts: [-1700], hash: hashA })
+    const priorSettlement = setupSettlement({ amount: -1000 }).settlement
+    reconciliation.commitVisaSettlementReconciliation(priorSettlement.id, earlier.batch.id)
+    const pending = transactions.listForAccount(earlier.account.id).find((row) => row.isPending)!
+    const merchant = new MerchantRepository(database.connection).create({
+      name: 'Synthetic retained merchant'
+    })
+    const classifications = new TransactionClassificationRepository(database.connection)
+    classifications.save({
+      transactionId: pending.id,
+      merchantId: merchant.id,
+      merchantSource: 'manual',
+      classificationSource: 'manual',
+      classificationStatus: 'confirmed'
+    })
+    const source = preparedVisaImport(earlier.account.id, [-1700, -2500], [], hashB, [
+      '2026-02-10',
+      '2026-02-11'
+    ])
+    const preview = imports.previewPreparedImportDeduplication(source)
+    expect(preview.newTransactionCount).toBe(2)
+    expect(preview.duplicateTransactionCount).toBe(0)
+    expect(preview.preparedImport.transactions).toHaveLength(2)
+    const completed = imports.commitPreparedImport(source)
+    expect(completed.batch.transactionCount).toBe(2)
+    expect(batches.findById(earlier.batch.id).transactionCount).toBe(1)
+    expect(transactions.findById(pending.id)).toMatchObject({
+      importBatchId: completed.batch.id,
+      isPending: false,
+      sourceRowIndex: 0
+    })
+    expect(classifications.findByTransactionId(pending.id)).toMatchObject({
+      merchantId: merchant.id,
+      merchantSource: 'manual'
+    })
+    expect(links.listCardSettlementLinksFromSettlement(priorSettlement.id)).toHaveLength(1)
+    const nextSettlement = setupSettlement({
+      amount: -4200,
+      transactionDate: '2026-02-12'
+    }).settlement
+    expect(
+      reconciliation.previewVisaSettlementReconciliation(nextSettlement.id, completed.batch.id)
+    ).toMatchObject({ canCommit: true, differenceCents: 0, completedVisaTransactionCount: 2 })
+    expect(
+      reconciliation.commitVisaSettlementReconciliation(nextSettlement.id, completed.batch.id)
+        .linkedTransactionCount
+    ).toBe(2)
+    expect(() => imports.rollbackCommittedBatch(completed.batch.id)).toThrow(
+      ActiveReconciliationError
+    )
+    reconciliation.reverseVisaSettlementReconciliation(nextSettlement.id)
+    imports.rollbackCommittedBatch(completed.batch.id)
+    expect(links.listCardSettlementLinksFromSettlement(priorSettlement.id)).toHaveLength(1)
+    expect(batches.findById(earlier.batch.id).transactionCount).toBe(1)
   })
 
   it('preserves existing duplicate-file detection for unreconciled imports', () => {

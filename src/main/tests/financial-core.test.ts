@@ -821,11 +821,16 @@ describe('import service and transaction repository', () => {
       )
     )
 
-    expect(completed.transactions).toHaveLength(0)
-    expect(completed.skippedDuplicateTransactionCount).toBe(1)
+    expect(completed.transactions).toHaveLength(1)
+    expect(completed.skippedDuplicateTransactionCount).toBe(0)
+    expect(completed.batch.transactionCount).toBe(1)
+    expect(
+      new ImportBatchRepository(database.connection).findById(pending.batch.id).transactionCount
+    ).toBe(0)
     expect(transactions.listForAccount(account.id)).toHaveLength(1)
     expect(transactions.findById(pendingTransactionId)).toMatchObject({
       id: pendingTransactionId,
+      importBatchId: completed.batch.id,
       isPending: false,
       reviewStatus: 'confirmed'
     })

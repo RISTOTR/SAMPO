@@ -37,6 +37,10 @@ const renderer = createRenderer<object, object>({
 type ViewState = {
   openEditor: (id: string) => Promise<void>
   saveManual: () => Promise<void>
+  useTransactionDescriptionAsMerchant: () => void
+  closeEditor: () => void
+  editorTransactionId: string | null
+  editorTransaction: { description: string } | null
   reviewChanged: () => Promise<void>
   manualForm: { merchantId: string; categoryId: string }
   newMerchantName: string
@@ -119,6 +123,7 @@ async function setup(): Promise<{
       merchantAliases: { list: () => ok(workflow.listMerchantAliases()) },
       rules: { list: () => ok(workflow.listRules()) },
       transactions: {
+        get: (id: string) => ok(workflow.getTransaction(id)),
         list: (query: Parameters<typeof workflow.listTransactions>[0]) =>
           ok(workflow.listTransactions(query))
       },
@@ -166,6 +171,41 @@ async function setup(): Promise<{
 }
 
 describe('Transactions classification mutation synchronization', () => {
+  it('uses the description without a suggestion or a visible transaction row and persists the merchant', async () => {
+    const { view, transactionId, suggestion, transactions, ai } = await setup()
+    new AiSuggestionRepository(database.connection).mark(suggestion.id, 'rejected')
+    ai.suggestions = []
+    transactions.page.items = []
+    await view.openEditor(transactionId)
+    expect(view.editorTransaction?.description).toBe('Synthetic Sync Description')
+    view.useTransactionDescriptionAsMerchant()
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(view.newMerchantName).toBe('Synthetic Sync Description')
+    expect(view.manualForm.merchantId).toBe('')
+    // A subsequent page refresh must not discard the editor's transaction details.
+    transactions.page.items = []
+    view.newMerchantName = ''
+    view.useTransactionDescriptionAsMerchant()
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    await view.saveManual()
+    expect(transactions.page.items[0]?.classification?.merchantDisplay).toMatchObject({
+      source: 'authoritative',
+      displayName: 'Synthetic Sync Description'
+    })
+    expect(view.editorTransaction).toBeNull()
+  })
+
+  it('shows a failed transaction fetch instead of an editor with a silent no-op button', async () => {
+    const { view, transactionId } = await setup()
+    window.sampo.transactions.get = async () => ({
+      ok: false,
+      error: { code: 'validation_error', message: 'Transaction unavailable' }
+    })
+    await view.openEditor(transactionId)
+    expect(view.editorTransactionId).toBeNull()
+    expect(view.editorTransaction).toBeNull()
+  })
+
   it.each(['merchant', 'category', 'both'] as const)(
     'manual %s save immediately refreshes Transactions and matching AI deltas',
     async (field) => {

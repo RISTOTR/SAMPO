@@ -11,6 +11,7 @@ export const IPC_CHANNELS = {
   importsList: 'sampo:imports:list',
   importsRollback: 'sampo:imports:rollback',
   transactionsExportForTapio: 'sampo:transactions:export-for-tapio',
+  transactionsGet: 'sampo:transactions:get',
   transactionsList: 'sampo:transactions:list',
   dashboardGet: 'sampo:dashboard:get',
   reconciliationListSettlements: 'sampo:reconciliation:list-settlements',

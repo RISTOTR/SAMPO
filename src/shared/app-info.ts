@@ -55,6 +55,7 @@ import type {
   SmartClassifySummaryDto,
   TransactionListQueryDto,
   TransactionPageDto,
+  TransactionRowDto,
   UpdateAccountInputDto,
   UpdateAiSettingsInputDto,
   UpdateCategoryInputDto,
@@ -88,6 +89,7 @@ export type SampoApi = {
     rollback: (importBatchId: string) => Promise<ApiResult<ImportBatchSummaryDto>>
   }
   transactions: {
+    get: (transactionId: string) => Promise<ApiResult<TransactionRowDto>>
     exportForTapio: (input: { transactionIds: string[] }) => Promise<ApiResult<TapioExportResult>>
     list: (query: TransactionListQueryDto) => Promise<ApiResult<TransactionPageDto>>
   }

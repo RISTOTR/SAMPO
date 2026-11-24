@@ -160,6 +160,18 @@ function calls(channel: string): typeof bridge.invoke.mock.calls {
 }
 
 describe('bulk renderer → preload → IPC → workflow', () => {
+  it('loads an off-page transaction through validated preload IPC', async () => {
+    const { ids, transactions } = await setup()
+    const expectedDescription = transactions.page.items.find(
+      (row) => row.id === ids[0]
+    )!.description
+    transactions.page.items = []
+    expect(await window.sampo.transactions.get(ids[0]!)).toMatchObject({
+      ok: true,
+      data: { id: ids[0], description: expectedDescription }
+    })
+    expect(await window.sampo.transactions.get('not-a-uuid')).toMatchObject({ ok: false })
+  })
   it('normalizes a reactive bulk request and persists only the two selected rows', async () => {
     const { view, ids, categoryId, transactions, classification } = await setup()
     view.selectedTransactionIds = ids.slice(0, 2)

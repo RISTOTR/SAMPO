@@ -18,7 +18,12 @@ import { useAiStore } from '../stores/ai'
 import { useClassificationStore } from '../stores/classification'
 import { useRecurringStore } from '../stores/recurring'
 import { useTransactionsStore } from '../stores/transactions'
-import type { AiSuggestionDto, TransactionListQueryDto } from '../../../shared/dtos'
+import { unwrapResult } from '../stores/api-result'
+import type {
+  AiSuggestionDto,
+  TransactionListQueryDto,
+  TransactionRowDto
+} from '../../../shared/dtos'
 import ManualRecurringForm from '../components/ManualRecurringForm.vue'
 
 const reviewPanel = ref<InstanceType<typeof ReviewSuggestions> | null>(null)
@@ -122,11 +127,8 @@ const editorMerchantOptions = computed(() => {
   return options
 })
 
-const editorTransaction = computed(() =>
-  editorTransactionId.value
-    ? transactions.page.items.find((transaction) => transaction.id === editorTransactionId.value)
-    : undefined
-)
+const editorTransaction = ref<TransactionRowDto | null>(null)
+let editorLoadId = 0
 
 const editorSuggestion = computed(() =>
   editorTransactionId.value ? aiSuggestionFor(editorTransactionId.value) : undefined
@@ -325,6 +327,10 @@ async function previousPage(): Promise<void> {
 
 async function openEditor(transactionId: string): Promise<void> {
   if (!editorTransactionId.value) returnFromEditor = captureTransactionPosition(viewRoot.value)
+  const loadId = ++editorLoadId
+  editorTransactionId.value = null
+  editorTransaction.value = null
+  classification.error = null
   logTransactionsDiagnostic('edit clicked', { transactionIdPresent: Boolean(transactionId) })
   const row = transactions.page.items.find((item) => item.id === transactionId)
 
@@ -338,10 +344,13 @@ async function openEditor(transactionId: string): Promise<void> {
     )
   })
   try {
-    await Promise.all([
+    const [transactionResult] = await Promise.all([
+      window.sampo.transactions.get(transactionId),
       classification.loadClassification(transactionId),
       classification.loadReference()
     ])
+    if (loadId !== editorLoadId) return
+    editorTransaction.value = unwrapResult(transactionResult)
     editorTransactionId.value = transactionId
     manualForm.merchantId =
       classification.current?.merchantDisplay?.authoritativeId ??
@@ -379,6 +388,8 @@ async function openEditor(transactionId: string): Promise<void> {
     await nextTick()
     scrollPanelIntoContent(editorPanel.value)
   } catch {
+    if (loadId !== editorLoadId) return
+    editorTransaction.value = null
     editorTransactionId.value = null
     classification.error = 'Transaction could not be loaded.'
   }
@@ -412,6 +423,8 @@ async function saveManualAndConfirmMatches(): Promise<void> {
 }
 
 function closeEditor(): void {
+  ++editorLoadId
+  editorTransaction.value = null
   if (returnFromEditor) void nextTick(returnFromEditor)
   returnFromEditor = undefined
   const transactionId = editorTransactionId.value

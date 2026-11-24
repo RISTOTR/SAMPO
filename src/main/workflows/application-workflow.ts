@@ -51,6 +51,7 @@ import {
   smartClassifySummaryDtoSchema,
   transactionListQueryDtoSchema,
   transactionPageDtoSchema,
+  transactionRowDtoSchema,
   updateAccountInputDtoSchema,
   updateAiSettingsInputDtoSchema,
   updateCategoryInputDtoSchema,
@@ -88,7 +89,8 @@ import {
   type SmartClassifySummaryDto,
   type SettlementSummaryDto,
   type TransactionListQueryDto,
-  type TransactionPageDto
+  type TransactionPageDto,
+  type TransactionRowDto
 } from '../../shared/dtos'
 import type { AiClassificationSuggestion, ImportBatch, Transaction } from '../domain/schemas'
 import { aiModelConfig } from '../ai/config'
@@ -264,6 +266,13 @@ export class ApplicationWorkflow {
     return exportSelectedForTapio(this.database, input, window)
   }
 
+  getTransaction(transactionId: string): TransactionRowDto {
+    const transaction = this.transactions.findById(transactionId)
+    return transactionRowDtoSchema.parse(
+      transactionToRowDto(transaction, this.accounts.findById(transaction.accountId))
+    )
+  }
+
   listTransactions(input: TransactionListQueryDto): TransactionPageDto {
     const query = transactionListQueryDtoSchema.parse(input)
     const page = this.transactions.listPage(query)
@@ -388,7 +397,7 @@ export class ApplicationWorkflow {
 
   findReconciliationCandidates(settlementTransactionId: string): ReconciliationCandidateDto[] {
     return this.reconciliation
-      .findVisaSettlementCandidates(settlementTransactionId)
+      .findVisaSettlementCandidates(settlementTransactionId, { includeBlocked: true })
       .map((candidate) => {
         const visaBatch = this.importBatches.findById(candidate.visaImportBatchId)
         const visaAccount = this.accounts.findById(candidate.visaAccountId)

@@ -8,7 +8,7 @@ if (transform && typeof transform === 'object') {
   transform.handler = function (code, id, options) {
     // These components are mounted with a client renderer in the Node test environment.
     const clientComponent =
-      /\/(FeedbackAlert|TransactionsFeedback|DashboardView|MonthlyTrend|CategorySpending)\.vue(?:\?|$)/.test(
+      /\/(ReconciliationWarnings|FeedbackAlert|TransactionsFeedback|DashboardView|MonthlyTrend|CategorySpending)\.vue(?:\?|$)/.test(
         id
       )
     return handler.call(this, code, id, clientComponent ? { ...options, ssr: false } : options)
